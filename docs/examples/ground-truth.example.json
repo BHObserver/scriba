@@ -1,0 +1,16 @@
+{
+  "format": "scriba-ground-truth-1",
+  "sample_id": "EXAMPLE-04",
+  "split": "development",
+  "writer": "author",
+  "manual_transcription_seconds": 90,
+  "page": { "ledger_type": "customer_credit" },
+  "entries": [
+    { "line": 1, "type": "opening_balance", "amount": "800" },
+    { "line": 2, "type": "credit_sale", "item": "চাল", "quantity": "3", "unit": "কেজি", "rate": "60", "amount": "180" },
+    { "line": 3, "type": "credit_sale", "item": "ডাল", "quantity": "1", "unit": "কেজি", "rate": "140", "amount": "140" },
+    { "line": 4, "type": "subtotal", "amount": "310", "expected_flag": true, "note": "Synthetic example: written total is deliberately wrong (items sum to 320). Never repair it." },
+    { "line": 5, "type": "repayment", "amount": "100" },
+    { "line": 6, "type": "closing_balance", "amount": "1,020" }
+  ]
+}

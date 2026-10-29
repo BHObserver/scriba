@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* Scriba: a quiet, high-contrast "paper and ink" palette. */
+@theme {
+  --font-sans: var(--nf-inter), var(--nf-bengali), ui-sans-serif, system-ui, sans-serif;
+  --font-bengali: var(--nf-bengali), var(--nf-inter), sans-serif;
+
+  --color-paper: #fbfaf6;
+  --color-card: #ffffff;
+  --color-ink: #16202e;
+  --color-ink-soft: #475467;
+  --color-rule: #e4e1d8;
+  --color-accent: #1f4e79;
+  --color-accent-strong: #163a5c;
+
+  --color-pass: #1d6b3f;
+  --color-pass-bg: #e8f4ec;
+  --color-fail: #a4262c;
+  --color-fail-bg: #fbeaea;
+  --color-warn: #8a5a00;
+  --color-warn-bg: #fdf3dc;
+  --color-unverifiable: #4b5563;
+  --color-unverifiable-bg: #eef0f3;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* Bangla source text gets slightly more line height so matras and vowel signs breathe. */
+.bn {
+  font-family: var(--font-bengali);
+  line-height: 1.7;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

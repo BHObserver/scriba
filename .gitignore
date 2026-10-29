@@ -1,0 +1,75 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files: secrets never enter Git. Only the placeholder template is tracked.
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# ---------------------------------------------------------------------------
+# Scriba private data. This repository is public.
+# Handwritten photographs, ground truth, raw model responses and benchmark
+# exports stay on the developer's machine or in the private Supabase bucket.
+# ---------------------------------------------------------------------------
+/private-test-data/
+*.private.json
+*.private.jsonl
+
+# Image files anywhere outside public/ are treated as private by default.
+# To publish a specific image deliberately, place it in public/ and review the diff.
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.heic
+*.heif
+!/public/**/*.png
+!/public/**/*.jpg
+!/public/**/*.webp
+!/src/app/**/*.png
+
+# Supabase local state and backups
+/supabase/.temp/
+/supabase/.branches/
+*.dump
+*.backup
+*.sql.gz
+
+# Local reference material that is not Scriba source (Gemini sample, event guide)
+/bengali_font_text_detector.html
+/meta_global_ai_developer_hackathon_participant_guide.md
