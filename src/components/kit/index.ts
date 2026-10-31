@@ -5,7 +5,7 @@ export { Cover } from "./cover";
 export { EmptyState } from "./empty-state";
 export { Equation, type EquationField } from "./equation";
 export { Keypad, type KeypadKey } from "./keypad";
-export { applyKey } from "./keypad-input";
+export { applyKey, groupTyped } from "./keypad-input";
 export { LineStrip } from "./line-strip";
 export { Money } from "./money";
 export { SampleBadge } from "./sample-badge";

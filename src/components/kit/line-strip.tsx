@@ -18,6 +18,7 @@ export function LineStrip({
   tag = true,
   reading,
   turns = 0,
+  none,
 }: {
   src: string | null;
   box: GridBox | null;
@@ -28,10 +29,12 @@ export function LineStrip({
   reading?: string;
   /** Quarter turns the photo was read with: the box is on the page as it was sent. */
   turns?: number;
+  /** What to say when there is nothing to cut (default: a sample line without a photo). */
+  none?: string;
 }) {
   const { t } = useI18n();
   const size = { "--strip-h": `${height}px` } as CSSProperties;
-  if (!src || !box) return <div className="strip none" style={size}>{t("strip.none")}</div>;
+  if (!src || !box) return <div className="strip none" style={size}>{none ?? t("strip.none")}</div>;
   const odd = turns % 2 === 1;
   const vars = stripVars(box, odd ? photoHeight : photoWidth, odd ? photoWidth : photoHeight);
   return (

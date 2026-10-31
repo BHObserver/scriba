@@ -1,12 +1,14 @@
-import type { EntryValues, ReviewableField } from "@/lib/ledger/types";
+import type { EntryValues, PageValues, ReviewableField } from "@/lib/ledger/types";
 import type { Acknowledgements } from "@/lib/review/approval";
-import type { ReviewRow } from "@/lib/review/state";
+import type { PageState, ReviewRow } from "@/lib/review/state";
 import { remainingReviewFields } from "@/lib/review/values";
 
 /**
  * The deck talks to the same APIs as the details page's review workspace: one line saved at a
- * time (`PATCH /api/reviews/[id]`, versioned) and one confirmation (`POST /api/runs/[id]/confirm`)
- * that re-runs every check on the server. The dev board swaps in `localReviewApi`.
+ * time (`PATCH /api/reviews/[id]`, versioned), lines added (`POST /api/runs/[id]/rows`), page
+ * details (`PATCH /api/runs/[id]/page`, versioned) and one confirmation
+ * (`POST /api/runs/[id]/confirm`) that re-runs every check on the server. The dev board swaps
+ * in `localReviewApi`.
  */
 export type LinePatch = { values?: EntryValues; status?: "draft" | "rejected"; markChecked?: ReviewableField[] };
 export type SavedLine = Pick<ReviewRow, "values" | "reviewFields" | "status" | "version">;
@@ -16,6 +18,9 @@ export type ApiFailure = { ok: false; reason: "conflict" | "failed" | "notReady"
 export type ReviewApi = {
   markStarted: () => void;
   saveLine: (row: ReviewRow, patch: LinePatch) => Promise<{ ok: true; line: SavedLine } | ApiFailure>;
+  /** Add a line after `afterId` (null: at the top). The server marks it as added by the reviewer. */
+  addLine: (afterId: string | null, values: EntryValues) => Promise<{ ok: true; row: ReviewRow } | ApiFailure>;
+  savePage: (page: PageState, values: PageValues) => Promise<{ ok: true; page: PageState } | ApiFailure>;
   confirm: (entries: ConfirmEntry[]) => Promise<{ ok: true; confirmed: number } | ApiFailure>;
 };
 
@@ -37,6 +42,16 @@ export function httpReviewApi(runId: string): ReviewApi {
       const res = await send(`/api/reviews/${row.id}`, "PATCH", { expectedVersion: row.version, ...patch });
       if (!res || res.status >= 300) return { ok: false, reason: res?.status === 409 ? "conflict" : "failed" };
       return { ok: true, line: res.json as unknown as SavedLine };
+    },
+    async addLine(afterId, values) {
+      const res = await send(`/api/runs/${runId}/rows`, "POST", { afterId, values });
+      if (!res || res.status >= 300) return { ok: false, reason: "failed" };
+      return { ok: true, row: res.json as unknown as ReviewRow };
+    },
+    async savePage(page, values) {
+      const res = await send(`/api/runs/${runId}/page`, "PATCH", { expectedVersion: page.version, values });
+      if (!res || res.status >= 300) return { ok: false, reason: res?.status === 409 ? "conflict" : "failed" };
+      return { ok: true, page: res.json as unknown as PageState };
     },
     async confirm(entries) {
       const res = await send(`/api/runs/${runId}/confirm`, "POST", { entries });
@@ -60,6 +75,12 @@ export function localReviewApi(): ReviewApi {
       if (patch.values) reviewFields = remainingReviewFields(reviewFields, row.values, patch.values);
       if (patch.markChecked) reviewFields = reviewFields.filter((f) => !patch.markChecked!.includes(f));
       return { ok: true, line: { values: patch.values ?? row.values, reviewFields, status: patch.status ?? row.status, version: row.version + 1 } };
+    },
+    async addLine(_afterId, values) {
+      return { ok: true, row: { id: crypto.randomUUID(), extractedEntryId: null, lineOrder: 0, values, reviewFields: [], status: "draft", version: 1, candidate: null } };
+    },
+    async savePage(page, values) {
+      return { ok: true, page: { ...page, values, version: page.version + 1 } };
     },
     async confirm(entries) {
       return { ok: true, confirmed: entries.length };

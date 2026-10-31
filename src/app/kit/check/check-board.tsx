@@ -17,7 +17,7 @@ const API = localReviewApi();
 /** Renders one step of the real screens on fixture data. Buttons that would upload or read are live: don't press them. */
 export function CheckBoard({ step, fixture }: { step: string; fixture: Fixture }) {
   const { t } = useI18n();
-  const common = { documentId: DOC, photo: fixture.photo, readTurns: fixture.photo.turns, pageNumber: 1, pageCount: 2, detailsHref: "/kit", nextHref: null, api: API };
+  const common = { documentId: DOC, photo: fixture.photo, readTurns: fixture.photo.turns, pageNumber: 1, pageCount: 2, detailsHref: "/kit", nextHref: null, api: API, capturedAt: "2026-10-31T09:30:00Z" };
   const body = (() => {
     switch (step) {
       case "capture":

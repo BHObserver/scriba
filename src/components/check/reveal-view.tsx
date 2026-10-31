@@ -124,7 +124,7 @@ export function RevealView({
 }
 
 /** The reading came back with no lines (D4 `nothing`): nothing was entered anywhere. */
-export function NothingView({ title, photo, backHref, retakeHref, addHref }: { title: string; photo: Photo; backHref: string; retakeHref: string; addHref: string }) {
+export function NothingView({ title, photo, backHref, retakeHref, onAdd }: { title: string; photo: Photo; backHref: string; retakeHref: string; onAdd: () => void }) {
   const { t } = useI18n();
   return (
     <div className="flow column">
@@ -145,9 +145,9 @@ export function NothingView({ title, photo, backHref, retakeHref, addHref }: { t
         <ButtonLink href={retakeHref} variant="red" wide>
           {t("retake")}
         </ButtonLink>
-        <ButtonLink href={addHref} variant="line" wide>
+        <Button variant="line" wide onClick={onAdd}>
           {t("nothing.add")}
-        </ButtonLink>
+        </Button>
       </div>
     </div>
   );

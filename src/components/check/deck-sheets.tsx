@@ -2,10 +2,9 @@
 
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button, ButtonLink, Keypad, LineStrip, Sheet, applyKey, type KeypadKey } from "@/components/kit";
+import { Button, ButtonLink, Keypad, LineStrip, Sheet, applyKey, groupTyped, type KeypadKey } from "@/components/kit";
 import { useI18n } from "@/lib/i18n/client";
 import type { TransactionType } from "@/lib/ledger/types";
-import { groupSouthAsian } from "@/lib/numerals";
 import type { ReviewRow } from "@/lib/review/state";
 import { FIELD_TO_VALUE_KEY } from "@/lib/review/values";
 import type { Photo } from "./reading-view";
@@ -14,7 +13,7 @@ import { fieldLabel } from "./sentences";
 export type FixField = "qty" | "rate" | "amount" | "balance";
 
 /** Kinds a shopkeeper can pick for a line, in the order he meets them. */
-const PICKABLE: readonly TransactionType[] = [
+export const PICKABLE: readonly TransactionType[] = [
   "credit_sale",
   "cash_sale",
   "repayment",
@@ -27,8 +26,20 @@ const PICKABLE: readonly TransactionType[] = [
   "subtotal",
 ];
 
-function Strip({ row, photo }: { row: ReviewRow; photo: Photo }) {
-  return <LineStrip src={photo.src} box={row.candidate?.bbox ?? null} photoWidth={photo.width} photoHeight={photo.height} turns={photo.turns} reading={row.values.sourceText} />;
+/** The line's handwriting; a line he added has none, and the strip says so. */
+export function RowStrip({ row, photo }: { row: ReviewRow; photo: Photo }) {
+  const { t } = useI18n();
+  return (
+    <LineStrip
+      src={photo.src}
+      box={row.candidate?.bbox ?? null}
+      photoWidth={photo.width}
+      photoHeight={photo.height}
+      turns={photo.turns}
+      reading={row.values.sourceText}
+      none={!photo.src ? undefined : row.candidate ? t("strip.noBox") : t("strip.added")}
+    />
+  );
 }
 
 /**
@@ -50,19 +61,22 @@ function FixBody({ row, field, photo, hint, busy, onSave, onClose }: { row: Revi
   const { t, digits } = i18n;
   const [draft, setDraft] = useState("");
   const old = row.values[FIELD_TO_VALUE_KEY[field]] as string | null;
+  // Quantities and rates can be fractions (১.৫ কেজি); amounts and dues are whole taka.
+  const decimal = field === "qty" || field === "rate";
   const press = (k: KeypadKey) => setDraft((d) => applyKey(d, k));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (/^[0-9]$/.test(e.key)) setDraft((d) => applyKey(d, e.key as KeypadKey));
+      else if (e.key === "." && decimal) setDraft((d) => applyKey(d, "."));
       else if (e.key === "Backspace") setDraft((d) => applyKey(d, "del"));
       else return;
       e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [decimal]);
 
   return (
     <div className="grid gap-1">
@@ -74,17 +88,17 @@ function FixBody({ row, field, photo, hint, busy, onSave, onClose }: { row: Revi
           <X size={24} aria-hidden="true" />
         </button>
       </div>
-      <Strip row={row} photo={photo} />
+      <RowStrip row={row} photo={photo} />
       <div className="fx-field" aria-live="polite">
         <span className="fx-val">
-          {draft ? digits(groupSouthAsian(draft)) : ""}
+          {draft ? digits(groupTyped(draft)) : ""}
           <i className="fx-caret" aria-hidden="true" />
         </span>
         <span className="fx-old">{t("fx.old", old ? digits(old) : "—")}</span>
       </div>
       <p className="fx-msg">{hint ?? t("fx.msg")}</p>
-      <Keypad onKey={press} />
-      <Button variant="red" wide className="mt-3" disabled={!draft || busy} onClick={() => onSave(draft)}>
+      <Keypad onKey={press} decimal={decimal} />
+      <Button variant="red" wide className="mt-3" disabled={!draft.replace(/\.$/, "") || busy} onClick={() => onSave(draft)}>
         {t("fx.save")}
       </Button>
     </div>
@@ -112,8 +126,32 @@ export function TypeSheet({ row, busy, onPick, onClose }: { row: ReviewRow | nul
   );
 }
 
-/** The deck's "more" sheet for the current line: change its kind, remove or restore it, the summary, the details page. */
-export function LineMenu({ row, open, busy, detailsHref, onType, onRemove, onRestore, onSummary, onClose }: { row: ReviewRow | null; open: boolean; busy: boolean; detailsHref: string; onType: () => void; onRemove: () => void; onRestore: () => void; onSummary: () => void; onClose: () => void }) {
+/** The deck's "more" sheet: change the line's kind, remove or restore it, add a line after it, the page's details, the summary, the details page. */
+export function LineMenu({
+  row,
+  open,
+  busy,
+  detailsHref,
+  onType,
+  onRemove,
+  onRestore,
+  onAdd,
+  onPage,
+  onSummary,
+  onClose,
+}: {
+  row: ReviewRow | null;
+  open: boolean;
+  busy: boolean;
+  detailsHref: string;
+  onType: () => void;
+  onRemove: () => void;
+  onRestore: () => void;
+  onAdd: () => void;
+  onPage: () => void;
+  onSummary: () => void;
+  onClose: () => void;
+}) {
   const { t } = useI18n();
   return (
     <Sheet open={open} onClose={onClose} label={t("dk.menu")}>
@@ -134,6 +172,12 @@ export function LineMenu({ row, open, busy, detailsHref, onType, onRemove, onRes
             {t("dk.restore")}
           </Button>
         ) : null}
+        <Button wide disabled={busy} onClick={onAdd}>
+          {t("dk.add")}
+        </Button>
+        <Button wide disabled={busy} onClick={onPage}>
+          {t("dk.page")}
+        </Button>
         <Button wide onClick={onSummary}>
           {t("dk.summary")}
         </Button>

@@ -21,6 +21,7 @@ describe("numbers follow the locale", () => {
   test("only digits change", () => {
     expect(localDigits("পাতা 3", "bn")).toBe("পাতা ৩");
     expect(localDigits("পাতা 3", "en")).toBe("পাতা 3");
+    expect(localDigits("৪০০ টাকা", "en")).toBe("400 টাকা");
   });
 });
 

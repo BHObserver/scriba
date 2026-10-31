@@ -12,7 +12,6 @@ import type { QuarterTurns } from "@/lib/images/orientation";
 import type { PageState, ReviewRow } from "@/lib/review/state";
 import { ProblemView } from "./problem-view";
 import { type Photo, ReadingView } from "./reading-view";
-import { NothingView } from "./reveal-view";
 import { type ReviewApi, httpReviewApi } from "./review-api";
 import { ReviewSession } from "./review-session";
 
@@ -28,6 +27,8 @@ type Props = {
   review: { runId: string; page: PageState; rows: ReviewRow[] } | null;
   /** The stored run's state when there is no review: being read, or a problem. Null: never read. */
   serverReading: Reading | null;
+  /** When the photo was taken (ISO): the page's day when its written date can't be read. */
+  capturedAt: string;
   /** Orientation to use when the page is read (again). */
   readTurns: QuarterTurns;
   pageNumber: number;
@@ -44,8 +45,8 @@ type Props = {
  * started (on /capture, or "try again" here) comes from the reading queue; otherwise the stored
  * run decides. Opening this screen never sends a page to be read: only a tap does.
  */
-export function CheckScreen({ documentId, photo, review, serverReading, readTurns, pageNumber, pageCount, nextHref, detailsHref, api }: Props) {
-  const { t, digits } = useI18n();
+export function CheckScreen({ documentId, photo, review, serverReading, capturedAt, readTurns, pageNumber, pageCount, nextHref, detailsHref, api }: Props) {
+  const { t } = useI18n();
   const router = useRouter();
   const { readings, read, forget } = useReadingQueue();
   const queued = readings.get(documentId) ?? null;
@@ -82,18 +83,14 @@ export function CheckScreen({ documentId, photo, review, serverReading, readTurn
   const sentPhoto = !review && queued ? { ...photo, turns: queued.turns } : photo;
 
   if (review && (readOnArrival || checkShown)) {
-    if (review.rows.every((r) => r.status === "rejected")) {
-      return <NothingView title={pageTitle} photo={photo} backHref="/" retakeHref="/capture" addHref={detailsHref} />;
-    }
-    // The written date is khata text: never translated, only its digits follow the language.
-    const { accountName, dateText } = review.page.values;
-    const sub = [pageTitle, accountName, dateText && digits(dateText)].filter(Boolean).join(" · ");
     return (
       <ReviewSession
         api={api ?? httpReviewApi(review.runId)}
+        runId={review.runId}
         initial={{ page: review.page, rows: review.rows }}
         photo={photo}
-        sub={sub}
+        pageTitle={pageTitle}
+        capturedAt={capturedAt}
         pageNumber={pageNumber}
         nextHref={nextHref}
         detailsHref={detailsHref}

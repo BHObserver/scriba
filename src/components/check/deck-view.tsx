@@ -3,13 +3,13 @@
 import { MoreHorizontal } from "lucide-react";
 import { animate, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useTransform } from "motion/react";
 import { useState, type ReactNode } from "react";
-import { Button, ButtonRow, Equation, LineStrip, StatusMark, TopBar, type EquationField } from "@/components/kit";
+import { Button, ButtonRow, Equation, StatusMark, TopBar, type EquationField } from "@/components/kit";
 import { cx } from "@/components/ui";
 import { useI18n } from "@/lib/i18n/client";
 import type { ReviewRow } from "@/lib/review/state";
 import type { Finding, ValidationEntry } from "@/lib/validation/engine";
 import { type CardStatus, canAccept, editOf } from "./deck-model";
-import type { FixField } from "./deck-sheets";
+import { type FixField, RowStrip } from "./deck-sheets";
 import type { Photo } from "./reading-view";
 import { lineSentences } from "./sentences";
 
@@ -80,7 +80,7 @@ function LineCard({ row, rows, findings, status, photo, lineNo, onTap }: { row: 
   const sub = status === "done" ? t("dk.seen") : [v.item ? kind : t("dk.line", lineNo), v.customer].filter(Boolean).join(" · ");
   return (
     <>
-      <LineStrip src={photo.src} box={row.candidate?.bbox ?? null} photoWidth={photo.width} photoHeight={photo.height} turns={photo.turns} reading={v.sourceText} />
+      <RowStrip row={row} photo={photo} />
       <div className="dk-item">
         <b>{v.item ?? kind}</b>
         <span className="dk-type">{sub}</span>
@@ -147,7 +147,10 @@ export function DeckView({
   actions: DeckActions;
   onBack: () => void;
 }) {
-  const { t, count } = useI18n();
+  const { t, count, locale } = useI18n();
+  // English labels such as "That's what's written" need two lines side by side at 390 px:
+  // the row stacks, primary on top (DESIGN_SPEC "English").
+  const stack = locale === "en";
   const id = order[index]!;
   const row = rows.find((r) => r.id === id)!;
   const entry = entries.get(id);
@@ -173,7 +176,7 @@ export function DeckView({
     );
     if (v.crossedOut) {
       return (
-        <ButtonRow>
+        <ButtonRow stack={stack}>
           <Button variant="line" disabled={busy} onClick={() => actions.notCrossed(id)}>
             {t("dk.notCrossed")}
           </Button>
@@ -185,7 +188,7 @@ export function DeckView({
     }
     if (v.type === "unknown") {
       return (
-        <ButtonRow>
+        <ButtonRow stack={stack}>
           {fix}
           <Button variant="red" disabled={busy} onClick={() => actions.openType(id)}>
             {t("dk.pickType")}
@@ -195,7 +198,7 @@ export function DeckView({
     }
     if (noAmount) {
       return (
-        <ButtonRow>
+        <ButtonRow stack={stack}>
           <Button variant="line" disabled={busy} onClick={() => actions.remove(id)}>
             {t("dk.remove")}
           </Button>
@@ -206,7 +209,7 @@ export function DeckView({
       );
     }
     return (
-      <ButtonRow>
+      <ButtonRow stack={stack && status === "look"}>
         {fix}
         {status === "look" ? (
           <Button variant="red" disabled={busy} onClick={() => actions.asWritten(id)}>

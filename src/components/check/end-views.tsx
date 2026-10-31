@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronRight, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { OrientedImage } from "@/components/photo-orientation";
 import { Button, ButtonLink, Seal, StatusMark, TopBar, type MarkKind } from "@/components/kit";
@@ -28,7 +29,10 @@ export function SummaryView({
   canConfirm,
   busy,
   notice,
+  pageLabel,
   onOpenLine,
+  onPage,
+  onAdd,
   onConfirm,
   onBack,
 }: {
@@ -42,7 +46,11 @@ export function SummaryView({
   canConfirm: boolean;
   busy: boolean;
   notice: ReactNode;
+  /** The page's kind and written date, which open the page details. */
+  pageLabel: string;
   onOpenLine: (id: string) => void;
+  onPage: () => void;
+  onAdd: () => void;
   onConfirm: () => void;
   onBack: () => void;
 }) {
@@ -67,6 +75,11 @@ export function SummaryView({
             </div>
           </section>
         ) : null}
+        <button type="button" className="card sm-page" onClick={onPage}>
+          <span className="t-label">{t("sm.page")}</span>
+          <span className="sm-page-v">{pageLabel}</span>
+          <ChevronRight size={20} aria-hidden="true" />
+        </button>
         <ul className="card sm-list">
           {rows.map((row) => {
             const status = statusOf(row);
@@ -108,6 +121,10 @@ export function SummaryView({
             );
           })}
         </ul>
+        <Button variant="ghost" wide disabled={busy} onClick={onAdd} className="mt-2">
+          <Plus size={20} aria-hidden="true" />
+          {t("sm.add")}
+        </Button>
       </div>
       <div className="pad sm-acts">
         {notice}

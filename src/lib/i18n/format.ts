@@ -1,4 +1,4 @@
-import { formatTaka, groupSouthAsian, toBanglaDigits } from "@/lib/numerals";
+import { formatTaka, groupSouthAsian, toAsciiDigits, toBanglaDigits } from "@/lib/numerals";
 import type { Locale } from "./locale";
 import { MESSAGES, type MessageKey } from "./messages";
 
@@ -11,9 +11,12 @@ const WEEKDAYS: Record<Locale, readonly string[]> = {
   en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
 };
 
-/** ASCII digits become Bangla digits in bn; English keeps Latin digits. Other text is untouched. */
+/**
+ * Digits in the locale's script: Bangla in bn, Latin in English. Other text is untouched. In
+ * English a khata reading's Bangla digits must become Latin: "৪০০" left as it is reads as "800".
+ */
 export function localDigits(text: string, locale: Locale): string {
-  return locale === "bn" ? toBanglaDigits(text) : text;
+  return locale === "bn" ? toBanglaDigits(text) : toAsciiDigits(text);
 }
 
 /** A whole count with lakh grouping in the locale's digits: 123450 -> "১,২৩,৪৫০" / "1,23,450". */

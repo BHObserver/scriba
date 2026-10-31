@@ -19,7 +19,7 @@ function pageQueue(param: string | string[] | undefined, documentId: string): st
 
 /** Everything the screen needs, read through the user's own client (RLS). Reads only. */
 async function loadCheck(supabase: Supabase, documentId: string, queue: string[]): Promise<ComponentProps<typeof CheckScreen> | null> {
-  const { data: doc } = await supabase.from("ledger_documents").select("id, storage_path, width, height").eq("id", documentId).maybeSingle();
+  const { data: doc } = await supabase.from("ledger_documents").select("id, storage_path, width, height, uploaded_at").eq("id", documentId).maybeSingle();
   if (!doc) return null;
 
   const [{ data: signed }, { data: runRows }] = await Promise.all([
@@ -43,6 +43,7 @@ async function loadCheck(supabase: Supabase, documentId: string, queue: string[]
     },
     review: review && succeeded ? { runId: succeeded.id, page: review.page, rows: review.rows } : null,
     serverReading: review ? null : readingFromRun(latest, Date.now(), getLimitsConfig().stalePendingMs),
+    capturedAt: doc.uploaded_at,
     readTurns: turnsForProcessingMode(latest?.processingMode),
     pageNumber: index + 1,
     pageCount: queue.length,

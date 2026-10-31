@@ -131,6 +131,24 @@
 .sm-amt { font: 700 22px var(--font-ui); font-stretch: 85%; color: var(--blue); font-variant-numeric: tabular-nums; }
 .sm-note { grid-column: 2 / 4; font: 500 14px/1.4 var(--font-ui); color: var(--ink-soft); text-wrap: pretty; }
 .sm-acts { position: sticky; bottom: 0; padding-top: 12px; padding-bottom: 28px; display: grid; gap: 6px; border-top: 1px solid var(--hair); background: var(--paper); }
+.sm-page { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; width: 100%; min-height: 56px; margin-top: 12px; padding: 8px 16px 8px 20px; text-align: left; color: var(--ink); }
+.sm-page-v { font: 600 16px/1.35 var(--font-ui); text-align: right; text-wrap: pretty; }
+
+/* B3b: add a line, page details */
+.ad-kind { min-height: 44px; justify-self: start; color: var(--ink); }
+.ad-texts { display: grid; gap: 12px; }
+.ad-texts.two { grid-template-columns: 1fr 1fr; }
+.ad-nums { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 8px; }
+.ad-nums.one { grid-template-columns: 1fr; }
+.ad-num { display: grid; gap: 2px; align-content: center; min-height: 72px; padding: 6px 12px; border-radius: 16px; background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--hair); text-align: left; }
+.ad-num.on { box-shadow: inset 0 0 0 2px var(--blue); }
+.ad-val { font: 700 30px/1.15 var(--font-ui); font-stretch: 82%; color: var(--blue); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pg-kinds { display: grid; gap: 8px; }
+.pg-kind { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; min-height: 64px; padding: 12px 14px; border-radius: 18px; text-align: left; box-shadow: inset 0 0 0 1.5px var(--hair); color: var(--ink); }
+.pg-kind b { display: block; font: 600 17px/1.3 var(--font-ui); }
+.pg-kind[aria-checked="true"] { box-shadow: inset 0 0 0 2px var(--ink); background: var(--paper); }
+.pg-tick { width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center; box-shadow: inset 0 0 0 1.5px var(--hair); }
+.pg-kind[aria-checked="true"] .pg-tick { background: var(--ink); color: var(--paper-card); box-shadow: none; }
 
 /* ---- the end of a page: the stamp straddles the page's bottom edge, clear of the figures ---- */
 .sl-photo { position: relative; align-self: center; width: min(100% - 96px, 280px); margin-top: 10px; }

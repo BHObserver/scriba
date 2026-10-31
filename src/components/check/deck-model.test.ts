@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   type Acceptances,
   acceptanceFor,
+  addFields,
+  addedLineValues,
   canAccept,
   cardStatus,
   checkReview,
@@ -12,6 +14,8 @@ import {
   linesLeft,
   nextWaiting,
   pageOutcome,
+  restoreAcceptances,
+  storedAcceptances,
   typedText,
 } from "./deck-model";
 import { edited, reviewOf, s04Lines } from "./deck-fixture.test-util";
@@ -149,5 +153,67 @@ describe("edits", () => {
     expect(typedText("800", "৪০০")).toBe("৮০০");
     expect(typedText("800", "400")).toBe("800");
     expect(typedText("800", null)).toBe("৮০০");
+    expect(typedText("1.5", null)).toBe("১.৫");
+    expect(typedText("2.", "৪০০")).toBe("২");
+  });
+});
+
+describe("a line he adds himself", () => {
+  const parts = { type: "credit_sale" as const, name: " করিম ", item: "চাল", qty: "3", rate: "60", amount: "180" };
+
+  test("asks for what its kind needs", () => {
+    expect(addFields("credit_sale")).toEqual({ name: true, item: true, qtyRate: true });
+    expect(addFields("repayment")).toEqual({ name: true, item: false, qtyRate: false });
+    expect(addFields("expense")).toEqual({ name: false, item: true, qtyRate: false });
+    expect(addFields("closing_balance")).toEqual({ name: false, item: false, qtyRate: false });
+  });
+
+  test("keeps only those fields, written like the page", () => {
+    expect(addedLineValues(parts, "৪০০")).toEqual({
+      sourceText: "করিম চাল ৩ × ৬০ = ১৮০",
+      type: "credit_sale",
+      customer: "করিম",
+      item: "চাল",
+      quantityText: "৩",
+      unit: null,
+      rateText: "৬০",
+      amountText: "১৮০",
+      balanceText: null,
+      crossedOut: false,
+    });
+    const paid = addedLineValues({ ...parts, type: "repayment", amount: "500" }, "400");
+    expect(paid).toMatchObject({ sourceText: "করিম 500", customer: "করিম", item: null, quantityText: null, rateText: null, amountText: "500" });
+    expect(addedLineValues({ ...parts, type: "subtotal", qty: "", amount: "" }, null)).toMatchObject({ sourceText: "", amountText: null });
+  });
+
+  test("checks like any other line", () => {
+    const review = reviewOf("cash_sales", [{ type: "cash_sale", item: "চিনি", quantityText: "২", rateText: "৫০", amountText: "১০০" }]);
+    const added = { ...review.rows[0]!, id: "r9", candidate: null, values: addedLineValues({ ...parts, type: "cash_sale", amount: "১৫০" }, null) };
+    const { findings } = checkReview({ ...review, rows: [...review.rows, added] });
+    expect(findings.some((f) => f.status === "fail" && f.entryIds.includes("r9"))).toBe(true);
+  });
+});
+
+describe("acceptances kept across a reload", () => {
+  test("come back only for draft lines at the same version", () => {
+    const review = reviewOf("customer_credit", s04Lines());
+    const { findings, entries } = checkReview(review);
+    const acc: Acceptances = {
+      r1: acceptanceFor(entries.get("r1")!, findings, "asWritten"),
+      r2: acceptanceFor(entries.get("r2")!, findings, "ok"),
+    };
+    const stored = JSON.parse(JSON.stringify(storedAcceptances(review, acc)));
+    expect(restoreAcceptances(review, stored)).toEqual(acc);
+
+    const changed = edited(review, "r2", { amountText: "৯৯" });
+    expect(Object.keys(restoreAcceptances(changed, stored))).toEqual(["r1"]);
+  });
+
+  test("ignore anything malformed", () => {
+    const review = reviewOf("cash_sales", [{ type: "cash_sale", amountText: "১০" }]);
+    expect(restoreAcceptances(review, null)).toEqual({});
+    expect(restoreAcceptances(review, "x")).toEqual({});
+    expect(restoreAcceptances(review, { r1: { version: 1, acceptance: { kind: "yes", acks: { findings: [], uncheckable: false } } } })).toEqual({});
+    expect(restoreAcceptances(review, { r1: { version: 1, acceptance: { kind: "ok", acks: { findings: "x", uncheckable: false } } } })).toEqual({});
   });
 });

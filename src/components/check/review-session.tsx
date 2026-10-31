@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/kit";
 import { useI18n } from "@/lib/i18n/client";
-import type { TransactionType } from "@/lib/ledger/types";
+import type { EntryValues, PageValues, TransactionType } from "@/lib/ledger/types";
 import { ackFingerprint, assessEntry } from "@/lib/review/approval";
 import type { ReviewRow } from "@/lib/review/state";
 import { FIELD_TO_VALUE_KEY } from "@/lib/review/values";
@@ -18,33 +18,75 @@ import {
   linesLeft,
   nextWaiting,
   pageOutcome,
+  restoreAcceptances,
+  storedAcceptances,
   typedText,
 } from "./deck-model";
 import { FixSheet, type FixField, LineMenu, TypeSheet } from "./deck-sheets";
 import { type DeckActions, DeckView } from "./deck-view";
 import { SealedView, SummaryView } from "./end-views";
+import { AddSheet, PageSheet } from "./page-sheets";
 import type { Photo } from "./reading-view";
-import { RevealView } from "./reveal-view";
+import { NothingView, RevealView } from "./reveal-view";
 import type { LinePatch, ReviewApi, SavedLine } from "./review-api";
 import { lineSentences } from "./sentences";
 
-type Stage = "reveal" | "deck" | "summary" | "done";
+type Stage = "nothing" | "reveal" | "deck" | "summary" | "done";
 type Problem = "save" | "conflict" | "some" | "fail";
 
 const without = <T,>(record: Record<string, T>, key: string) => Object.fromEntries(Object.entries(record).filter(([k]) => k !== key)) as Record<string, T>;
+
+/** Acceptances live in this tab's session storage, so a reload or a visit to another screen keeps them. */
+const storeKey = (runId: string) => `scriba.accept.${runId}`;
+function readStored(runId: string): unknown {
+  try {
+    return JSON.parse(sessionStorage.getItem(storeKey(runId)) ?? "null");
+  } catch {
+    return null;
+  }
+}
+function writeStored(runId: string, value: object | null) {
+  try {
+    if (value) sessionStorage.setItem(storeKey(runId), JSON.stringify(value));
+    else sessionStorage.removeItem(storeKey(runId));
+  } catch {
+    // Storage full or blocked: acceptances then last as long as the page, as before.
+  }
+}
 
 /**
  * One page from the reveal to the khata: the reveal, the check deck, the summary and the seal
  * over one review state. Every line change is saved at once through `api` (versioned); the
  * confirmation sends only accepted lines and the server re-checks everything.
  */
-export function ReviewSession({ api, initial, photo, sub, pageNumber, nextHref, detailsHref }: { api: ReviewApi; initial: Review; photo: Photo; sub: string; pageNumber: number; nextHref: string | null; detailsHref: string }) {
+export function ReviewSession({
+  api,
+  runId,
+  initial,
+  photo,
+  pageTitle,
+  capturedAt,
+  pageNumber,
+  nextHref,
+  detailsHref,
+}: {
+  api: ReviewApi;
+  runId: string;
+  initial: Review;
+  photo: Photo;
+  pageTitle: string;
+  /** When the photo was taken: the page's day when its written date can't be read. */
+  capturedAt: string;
+  pageNumber: number;
+  nextHref: string | null;
+  detailsHref: string;
+}) {
   const i18n = useI18n();
-  const { t } = i18n;
+  const { t, digits } = i18n;
   const [review, setReview] = useState(initial);
   const [acceptances, setAcceptances] = useState<Acceptances>({});
   const alreadyIn = initial.rows.some((r) => r.status === "confirmed") && initial.rows.every((r) => r.status !== "draft");
-  const [stage, setStage] = useState<Stage>(alreadyIn ? "done" : "reveal");
+  const [stage, setStage] = useState<Stage>(alreadyIn ? "done" : initial.rows.every((r) => r.status === "rejected") ? "nothing" : "reveal");
   const [landed, setLanded] = useState(false);
   const [order, setOrder] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
@@ -53,17 +95,30 @@ export function ReviewSession({ api, initial, photo, sub, pageNumber, nextHref, 
   const [fix, setFix] = useState<{ id: string; field: FixField } | null>(null);
   const [typeFor, setTypeFor] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
+  /** Where a new line goes: after this row, or null for the top of the page. */
+  const [adding, setAdding] = useState<{ afterId: string | null } | null>(null);
+  const [pageOpen, setPageOpen] = useState(false);
   const started = useRef(false);
 
   const { findings, entries } = useMemo(() => checkReview(review), [review]);
   const rowById = (id: string) => review.rows.find((r) => r.id === id)!;
-  const statusesFor = (next: Review, acc: Acceptances) => {
+  const statusesFor = (next: Review, acc: Acceptances, ids: readonly string[] = order) => {
     const checked = checkReview(next);
-    return order.map((id) => cardStatus(next.rows.find((r) => r.id === id)!, checked.entries.get(id), checked.findings, acc[id]));
+    return ids.map((id) => cardStatus(next.rows.find((r) => r.id === id)!, checked.entries.get(id), checked.findings, acc[id]));
   };
   const statuses = statusesFor(review, acceptances);
 
+  // Written only once the deck has started, so the empty set before that never overwrites what was kept.
+  useEffect(() => {
+    if (started.current) writeStored(runId, storedAcceptances(review, acceptances));
+  }, [runId, review, acceptances]);
+
   const withLine = (id: string, line: SavedLine): Review => ({ ...review, rows: review.rows.map((r) => (r.id === id ? { ...r, ...line } : r)) });
+
+  function begin() {
+    if (!started.current && !review.page.reviewStartedAt) api.markStarted();
+    started.current = true;
+  }
 
   async function save(row: ReviewRow, patch: LinePatch): Promise<Review | null> {
     setBusy(true);
@@ -85,13 +140,17 @@ export function ReviewSession({ api, initial, photo, sub, pageNumber, nextHref, 
     else setIndex(n);
   }
 
+  /** Into the deck from the reveal, with whatever he had already accepted on this page in this tab. */
   function start() {
-    if (!started.current && !review.page.reviewStartedAt) api.markStarted();
-    started.current = true;
+    const fresh = !started.current;
+    begin();
+    const acc = fresh ? { ...restoreAcceptances(review, readStored(runId)), ...acceptances } : acceptances;
+    setAcceptances(acc);
     const o = deckOrder(review);
+    const first = nextWaiting(statusesFor(review, acc, o), -1);
     setOrder(o);
-    setIndex(0);
-    setStage(o.length > 0 ? "deck" : "summary");
+    setIndex(Math.max(first, 0));
+    setStage(o.length > 0 && first >= 0 ? "deck" : "summary");
   }
 
   /** Every change to a line takes back its acceptance: it has to be looked at again. */
@@ -150,6 +209,41 @@ export function ReviewSession({ api, initial, photo, sub, pageNumber, nextHref, 
     setTypeFor(null);
   }
 
+  function openAdd(afterId: string | null) {
+    setProblem(null);
+    setAdding({ afterId });
+  }
+
+  /** A new line goes into the page where he asked, and its card comes next in the deck. */
+  async function addLine(values: EntryValues) {
+    if (!adding) return;
+    setBusy(true);
+    setProblem(null);
+    const res = await api.addLine(adding.afterId, values);
+    setBusy(false);
+    if (!res.ok) return setProblem("save");
+    begin();
+    const rows = [...review.rows];
+    rows.splice(adding.afterId ? rows.findIndex((r) => r.id === adding.afterId) + 1 : 0, 0, res.row);
+    setReview({ ...review, rows });
+    const at = stage === "deck" ? index + 1 : order.length;
+    setOrder([...order.slice(0, at), res.row.id, ...order.slice(at)]);
+    setIndex(at);
+    setStage("deck");
+    setAdding(null);
+  }
+
+  /** Page details change which checks run; acceptances stand only where the problems shown are unchanged. */
+  async function savePage(values: PageValues) {
+    setBusy(true);
+    setProblem(null);
+    const res = await api.savePage(review.page, values);
+    setBusy(false);
+    if (!res.ok) return setProblem(res.reason === "conflict" ? "conflict" : "save");
+    setReview({ ...review, page: res.page });
+    setPageOpen(false);
+  }
+
   async function confirm() {
     const body = confirmEntries(review, acceptances);
     setBusy(true);
@@ -182,46 +276,56 @@ export function ReviewSession({ api, initial, photo, sub, pageNumber, nextHref, 
     </div>
   ) : null;
 
-  const accountName = review.page.values.accountName;
+  // The written date is khata text: never translated, only its digits follow the language.
+  const { accountName, dateText, ledgerType } = review.page.values;
+  const sub = [pageTitle, accountName, dateText && digits(dateText)].filter(Boolean).join(" · ");
   const current = stage === "deck" ? rowById(order[index]!) : null;
+  const lastRow = review.rows.at(-1) ?? null;
+  const addAfter = adding?.afterId ? review.rows.findIndex((r) => r.id === adding.afterId) + 1 : 0;
+  // Numbers he types are written like the page's own: Bangla digits unless the page uses Latin ones.
+  const sample = review.rows.map((r) => r.values.amountText).find((a) => a != null) ?? null;
 
-  if (stage === "reveal") {
-    return <RevealView photo={photo} rows={review.rows} page={review.page} sub={sub} backHref="/" onStart={start} nextHref={nextHref} nextPage={nextHref ? pageNumber + 1 : undefined} />;
-  }
-  if (stage === "done") {
-    return <SealedView photo={photo} rows={review.rows} findings={findings} outcome={pageOutcome(review, findings)} land={landed} pageNumber={pageNumber} accountName={accountName} sub={sub} nextHref={nextHref} />;
-  }
-  if (stage === "summary") {
-    const statusOf = (row: ReviewRow) => cardStatus(row, entries.get(row.id), findings, acceptances[row.id]);
+  const screen = (() => {
+    if (stage === "nothing") {
+      return <NothingView title={pageTitle} photo={photo} backHref="/" retakeHref="/capture" onAdd={() => openAdd(lastRow?.id ?? null)} />;
+    }
+    if (stage === "reveal") {
+      return <RevealView photo={photo} rows={review.rows} page={review.page} sub={sub} backHref="/" onStart={start} nextHref={nextHref} nextPage={nextHref ? pageNumber + 1 : undefined} />;
+    }
+    if (stage === "done") {
+      return <SealedView photo={photo} rows={review.rows} findings={findings} outcome={pageOutcome(review, findings)} land={landed} pageNumber={pageNumber} accountName={accountName} sub={sub} nextHref={nextHref} />;
+    }
+    if (stage === "summary") {
+      const statusOf = (row: ReviewRow) => cardStatus(row, entries.get(row.id), findings, acceptances[row.id]);
+      return (
+        <SummaryView
+          rows={review.rows.filter((r) => r.status !== "confirmed")}
+          findings={findings}
+          statusOf={statusOf}
+          asWritten={(row) => acceptances[row.id]?.kind === "asWritten" && statusOf(row) === "done"}
+          accountName={accountName}
+          sub={sub}
+          left={linesLeft(review, acceptances)}
+          canConfirm={confirmEntries(review, acceptances).length > 0}
+          busy={busy}
+          notice={notice}
+          pageLabel={[t(`pg.${ledgerType}`), dateText && digits(dateText)].filter(Boolean).join(" · ")}
+          onOpenLine={(id) => {
+            const known = order.indexOf(id);
+            if (known < 0) {
+              setOrder([...order, id]);
+              setIndex(order.length);
+            } else setIndex(known);
+            setStage("deck");
+          }}
+          onPage={() => setPageOpen(true)}
+          onAdd={() => openAdd(lastRow?.id ?? null)}
+          onConfirm={confirm}
+          onBack={() => (order.length > 0 ? setStage("deck") : setStage("reveal"))}
+        />
+      );
+    }
     return (
-      <SummaryView
-        rows={review.rows.filter((r) => r.status !== "confirmed")}
-        findings={findings}
-        statusOf={statusOf}
-        asWritten={(row) => acceptances[row.id]?.kind === "asWritten" && statusOf(row) === "done"}
-        accountName={accountName}
-        sub={sub}
-        left={linesLeft(review, acceptances)}
-        canConfirm={confirmEntries(review, acceptances).length > 0}
-        busy={busy}
-        notice={notice}
-        onOpenLine={(id) => {
-          const known = order.indexOf(id);
-          if (known < 0) {
-            setOrder([...order, id]);
-            setIndex(order.length);
-          } else setIndex(known);
-          setStage("deck");
-        }}
-        onConfirm={confirm}
-        onBack={() => (order.length > 0 ? setStage("deck") : setStage("reveal"))}
-      />
-    );
-  }
-
-  const fixRow = fix ? rowById(fix.id) : null;
-  return (
-    <>
       <DeckView
         order={order}
         index={index}
@@ -237,6 +341,18 @@ export function ReviewSession({ api, initial, photo, sub, pageNumber, nextHref, 
         actions={actions}
         onBack={() => setStage("reveal")}
       />
+    );
+  })();
+
+  // Done writing to storage once the page is in the khata.
+  useEffect(() => {
+    if (stage === "done" && landed) writeStored(runId, null);
+  }, [stage, landed, runId]);
+
+  const fixRow = fix ? rowById(fix.id) : null;
+  return (
+    <>
+      {screen}
       <FixSheet target={fixRow && fix ? { row: fixRow, field: fix.field } : null} photo={photo} hint={fixRow ? lineSentences(i18n, fixRow, review.rows, findings).hint : null} busy={busy} onSave={saveFix} onClose={() => setFix(null)} />
       <TypeSheet row={typeFor ? rowById(typeFor) : null} busy={busy} onPick={pickType} onClose={() => setTypeFor(null)} />
       <LineMenu
@@ -256,12 +372,31 @@ export function ReviewSession({ api, initial, photo, sub, pageNumber, nextHref, 
           setMenu(false);
           if (current) actions.restore(current.id);
         }}
+        onAdd={() => {
+          setMenu(false);
+          openAdd(current?.id ?? lastRow?.id ?? null);
+        }}
+        onPage={() => {
+          setMenu(false);
+          setProblem(null);
+          setPageOpen(true);
+        }}
         onSummary={() => {
           setMenu(false);
           setStage("summary");
         }}
         onClose={() => setMenu(false)}
       />
+      <AddSheet
+        open={adding != null}
+        position={addAfter > 0 ? t("ad.after", addAfter) : t("ad.first")}
+        sample={sample}
+        busy={busy}
+        notice={adding ? notice : null}
+        onSave={addLine}
+        onClose={() => setAdding(null)}
+      />
+      <PageSheet open={pageOpen} page={review.page} capturedAt={capturedAt} busy={busy} notice={pageOpen ? notice : null} onSave={savePage} onClose={() => setPageOpen(false)} />
     </>
   );
 }
