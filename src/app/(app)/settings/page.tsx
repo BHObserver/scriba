@@ -1,7 +1,6 @@
 import { Card, CardHeader, Notice, Pill } from "@/components/ui";
 import { configurationStatus, getLimitsConfig, getMetaConfig } from "@/lib/config";
-import { PROMPT_VERSION } from "@/lib/extraction/prompt";
-import { SCHEMA_VERSION } from "@/lib/extraction/schema";
+import { getExtractionProfile } from "@/lib/extraction/prompt";
 import { METRICS_VERSION } from "@/lib/evaluation/metrics";
 import { PRICING_SOURCE, isContributorModel } from "@/lib/pricing";
 import { VALIDATOR_VERSION } from "@/lib/validation/engine";
@@ -43,7 +42,7 @@ export default function SettingsPage() {
           <dt className="text-ink-soft">Upload limit</dt><dd>{(limits.maxUploadBytes / 1024 / 1024).toFixed(1)} MB</dd>
           <dt className="text-ink-soft">Paid requests per user</dt><dd>{limits.extractionsPerHour}/hour, {limits.extractionsPerDay}/day</dd>
           <dt className="text-ink-soft">Extraction allow-list</dt><dd>{limits.extractionAllowedEmails.length > 0 ? `${limits.extractionAllowedEmails.length} account(s)` : "any signed-in user"}</dd>
-          <dt className="text-ink-soft">Versions</dt><dd className="text-xs">{PROMPT_VERSION} · {SCHEMA_VERSION} · {VALIDATOR_VERSION} · {METRICS_VERSION}</dd>
+          <dt className="text-ink-soft">Versions</dt><dd className="text-xs">{getExtractionProfile().promptVersion} · {getExtractionProfile().schemaVersion} · {VALIDATOR_VERSION} · {METRICS_VERSION}</dd>
           <dt className="text-ink-soft">Pricing source</dt><dd className="text-xs"><a className="text-accent hover:underline" href={PRICING_SOURCE.url}>{PRICING_SOURCE.url}</a> ({PRICING_SOURCE.retrieved})</dd>
         </dl>
       </Card>

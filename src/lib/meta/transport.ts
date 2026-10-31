@@ -13,8 +13,7 @@
 import OpenAI from "openai";
 import type { MetaConfig } from "@/lib/config";
 import type { TokenUsage } from "@/lib/pricing";
-import { EXTRACTION_INSTRUCTIONS, EXTRACTION_USER_TEXT } from "@/lib/extraction/prompt";
-import { EXTRACTION_JSON_SCHEMA, SCHEMA_NAME } from "@/lib/extraction/schema";
+import { EXTRACTION_USER_TEXT, getExtractionProfile } from "@/lib/extraction/prompt";
 import type { ModelResponseSummary } from "@/lib/extraction/parse";
 
 export type ModelCallInput = { imageBytes: Uint8Array; mimeType: string };
@@ -64,9 +63,10 @@ export function toDataUrl(bytes: Uint8Array, mimeType: string): string {
 
 /** The exact request body sent to POST /v1/responses (minus the image bytes in tests). */
 export function buildExtractionRequest(config: Pick<MetaConfig, "modelId" | "reasoningEffort" | "maxOutputTokens">, input: ModelCallInput) {
+  const profile = getExtractionProfile();
   return {
     model: config.modelId,
-    instructions: EXTRACTION_INSTRUCTIONS,
+    instructions: profile.instructions,
     input: [
       {
         role: "user" as const,
@@ -79,9 +79,9 @@ export function buildExtractionRequest(config: Pick<MetaConfig, "modelId" | "rea
     text: {
       format: {
         type: "json_schema" as const,
-        name: SCHEMA_NAME,
+        name: profile.schemaName,
         strict: true,
-        schema: EXTRACTION_JSON_SCHEMA as unknown as Record<string, unknown>,
+        schema: profile.jsonSchema,
       },
     },
     reasoning: { effort: config.reasoningEffort },

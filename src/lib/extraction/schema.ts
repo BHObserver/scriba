@@ -11,10 +11,18 @@
  * all normalization and arithmetic happen in TypeScript.
  */
 import { z } from "zod";
-import { LEDGER_TYPES, REVIEWABLE_FIELDS, TRANSACTION_TYPES } from "@/lib/ledger/types";
+import { LEDGER_TYPES, REVIEWABLE_FIELDS, TRANSACTION_TYPES, type TransactionType } from "@/lib/ledger/types";
 
-export const SCHEMA_VERSION = "scriba-extraction-1";
-export const SCHEMA_NAME = "scriba_ledger_extraction_v1";
+/** The current schema. Version 2 adds the money-out transaction types. */
+export const SCHEMA_VERSION = "scriba-extraction-2";
+export const SCHEMA_NAME = "scriba_ledger_extraction_v2";
+
+/** Version 1, kept so prompt 3 can still be run exactly as it was measured. */
+export const SCHEMA_V1_VERSION = "scriba-extraction-1";
+export const SCHEMA_V1_NAME = "scriba_ledger_extraction_v1";
+const SCHEMA_V1_TRANSACTION_TYPES = TRANSACTION_TYPES.filter(
+  (t) => !["purchase", "credit_purchase", "supplier_payment", "expense"].includes(t),
+);
 
 export const LEGIBILITY = ["clear", "partly_unclear", "mostly_unclear"] as const;
 
@@ -40,65 +48,70 @@ export const ENTRY_FIELDS = [
 
 export const PAGE_FIELDS = ["date_text", "ledger_type", "account_name", "legibility"] as const;
 
-export const EXTRACTION_JSON_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["page", "entries", "warnings"],
-  properties: {
-    page: {
-      type: "object",
-      additionalProperties: false,
-      required: [...PAGE_FIELDS],
-      properties: {
-        date_text: nullableString,
-        ledger_type: { type: "string", enum: [...LEDGER_TYPES] },
-        account_name: nullableString,
-        legibility: { type: "string", enum: [...LEGIBILITY] },
-      },
-    },
-    entries: {
-      type: "array",
-      items: {
+function extractionJsonSchema(transactionTypes: readonly TransactionType[]) {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["page", "entries", "warnings"],
+    properties: {
+      page: {
         type: "object",
         additionalProperties: false,
-        required: [...ENTRY_FIELDS],
+        required: [...PAGE_FIELDS],
         properties: {
-          id: { type: "string" },
-          line: { type: "integer" },
-          text: { type: "string" },
-          type: { type: "string", enum: [...TRANSACTION_TYPES] },
-          customer: nullableString,
-          item: nullableString,
-          qty: nullableString,
-          unit: nullableString,
-          rate: nullableString,
-          amount: nullableString,
-          balance: nullableString,
-          crossed_out: { type: "boolean" },
-          review: { type: "array", items: { type: "string", enum: [...REVIEWABLE_FIELDS] } },
-          note: nullableString,
-          box: {
-            anyOf: [
-              {
-                type: "object",
-                additionalProperties: false,
-                required: ["x_min", "y_min", "x_max", "y_max"],
-                properties: {
-                  x_min: { type: "integer" },
-                  y_min: { type: "integer" },
-                  x_max: { type: "integer" },
-                  y_max: { type: "integer" },
+          date_text: nullableString,
+          ledger_type: { type: "string", enum: [...LEDGER_TYPES] },
+          account_name: nullableString,
+          legibility: { type: "string", enum: [...LEGIBILITY] },
+        },
+      },
+      entries: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [...ENTRY_FIELDS],
+          properties: {
+            id: { type: "string" },
+            line: { type: "integer" },
+            text: { type: "string" },
+            type: { type: "string", enum: [...transactionTypes] },
+            customer: nullableString,
+            item: nullableString,
+            qty: nullableString,
+            unit: nullableString,
+            rate: nullableString,
+            amount: nullableString,
+            balance: nullableString,
+            crossed_out: { type: "boolean" },
+            review: { type: "array", items: { type: "string", enum: [...REVIEWABLE_FIELDS] } },
+            note: nullableString,
+            box: {
+              anyOf: [
+                {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["x_min", "y_min", "x_max", "y_max"],
+                  properties: {
+                    x_min: { type: "integer" },
+                    y_min: { type: "integer" },
+                    x_max: { type: "integer" },
+                    y_max: { type: "integer" },
+                  },
                 },
-              },
-              { type: "null" },
-            ],
+                { type: "null" },
+              ],
+            },
           },
         },
       },
+      warnings: { type: "array", items: { type: "string" } },
     },
-    warnings: { type: "array", items: { type: "string" } },
-  },
-} as const;
+  } as const;
+}
+
+export const EXTRACTION_JSON_SCHEMA = extractionJsonSchema(TRANSACTION_TYPES);
+export const EXTRACTION_JSON_SCHEMA_V1 = extractionJsonSchema(SCHEMA_V1_TRANSACTION_TYPES);
 
 // Local validation. Bounds keep a malformed or runaway response from being stored as data.
 const text = (max: number) => z.string().max(max);

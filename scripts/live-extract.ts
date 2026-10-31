@@ -14,8 +14,7 @@ import { basename, join } from "node:path";
 import { getMetaConfig } from "@/lib/config";
 import { sha256Hex } from "@/lib/extraction/cache-key";
 import { parseModelResponse } from "@/lib/extraction/parse";
-import { PROMPT_VERSION } from "@/lib/extraction/prompt";
-import { SCHEMA_VERSION } from "@/lib/extraction/schema";
+import { getExtractionProfile } from "@/lib/extraction/prompt";
 import { inspectImage } from "@/lib/images/inspect";
 import { processingModeForTurns } from "@/lib/images/orientation";
 import { prepareImageForModel } from "@/lib/images/rotate";
@@ -44,7 +43,7 @@ const config = getMetaConfig();
 const sha = sha256Hex(bytes);
 console.log(`Image   ${basename(path)}  ${inspection.width}x${inspection.height}  ${bytes.byteLength} bytes  sha256 ${sha.slice(0, 16)}…`);
 console.log(`Model   ${config.modelId}${isContributorModel(config.modelId) ? "  (CONTRIBUTOR MODE: may be used for training)" : "  (standard mode)"}`);
-console.log(`Config  effort=${config.reasoningEffort}  max_output_tokens=${config.maxOutputTokens}  ${PROMPT_VERSION}  ${SCHEMA_VERSION}  ${processingMode}`);
+console.log(`Config  effort=${config.reasoningEffort}  max_output_tokens=${config.maxOutputTokens}  ${getExtractionProfile().promptVersion}  ${getExtractionProfile().schemaVersion}  ${processingMode}`);
 if (inspection.hasGpsMetadata && processingMode === "baseline_original") console.log("Note    the photo carries GPS metadata and is sent unchanged.");
 const prepared = await prepareImageForModel(bytes, inspection.mimeType, processingMode);
 
@@ -65,7 +64,7 @@ const outDir = join("private-test-data", "responses");
 mkdirSync(outDir, { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const outFile = join(outDir, `${basename(path)}.${stamp}.private.json`);
-writeFileSync(outFile, JSON.stringify({ sha256: sha, model: config.modelId, promptVersion: PROMPT_VERSION, schemaVersion: SCHEMA_VERSION, processingMode, result }, null, 2));
+writeFileSync(outFile, JSON.stringify({ sha256: sha, model: config.modelId, promptVersion: getExtractionProfile().promptVersion, schemaVersion: getExtractionProfile().schemaVersion, processingMode, result }, null, 2));
 
 if (!result.ok) {
   console.error(`\nFAILED  ${result.category} (HTTP ${result.httpStatus ?? "-"})  ${result.message}`);

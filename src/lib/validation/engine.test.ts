@@ -167,6 +167,46 @@ describe("Rule C: written totals", () => {
     expect(f[0]!.entryIds).toEqual(["e3", "e4", "e5"]);
   });
 
+  test("a total of money-out lines adds purchases, supplier payments and expenses", () => {
+    const f = byRule(
+      validateLedger(
+        ledger("mixed", [
+          { type: "cash_sale", amountText: "৯০০" },
+          { type: "purchase", quantityText: "২", unit: "বস্তা", rateText: "১,৫০০", amountText: "৩,০০০" },
+          { type: "expense", sourceText: "দোকান ভাড়া", amountText: "২,০০০" },
+          { type: "supplier_payment", amountText: "৫০০" },
+          { type: "subtotal", sourceText: "মোট খরচ", amountText: "৫,৫০০" },
+        ]),
+      ),
+      "written_total",
+    );
+    expect(f[0]!.status).toBe("pass");
+    expect(f[0]!.entryIds).toEqual(["e2", "e3", "e4", "e5"]);
+  });
+
+  test("a total never mixes sales with money out", () => {
+    const findings = validateLedger(
+      ledger("mixed", [
+        { type: "cash_sale", amountText: "100" },
+        { type: "expense", amountText: "40" },
+        { type: "subtotal", amountText: "140" },
+      ]),
+    );
+    const [f] = byRule(findings, "written_total");
+    expect(f!.status).toBe("fail");
+    expect(f!.expected).toBe(4000);
+    expect(f!.entryIds).toEqual(["e2", "e3"]);
+  });
+
+  test("money-out lines take part in quantity × rate", () => {
+    const [f] = byRule(
+      validateLedger(ledger("mixed", [{ type: "credit_purchase", quantityText: "৫", rateText: "৬০", amountText: "৩৫০" }])),
+      "qty_x_rate",
+    );
+    expect(f!.status).toBe("fail");
+    expect(f!.expected).toBe(30000);
+  });
+
   test("an unclassified line above a total makes it unverifiable", () => {
     const f = byRule(
       validateLedger(

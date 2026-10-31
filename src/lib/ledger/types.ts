@@ -4,6 +4,10 @@ export const TRANSACTION_TYPES = [
   "credit_sale",
   "cash_sale",
   "repayment",
+  "purchase",
+  "credit_purchase",
+  "supplier_payment",
+  "expense",
   "opening_balance",
   "closing_balance",
   "subtotal",
@@ -55,6 +59,17 @@ export type PageValues = {
 };
 
 export const SALE_TYPES: ReadonlySet<TransactionType> = new Set(["credit_sale", "cash_sale"]);
+/**
+ * Money going out of the shop: stock bought for cash or on credit, payments to
+ * suppliers, and shop costs. Money in is cash_sale + repayment; a receivable is
+ * credit_sale - repayment; a payable is credit_purchase - supplier_payment.
+ */
+export const MONEY_OUT_TYPES: ReadonlySet<TransactionType> = new Set([
+  "purchase",
+  "credit_purchase",
+  "supplier_payment",
+  "expense",
+]);
 export const MARKER_TYPES: ReadonlySet<TransactionType> = new Set([
   "opening_balance",
   "closing_balance",
@@ -65,6 +80,10 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
   credit_sale: "Credit sale",
   cash_sale: "Cash sale",
   repayment: "Repayment",
+  purchase: "Stock bought (cash)",
+  credit_purchase: "Stock bought on credit",
+  supplier_payment: "Paid to supplier",
+  expense: "Expense",
   opening_balance: "Opening balance",
   closing_balance: "Closing balance",
   subtotal: "Written total",

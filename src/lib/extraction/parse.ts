@@ -8,8 +8,8 @@
  */
 import type { BoundingBox, EntryValues, LedgerType, ReviewableField } from "@/lib/ledger/types";
 import { normalizeDate, parseMoney, parseQuantity, parseRate } from "@/lib/numerals";
-import { PROMPT_VERSION } from "./prompt";
-import { type ModelEntry, type ModelOutput, SCHEMA_VERSION, modelOutputSchema } from "./schema";
+import { getExtractionProfile } from "./prompt";
+import { type ModelEntry, type ModelOutput, modelOutputSchema } from "./schema";
 
 export type NormalizedEntry = {
   candidateId: string;
@@ -148,9 +148,10 @@ export function normalizeModelOutput(output: ModelOutput): NormalizedExtraction 
   };
 
   const dateText = blankToNull(output.page.date_text);
+  const { schemaVersion, promptVersion } = getExtractionProfile();
   return {
-    schemaVersion: SCHEMA_VERSION,
-    promptVersion: PROMPT_VERSION,
+    schemaVersion,
+    promptVersion,
     page: {
       dateText,
       dateIso: normalizeDate(dateText),

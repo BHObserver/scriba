@@ -15,8 +15,7 @@
  */
 import { sha256Hex, extractionCacheKey, type ProcessingMode } from "./cache-key";
 import { parseModelResponse, type NormalizedExtraction, type ParseFailureKind } from "./parse";
-import { PROMPT_VERSION } from "./prompt";
-import { SCHEMA_VERSION } from "./schema";
+import { getExtractionProfile } from "./prompt";
 import type { PreparedImage } from "@/lib/images/rotate";
 import type { MetaErrorCategory, ModelCaller } from "@/lib/meta/transport";
 import { estimateCostUsd, type TokenUsage } from "@/lib/pricing";
@@ -139,6 +138,7 @@ export async function analyzeDocument(
 ): Promise<AnalyzeOutcome> {
   const { repo, callModel, now, prepareImage = originalOnly } = deps;
   const processingMode = request.processingMode ?? "baseline_original";
+  const { promptVersion, schemaVersion } = getExtractionProfile();
 
   const doc = await repo.getDocument(request.documentId);
   if (!doc) return { kind: "not_found" };
@@ -147,8 +147,8 @@ export async function analyzeDocument(
     ownerId: doc.ownerId,
     imageSha256: doc.sha256,
     modelId: settings.modelId,
-    promptVersion: PROMPT_VERSION,
-    schemaVersion: SCHEMA_VERSION,
+    promptVersion,
+    schemaVersion,
     processingMode,
   });
 
@@ -192,8 +192,8 @@ export async function analyzeDocument(
     requestId: request.requestId,
     cacheKey,
     modelId: settings.modelId,
-    promptVersion: PROMPT_VERSION,
-    schemaVersion: SCHEMA_VERSION,
+    promptVersion,
+    schemaVersion,
     processingMode,
     isFreshRequest: request.mode === "fresh",
   });

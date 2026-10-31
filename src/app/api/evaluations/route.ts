@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getMetaConfig } from "@/lib/config";
 import type { NormalizedExtraction } from "@/lib/extraction/parse";
-import { PROMPT_VERSION } from "@/lib/extraction/prompt";
-import { SCHEMA_VERSION } from "@/lib/extraction/schema";
+import { getExtractionProfile } from "@/lib/extraction/prompt";
 import { groundTruthSchema } from "@/lib/evaluation/ground-truth";
 import { METRICS_VERSION, evaluateSample, summarize } from "@/lib/evaluation/metrics";
 import { apiUser, jsonError } from "@/lib/server/auth";
@@ -40,8 +39,8 @@ export async function POST(request: Request) {
       .select("id, document_id, processing_mode, result, elapsed_ms, completed_at")
       .eq("status", "succeeded")
       .eq("model_id", modelId)
-      .eq("prompt_version", PROMPT_VERSION)
-      .eq("schema_version", SCHEMA_VERSION)
+      .eq("prompt_version", getExtractionProfile().promptVersion)
+      .eq("schema_version", getExtractionProfile().schemaVersion)
       .order("completed_at", { ascending: false }),
     supabase.from("page_reviews").select("run_id, review_started_at"),
     supabase.from("confirmed_records").select("run_id, confirmed_at"),
@@ -105,8 +104,8 @@ export async function POST(request: Request) {
       label: "exploratory",
       dataset_label: body.data.datasetLabel,
       model_id: modelId,
-      prompt_version: PROMPT_VERSION,
-      schema_version: SCHEMA_VERSION,
+      prompt_version: getExtractionProfile().promptVersion,
+      schema_version: getExtractionProfile().schemaVersion,
       processing_mode: processingMode,
       validator_version: VALIDATOR_VERSION,
       metrics_version: METRICS_VERSION,

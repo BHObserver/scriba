@@ -11,6 +11,7 @@ import {
   type PageValues,
   type ReviewableField,
   type TransactionType,
+  MONEY_OUT_TYPES,
   SALE_TYPES,
 } from "@/lib/ledger/types";
 import {
@@ -22,7 +23,7 @@ import {
   parseRate,
 } from "@/lib/numerals";
 
-export const VALIDATOR_VERSION = "scriba-validator-1";
+export const VALIDATOR_VERSION = "scriba-validator-2";
 
 export const RULE_IDS = [
   "qty_x_rate",
@@ -118,6 +119,13 @@ function finding(f: Omit<Finding, "ruleVersion" | "key"> & { keySuffix?: string 
   const { keySuffix, ...rest } = f;
   const key = `${f.ruleId}:${f.entryIds.join(",")}${keySuffix ? `:${keySuffix}` : ""}`;
   return { ...rest, key, ruleVersion: RULE_VERSION };
+}
+
+/** Which itemized lines a written subtotal may add up; null for every other type. */
+function itemizedFamily(type: TransactionType): "sale" | "money_out" | null {
+  if (SALE_TYPES.has(type)) return "sale";
+  if (MONEY_OUT_TYPES.has(type)) return "money_out";
+  return null;
 }
 
 /** Sign of a transaction in a conventional customer-credit account, or null if unknown. */
@@ -294,11 +302,14 @@ function ruleWrittenTotals(active: Derived[]): Finding[] {
     const base = { ruleId: "written_total" as const };
     const observed = valueOf(total.numbers.amount);
 
+    // The block is the run of itemized lines of one family directly above the
+    // total: sales (cash or credit), or money out (purchases, supplier payments, expenses).
     const block: Derived[] = [];
     let boundary: Derived | null = null;
+    const blockFamily = index > 0 ? itemizedFamily(active[index - 1]!.values.type) : null;
     for (let i = index - 1; i >= 0; i--) {
       const candidate = active[i]!;
-      if (SALE_TYPES.has(candidate.values.type)) block.unshift(candidate);
+      if (blockFamily != null && itemizedFamily(candidate.values.type) === blockFamily) block.unshift(candidate);
       else {
         boundary = candidate;
         break;
@@ -343,7 +354,7 @@ function ruleWrittenTotals(active: Derived[]): Finding[] {
           severity: "info",
           expected: null,
           observed,
-          message: "No sale lines directly above this total, so there is nothing to add up.",
+          message: "No sale or money-out lines directly above this total, so there is nothing to add up.",
         }),
       );
       return;

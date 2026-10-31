@@ -293,3 +293,118 @@ describe("private storage policies", () => {
     expect(bucket).toMatchObject({ public: false, file_size_limit: 8388608 });
   });
 });
+
+describe("data model v2: parties, shop profile, day closes, business date", () => {
+  const RUN_A = "10000000-0000-4000-8000-0000000000aa";
+  const confirm = (owner: string, records: unknown[]) =>
+    rows(`select public.scriba_confirm_entries($1, $2, gen_random_uuid(), 'v2', $3, '[]') as n`, [owner, RUN_A, JSON.stringify(records)]);
+
+  test("confirmation creates a party once and links records to it, following merges", async () => {
+    const drafts = await as("authenticated", A, () => rows(`select id, version, line_order from public.entry_reviews where status = 'draft' order by line_order`));
+    expect(drafts.map((d) => Number(d.line_order))).toEqual([2, 2.5]);
+    const [sale, payment] = drafts;
+
+    await as("service_role", null, async () => {
+      // A supplier spelled two ways, already merged by the shopkeeper.
+      const [target] = await rows(`insert into public.parties (owner_id, kind, display_name, normalized_key) values ($1, 'supplier', 'রহমান মহাজন', 'রহমান মহাজন') returning id`, [A]);
+      await db.query(`insert into public.parties (owner_id, kind, display_name, normalized_key, merged_into) values ($1, 'supplier', 'রাহমান মহাজন', 'রাহমান মহাজন', $2)`, [A, target!.id]);
+
+      const base = { source_text: "line", was_corrected: false, acknowledgements: {} };
+      const r = await confirm(A, [
+        { ...base, entry_review_id: sale!.id, expected_version: sale!.version, transaction_type: "credit_sale", customer_alias: "করিম", amount_text: "১৯০", amount_poisha: 19000, party_kind: "customer", party_key: "করিম", party_name: "করিম" },
+        { ...base, entry_review_id: payment!.id, expected_version: payment!.version, transaction_type: "supplier_payment", customer_alias: "রাহমান মহাজন", amount_text: "৫০০", amount_poisha: 50000, party_kind: "supplier", party_key: "রাহমান মহাজন", party_name: "রাহমান মহাজন" },
+      ]);
+      expect(r[0]!.n).toBe(2);
+    });
+
+    await as("authenticated", A, async () => {
+      const linked = await rows(
+        `select r.transaction_type, p.kind, p.display_name from public.confirmed_records r join public.parties p on p.id = r.party_id order by r.line_order`,
+      );
+      expect(linked).toEqual([
+        { transaction_type: "credit_sale", kind: "customer", display_name: "করিম" },
+        { transaction_type: "supplier_payment", kind: "supplier", display_name: "রহমান মহাজন" },
+      ]);
+      // The opening balance confirmed earlier has no party, and the new customer exists once.
+      expect(await rows(`select id from public.confirmed_records where party_id is null`)).toHaveLength(1);
+      expect(await rows(`select id from public.parties where kind = 'customer'`)).toHaveLength(1);
+    });
+    await as("authenticated", B, async () => {
+      expect(await rows(`select * from public.parties`)).toHaveLength(0);
+    });
+  });
+
+  test("parties: users rename their own, but cannot create, merge or delete them", async () => {
+    await as("authenticated", A, async () => {
+      const upd = await db.query(`update public.parties set display_name = 'করিম ভাই' where normalized_key = 'করিম'`);
+      expect(upd.affectedRows).toBe(1);
+      await expectDenied(db.query(`insert into public.parties (owner_id, kind, display_name, normalized_key) values ($1, 'customer', 'x', 'x')`, [A]));
+      await expectDenied(db.query(`update public.parties set merged_into = null`));
+      await expectDenied(db.query(`delete from public.parties`));
+      await expectDenied(db.query(`update public.confirmed_records set party_id = null`));
+    });
+    await as("authenticated", B, async () => {
+      const upd = await db.query(`update public.parties set display_name = 'x'`);
+      expect(upd.affectedRows).toBe(0);
+    });
+  });
+
+  test("shop profile: one per user, written only by its owner, sample flag only by the server", async () => {
+    await as("authenticated", A, async () => {
+      await db.query(`insert into public.shop_profiles (owner_id, shop_name, opening_cash_poisha) values ($1, 'মায়ের দোয়া স্টোর', 200000)`, [A]);
+      await expectDenied(db.query(`insert into public.shop_profiles (owner_id, shop_name) values ($1, 'x')`, [B]));
+      await expectDenied(db.query(`update public.shop_profiles set is_sample = true`));
+      await expectDenied(db.query(`update public.shop_profiles set language = 'fr'`));
+      const upd = await db.query(`update public.shop_profiles set language = 'en', opening_cash_poisha = 150000`);
+      expect(upd.affectedRows).toBe(1);
+      expect(await rows(`select language, is_sample from public.shop_profiles`)).toEqual([{ language: "en", is_sample: false }]);
+    });
+    await as("authenticated", B, async () => {
+      expect(await rows(`select * from public.shop_profiles`)).toHaveLength(0);
+      await expectDenied(db.query(`insert into public.shop_profiles (owner_id, shop_name, is_sample) values ($1, 'x', true)`, [B]));
+    });
+  });
+
+  test("day closes are written by the server and read only by their owner", async () => {
+    const close = (counted: number) =>
+      db.query(
+        `insert into public.day_closes (owner_id, business_date, opening_cash_poisha, expected_cash_poisha, counted_cash_poisha) values ($1, '2026-10-31', 200000, 432000, $2)`,
+        [A, counted],
+      );
+    await as("authenticated", A, () => expectDenied(close(0)));
+    await as("service_role", null, async () => {
+      await close(432000);
+      await expectDenied(close(0), /duplicate key/);
+    });
+    await as("authenticated", A, async () => {
+      expect(await rows(`select expected_cash_poisha from public.day_closes`)).toHaveLength(1);
+      await expectDenied(db.query(`update public.day_closes set counted_cash_poisha = 0`));
+    });
+    await as("authenticated", B, async () => {
+      expect(await rows(`select * from public.day_closes`)).toHaveLength(0);
+    });
+  });
+
+  test("a page has a business date its owner can change, and nobody else can", async () => {
+    await as("authenticated", A, async () => {
+      const [doc] = await rows(`select business_date, business_date_source from public.ledger_documents`);
+      expect(doc!.business_date_source).toBe("capture");
+      expect(doc!.business_date).toBeInstanceOf(Date);
+      const upd = await db.query(`update public.ledger_documents set business_date = '2026-10-30', business_date_source = 'user'`);
+      expect(upd.affectedRows).toBe(1);
+      await expectDenied(db.query(`update public.ledger_documents set business_date_source = 'guess'`));
+    });
+    await as("authenticated", B, async () => {
+      const [doc] = await rows(`select business_date_source from public.ledger_documents`);
+      expect(doc!.business_date_source).toBe("capture");
+    });
+  });
+
+  test("records accept the new money-out types but never 'unknown'", async () => {
+    await as("service_role", null, async () => {
+      await expectDenied(db.query(`update public.confirmed_records set transaction_type = 'unknown'`), /check constraint/);
+      const upd = await db.query(`update public.confirmed_records set transaction_type = 'expense' where transaction_type = 'credit_sale'`);
+      expect(upd.affectedRows).toBe(1);
+    });
+  });
+});

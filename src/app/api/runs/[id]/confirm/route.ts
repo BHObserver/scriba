@@ -4,6 +4,8 @@ import { z } from "zod";
 import { UUID_RE, apiUser, jsonError } from "@/lib/server/auth";
 import { loadRunReview } from "@/lib/server/review-data";
 import { createServiceSupabase } from "@/lib/supabase/server";
+import { businessDateFor } from "@/lib/ledger/dates";
+import { partyLinkFor } from "@/lib/ledger/parties";
 import { ackFingerprint, assessEntry, decideApproval } from "@/lib/review/approval";
 import { toValidationInput, wasCorrected } from "@/lib/review/state";
 import { VALIDATOR_VERSION, deriveNumbers, validateLedger } from "@/lib/validation/engine";
@@ -23,6 +25,8 @@ const bodySchema = z.object({
  * what they acknowledged: the server reloads the current values, re-runs every
  * validation rule and the approval safety rules, and only then writes the
  * records, atomically and only for the exact versions that were assessed.
+ * Each record is linked to its customer or supplier (created on first sight),
+ * and the page's business date follows its reviewed written date.
  * A Scriba confirmation is not an accounting journal posting.
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/runs/[id]/confirm">) {
@@ -41,6 +45,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/runs/[id]/c
   const input = toValidationInput(review);
   const findings = validateLedger(input);
   const byId = new Map(review.rows.map((r) => [r.id, r]));
+  const pageTypes = review.rows.filter((r) => r.status !== "rejected").map((r) => r.values.type);
 
   const problems: Array<{ id: string; reasons: string[] }> = [];
   const records = [];
@@ -68,6 +73,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/runs/[id]/c
     const n = deriveNumbers(row.values);
     const ok = (p: typeof n.amount) => (p && p.ok ? p.value : null);
     const { needsAck, uncheckable } = assessEntry(entry, findings);
+    const party = partyLinkFor(row.values, review.page.values, pageTypes);
     records.push({
       entry_review_id: row.id,
       expected_version: row.version,
@@ -89,6 +95,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/runs/[id]/c
         accepted: needsAck.map((f) => ({ fingerprint: ackFingerprint(f), rule: f.ruleId, message: f.message })),
         uncheckable: uncheckable.length > 0 ? uncheckable.map((f) => f.ruleId) : [],
       },
+      party_kind: party?.kind ?? null,
+      party_key: party?.key ?? null,
+      party_name: party?.name ?? null,
     });
   }
 
@@ -118,6 +127,17 @@ export async function POST(request: Request, ctx: RouteContext<"/api/runs/[id]/c
   if (error) {
     if (error.code === "40001") return jsonError("Lines changed while confirming. Nothing was saved; reload and try again.", 409);
     return jsonError("Confirmation failed. Nothing was saved.", 500);
+  }
+
+  // Best effort: a failure leaves the capture date, which the shopkeeper can change.
+  const { data: doc } = await supabase.from("ledger_documents").select("uploaded_at").eq("id", review.run.documentId).maybeSingle();
+  if (doc) {
+    const date = businessDateFor(review.page.values.dateText, new Date(doc.uploaded_at as string));
+    await supabase
+      .from("ledger_documents")
+      .update({ business_date: date.iso, business_date_source: date.source })
+      .eq("id", review.run.documentId)
+      .neq("business_date_source", "user");
   }
   return NextResponse.json({ confirmed: data, confirmationId });
 }

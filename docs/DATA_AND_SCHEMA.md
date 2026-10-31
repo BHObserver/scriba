@@ -49,4 +49,16 @@ Derived in TypeScript (stored in `extraction_runs.result`): normalized poisha an
 
 ## Versions recorded with every result
 
-`model_id`, `prompt_version` (`scriba-prompt-2`), `schema_version` (`scriba-extraction-1`), `processing_mode` (`baseline_original`, or `rotate_90` / `rotate_180` / `rotate_270` when the user turned the photo upright before analysis), `validator_version` (`scriba-validator-1`), `metrics_version` (`scriba-metrics-1`), ground-truth version.
+`model_id`, `prompt_version` (`scriba-prompt-4`; `scriba-prompt-3` via `SCRIBA_PROMPT_VERSION`), `schema_version` (`scriba-extraction-2`; `-1` with prompt 3), `processing_mode` (`baseline_original`, or `rotate_90` / `rotate_180` / `rotate_270` when the user turned the photo upright before analysis), `validator_version` (`scriba-validator-2`), `metrics_version` (`scriba-metrics-1`), ground-truth version.
+
+## Data model v2: the shop (`20261031120000_scriba_shop_v2.sql`)
+
+| Addition | What it holds | Who writes it |
+|---|---|---|
+| Transaction types `purchase`, `credit_purchase`, `supplier_payment`, `expense` | Money out. Money in = `cash_sale` + `repayment`; receivable = `credit_sale` − `repayment`; payable = `credit_purchase` − `supplier_payment` | n/a |
+| `ledger_documents.business_date`, `business_date_source` (`capture` / `written` / `user`) | The day a page's lines happened: the written date when it parses (`src/lib/ledger/dates.ts`), else the capture day in Bangladesh time | Server at confirmation (never over a `user` date); the owner can change it |
+| `parties` (`kind` customer/supplier, `display_name`, `normalized_key`, `merged_into`) | Customers and suppliers. The key folds common Bangla spelling variants (`src/lib/ledger/parties.ts`) | Created by `scriba_confirm_entries`; the owner can rename |
+| `confirmed_records.party_id` | The record's party, following `merged_into` | `scriba_confirm_entries` |
+| `shop_profiles` (`shop_name`, `language`, `opening_cash_poisha`, `is_sample`) | One per user | The owner, except `is_sample` (seed script only) |
+| `day_closes` (`business_date`, opening, expected and counted cash, `breakdown`, `record_ids`, `note`) | A closed day; one per date | Server only (expected cash is computed by code) |
+
