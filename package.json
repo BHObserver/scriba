@@ -12,6 +12,7 @@
     "check": "bun run typecheck && bun run lint && bun run test",
     "live:extract": "bun scripts/live-extract.ts",
     "live:smoke": "bun scripts/live-smoke.ts",
+    "shot": "bun scripts/shot.ts",
     "db:push": "supabase db push",
     "secrets:scan": "bun scripts/check-staged.ts"
   },
@@ -35,6 +36,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
+    "playwright-core": "^1.64.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   },

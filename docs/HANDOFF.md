@@ -1,6 +1,8 @@
 # Handoff
 
-For a fresh session: read this, then `docs/IMPLEMENTATION_PLAN.md`. Do **not** open or search for the author's private accounting application; Scriba is standalone.
+**Since 31 Oct 2026 the work follows `docs/MASTER_PLAN.md`** (sessions D1–F4, two parallel tracks). A fresh session reads that file's top sections and its own brief, then the notes in `docs/sessions/`; it reads this file only when its brief says so.
+
+For background on the MVP: read this, then `docs/IMPLEMENTATION_PLAN.md`. Do **not** open or search for the author's private accounting application; Scriba is standalone.
 
 ## Update, 30 Oct 2026 (evening): model switched to Muse Wonder
 
