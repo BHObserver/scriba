@@ -49,6 +49,7 @@ review screen (client)
 | `src/lib/server/*` | Supabase repository, auth helpers, review loader | Supabase |
 | `src/lib/evaluation/*` | Ground-truth format and metrics | engine, approval |
 | `src/lib/insights/*` | The money screens' figures, computed only from confirmed records: day summary and drawer cash, party accounts (FIFO, risks with reasons), sales trends, Scriba's note. Every figure carries the ids of the records behind it | ledger types, i18n (text only) |
+| `src/lib/shop/*`, `src/lib/server/shop-data.ts` | Rows → the engine's inputs, page check state, history days, line search, merge rules, the demo shop; the server loaders and writes (day close, merge, profile) behind Today, close, dues, ledger, history and settings | insights, ledger, Supabase (server file only) |
 | `src/app/api/*` | Route handlers; each verifies the user | lib |
 | `src/components/*` | Upload, analyze, review workspace, ground-truth editor | lib (client-safe parts) |
 

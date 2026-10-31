@@ -5,10 +5,10 @@ import { UUID_RE, apiUser, jsonError } from "@/lib/server/auth";
 import { loadRunReview } from "@/lib/server/review-data";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { businessDateFor } from "@/lib/ledger/dates";
-import { partyLinkFor } from "@/lib/ledger/parties";
-import { ackFingerprint, assessEntry, decideApproval } from "@/lib/review/approval";
-import { toValidationInput, wasCorrected } from "@/lib/review/state";
-import { VALIDATOR_VERSION, deriveNumbers, validateLedger } from "@/lib/validation/engine";
+import { decideApproval } from "@/lib/review/approval";
+import { confirmRecordFor, findingRows } from "@/lib/review/confirm-record";
+import { toValidationInput } from "@/lib/review/state";
+import { VALIDATOR_VERSION, validateLedger } from "@/lib/validation/engine";
 
 const ackSchema = z.object({ findings: z.array(z.string().max(400)).max(50), uncheckable: z.boolean() });
 const bodySchema = z.object({
@@ -27,6 +27,8 @@ const bodySchema = z.object({
  * records, atomically and only for the exact versions that were assessed.
  * Each record is linked to its customer or supplier (created on first sight),
  * and the page's business date follows its reviewed written date.
+ * A page is counted from one reading only: once lines of one reading are confirmed, lines of
+ * another reading of the same page are refused (409 `page_already_confirmed`).
  * A Scriba confirmation is not an accounting journal posting.
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/runs/[id]/confirm">) {
@@ -41,6 +43,18 @@ export async function POST(request: Request, ctx: RouteContext<"/api/runs/[id]/c
 
   const review = await loadRunReview(supabase, runId);
   if (!review || review.run.status !== "succeeded") return jsonError("Not found.", 404);
+
+  const { data: earlier } = await supabase
+    .from("confirmed_records")
+    .select("id")
+    .eq("document_id", review.run.documentId)
+    .neq("run_id", runId)
+    .limit(1);
+  if (earlier && earlier.length > 0) {
+    return jsonError("This page was already confirmed from an earlier reading. Its lines are counted from that reading.", 409, {
+      code: "page_already_confirmed",
+    });
+  }
 
   const input = toValidationInput(review);
   const findings = validateLedger(input);
@@ -70,35 +84,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/runs/[id]/c
       continue;
     }
 
-    const n = deriveNumbers(row.values);
-    const ok = (p: typeof n.amount) => (p && p.ok ? p.value : null);
-    const { needsAck, uncheckable } = assessEntry(entry, findings);
-    const party = partyLinkFor(row.values, review.page.values, pageTypes);
-    records.push({
-      entry_review_id: row.id,
-      expected_version: row.version,
-      transaction_type: row.values.type,
-      source_text: row.values.sourceText,
-      customer_alias: row.values.customer,
-      item_name: row.values.item,
-      quantity_text: row.values.quantityText,
-      quantity_milli: ok(n.quantity),
-      unit: row.values.unit,
-      unit_rate_text: row.values.rateText,
-      unit_rate_poisha: ok(n.rate),
-      amount_text: row.values.amountText,
-      amount_poisha: ok(n.amount),
-      balance_text: row.values.balanceText,
-      balance_poisha: ok(n.balance),
-      was_corrected: wasCorrected(row),
-      acknowledgements: {
-        accepted: needsAck.map((f) => ({ fingerprint: ackFingerprint(f), rule: f.ruleId, message: f.message })),
-        uncheckable: uncheckable.length > 0 ? uncheckable.map((f) => f.ruleId) : [],
-      },
-      party_kind: party?.kind ?? null,
-      party_key: party?.key ?? null,
-      party_name: party?.name ?? null,
-    });
+    records.push(confirmRecordFor(row, entry, findings, review.page.values, pageTypes));
   }
 
   if (problems.length > 0) {
@@ -112,17 +98,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/runs/[id]/c
     p_confirmation_id: confirmationId,
     p_validator_version: VALIDATOR_VERSION,
     p_records: records,
-    p_findings: findings.map((f) => ({
-      finding_key: f.key,
-      rule_id: f.ruleId,
-      rule_version: f.ruleVersion,
-      status: f.status,
-      severity: f.severity,
-      entry_refs: f.entryIds,
-      expected_poisha: f.expected,
-      observed_poisha: f.observed,
-      message: f.message,
-    })),
+    p_findings: findingRows(findings),
   });
   if (error) {
     if (error.code === "40001") return jsonError("Lines changed while confirming. Nothing was saved; reload and try again.", 409);
