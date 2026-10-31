@@ -16,6 +16,7 @@ export const metadata: Metadata = {
   description:
     "Scriba reads photographs of handwritten Bangla shop ledgers with a Meta model, checks the arithmetic in code, and lets the shopkeeper correct and confirm every entry.",
   appleWebApp: { capable: true, title: "Scriba", statusBarStyle: "default" },
+  icons: { icon: { url: "/icons/icon.svg", type: "image/svg+xml" }, apple: "/icons/apple-icon-180.png" },
   formatDetection: { telephone: false },
 };
 
