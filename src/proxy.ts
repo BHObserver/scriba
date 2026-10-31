@@ -1,7 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/", "/login", "/auth/confirm"];
+// The /kit board is a development tool with no data; it is not served in production.
+const PUBLIC_PATHS = ["/", "/login", "/auth/confirm", ...(process.env.NODE_ENV === "production" ? [] : ["/kit"])];
 
 /**
  * Refreshes the Supabase session cookie on page navigations and sends signed-out
@@ -42,5 +43,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|webp|ico)$).*)"],
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|webp|ico)$).*)"],
 };

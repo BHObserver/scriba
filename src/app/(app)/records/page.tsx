@@ -16,7 +16,7 @@ export default async function RecordsPage() {
     .limit(500);
 
   return (
-    <div className="space-y-4">
+    <div className="details-page space-y-4">
       <div>
         <h1 className="text-xl font-semibold">Confirmed records</h1>
         <p className="text-sm text-ink-soft">Lines a person approved. Each links back to its photo, the model&apos;s reading and the review trail.</p>

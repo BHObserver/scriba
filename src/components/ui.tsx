@@ -20,7 +20,7 @@ export function Button({
         "disabled:cursor-not-allowed disabled:opacity-50",
         variant === "primary" && "bg-accent text-white hover:bg-accent-strong",
         variant === "secondary" && "border border-rule bg-card text-ink hover:bg-paper",
-        variant === "danger" && "border border-fail/30 bg-card text-fail hover:bg-fail-bg",
+        variant === "danger" && "border border-accent/40 bg-card text-accent hover:bg-accent/5",
         variant === "ghost" && "text-ink-soft hover:bg-paper hover:text-ink",
         className,
       )}

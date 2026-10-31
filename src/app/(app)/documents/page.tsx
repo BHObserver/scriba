@@ -26,13 +26,15 @@ export default async function DocumentsPage() {
   const thumb = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
 
   return (
-    <div className="space-y-6">
+    <div className="details-page space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Documents</h1>
         <p className="text-sm text-ink-soft">Upload → Analyze → Review → Correct → Validate → Confirm.</p>
       </div>
 
-      <UploadPanel userId={user.id} maxUploadBytes={getLimitsConfig().maxUploadBytes} />
+      <div id="upload" className="scroll-mt-4">
+        <UploadPanel userId={user.id} maxUploadBytes={getLimitsConfig().maxUploadBytes} />
+      </div>
 
       <Card>
         <CardHeader title="Recent photos" subtitle="Opening a document never calls the model." />

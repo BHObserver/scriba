@@ -1,45 +1,136 @@
 @import "tailwindcss";
+@import "../components/kit/kit.css" layer(components);
 
-/* Scriba: a quiet, high-contrast "paper and ink" palette. */
-@theme {
-  --font-sans: var(--nf-inter), var(--nf-bengali), ui-sans-serif, system-ui, sans-serif;
-  --font-bengali: var(--nf-bengali), var(--nf-inter), sans-serif;
+/* Scriba: নতুন হালখাতা. Tokens from design/DIRECTION.md; meaning is fixed:
+   red is the khata (identity, primary action, seal), never danger. Problems are turmeric. */
+:root {
+  --paper: oklch(0.972 0.014 85);
+  --paper-card: oklch(0.992 0.007 85);
+  --photo: oklch(0.95 0.03 88);
+  --ink: oklch(0.25 0.015 60);
+  --ink-soft: oklch(0.48 0.015 60);
+  --hair: oklch(0.86 0.015 70);
+  --chip: oklch(0.93 0.015 70);
+  --red: oklch(0.47 0.15 27);
+  --red-deep: oklch(0.41 0.14 25);
+  --blue: oklch(0.47 0.15 262);
+  --blue-2: oklch(0.7 0.11 262);
+  --green: oklch(0.47 0.15 150);
+  --green-soft: oklch(0.94 0.04 150);
+  --turmeric: oklch(0.89 0.12 92);
+  --turmeric-soft: oklch(0.95 0.06 92);
+  --turmeric-edge: oklch(0.75 0.13 85);
+  --ochre: oklch(0.45 0.1 70);
+  --gold: oklch(0.8 0.1 85);
+  --cream: oklch(0.97 0.02 85);
+  --shadow: 0 1px 0 oklch(0.85 0.02 70), 0 12px 32px oklch(0.4 0.03 60 / 0.1);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --spring: cubic-bezier(0.3, 1.45, 0.5, 1);
+  --font-ui: var(--font-anek), system-ui, sans-serif;
+  --font-cover: var(--font-serif-bn), var(--font-anek), serif;
+  --tabbar-h: 86px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
 
-  --color-paper: #fbfaf6;
-  --color-card: #ffffff;
-  --color-ink: #16202e;
-  --color-ink-soft: #475467;
-  --color-rule: #e4e1d8;
-  --color-accent: #1f4e79;
-  --color-accent-strong: #163a5c;
+@theme inline {
+  --font-sans: var(--font-ui);
+  --font-serif: var(--font-cover);
+  --font-bengali: var(--font-ui);
 
-  --color-pass: #1d6b3f;
-  --color-pass-bg: #e8f4ec;
-  --color-fail: #a4262c;
-  --color-fail-bg: #fbeaea;
-  --color-warn: #8a5a00;
-  --color-warn-bg: #fdf3dc;
-  --color-unverifiable: #4b5563;
-  --color-unverifiable-bg: #eef0f3;
+  --color-paper: var(--paper);
+  --color-paper-card: var(--paper-card);
+  --color-photo: var(--photo);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-hair: var(--hair);
+  --color-khata: var(--red);
+  --color-khata-deep: var(--red-deep);
+  --color-figure: var(--blue);
+  --color-figure-2: var(--blue-2);
+  --color-ok: var(--green);
+  --color-ok-soft: var(--green-soft);
+  --color-turmeric: var(--turmeric);
+  --color-turmeric-soft: var(--turmeric-soft);
+  --color-gold: var(--gold);
+  --color-cream: var(--cream);
+
+  /* Legacy names used by the details pages (documents, records, evaluation, the review
+     workspace), mapped onto the new palette so they sit inside the shell. */
+  --color-card: var(--paper-card);
+  --color-rule: var(--hair);
+  --color-accent: var(--red);
+  --color-accent-strong: var(--red-deep);
+  --color-pass: var(--green);
+  --color-pass-bg: var(--green-soft);
+  --color-fail: var(--ochre);
+  --color-fail-bg: var(--turmeric-soft);
+  --color-warn: var(--ochre);
+  --color-warn-bg: var(--turmeric-soft);
+  --color-unverifiable: var(--ink-soft);
+  --color-unverifiable-bg: var(--chip);
 }
 
 html {
   color-scheme: light;
+  background: var(--paper);
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background: var(--color-paper);
-  color: var(--color-ink);
-  font-family: var(--font-sans);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Bangla source text gets slightly more line height so matras and vowel signs breathe. */
 .bn {
-  font-family: var(--font-bengali);
   line-height: 1.7;
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 3px solid var(--blue);
   outline-offset: 2px;
+}
+
+/* Page transitions (React <ViewTransition>, see components/shell/route-transition.tsx):
+   220 ms rise-in, the binding band and tab bar stay put. Reduced motion: fades only. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-old(.screen-out) {
+  animation: 120ms ease-out both vt-fade-out;
+}
+::view-transition-new(.screen-in) {
+  animation: 220ms var(--ease) both vt-rise-in;
+}
+::view-transition-group(tabbar),
+::view-transition-group(binding) {
+  animation: none;
+  z-index: 100;
+}
+::view-transition-old(tabbar),
+::view-transition-old(binding) {
+  display: none;
+}
+::view-transition-new(tabbar),
+::view-transition-new(binding) {
+  animation: none;
+}
+@keyframes vt-fade-out {
+  to { opacity: 0; }
+}
+@keyframes vt-rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+}
+@keyframes vt-fade-in {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(.screen-in) {
+    animation-name: vt-fade-in;
+  }
 }

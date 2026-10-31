@@ -49,7 +49,7 @@ export default async function DocumentPage({ params, searchParams }: PageProps<"
       : null;
 
   return (
-    <div className="space-y-6">
+    <div className="details-page space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link href="/documents" className="text-sm text-accent hover:underline">← Documents</Link>

@@ -246,7 +246,8 @@ export function formatQuantity(milli: number | null | undefined): string {
   return `${whole}.${String(frac).padStart(3, "0").replace(/0+$/, "")}`;
 }
 
-function groupSouthAsian(digits: string): string {
+/** "123450" -> "1,23,450" (Bangladeshi lakh grouping). */
+export function groupSouthAsian(digits: string): string {
   if (digits.length <= 3) return digits;
   const last3 = digits.slice(-3);
   let head = digits.slice(0, -3);

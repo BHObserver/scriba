@@ -37,7 +37,7 @@ export default async function EvaluationPage() {
   for (const t of truths ?? []) if (!latestGt.has(t.document_id)) latestGt.set(t.document_id, t.gt_version);
 
   return (
-    <div className="space-y-6">
+    <div className="details-page space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Evaluation &amp; usage</h1>
         <p className="text-sm text-ink-soft">Measured values only, always with their counts. Small samples are exploratory.</p>

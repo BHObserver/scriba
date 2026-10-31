@@ -1,12 +1,22 @@
+import { ChevronRight } from "lucide-react";
+import Link from "next/link";
+import { LanguageSwitch } from "@/components/shell/language-switch";
 import { Card, CardHeader, Notice, Pill } from "@/components/ui";
 import { configurationStatus, getLimitsConfig, getMetaConfig } from "@/lib/config";
 import { getExtractionProfile } from "@/lib/extraction/prompt";
 import { METRICS_VERSION } from "@/lib/evaluation/metrics";
 import { PRICING_SOURCE, isContributorModel } from "@/lib/pricing";
+import { getI18n } from "@/lib/i18n/server";
 import { VALIDATOR_VERSION } from "@/lib/validation/engine";
 
 /** Shows which settings are present. Never displays a secret value. */
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const { t } = await getI18n();
+  const details = [
+    ["/documents", t("more.photos")],
+    ["/records", t("more.records")],
+    ["/evaluation", t("more.eval")],
+  ] as const;
   const status = configurationStatus();
   const meta = getMetaConfig();
   const limits = getLimitsConfig();
@@ -17,8 +27,34 @@ export default function SettingsPage() {
     ["META_MODEL_API_KEY", status.metaApiKey, "Server only: Meta Model API"],
   ];
   return (
-    <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Settings</h1>
+    <div className="details-page space-y-6">
+      <div className="column grid gap-3">
+        <h1 className="t-title pt-2">{t("more.title")}</h1>
+        <section className="card grid gap-3 p-5">
+          <h2 className="t-label">{t("more.lang")}</h2>
+          <LanguageSwitch />
+        </section>
+        <section className="card p-2">
+          <div className="px-3 pb-1 pt-3">
+            <h2 className="t-sec">{t("more.details")}</h2>
+            <p className="t-small">{t("more.details.b")}</p>
+          </div>
+          <ul>
+            {details.map(([href, label]) => (
+              <li key={href}>
+                <Link href={href} className="flex min-h-14 items-center justify-between rounded-2xl px-3 text-[17px] font-semibold text-ink hover:bg-paper">
+                  {label}
+                  <ChevronRight size={22} aria-hidden="true" className="text-ink-soft" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <form action="/auth/signout" method="post">
+          <button className="btn btn-line w-full">{t("more.signout")}</button>
+        </form>
+      </div>
+      <h2 className="pt-6 text-xl font-semibold">{t("more.system")}</h2>
       <Card>
         <CardHeader title="Configuration" subtitle="Values are read from server environment variables." />
         <ul className="divide-y divide-rule text-sm">
