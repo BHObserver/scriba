@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "../components/kit/kit.css" layer(components);
+@import "../components/check/flow.css" layer(components);
 
 /* Scriba: নতুন হালখাতা. Tokens from design/DIRECTION.md; meaning is fixed:
    red is the khata (identity, primary action, seal), never danger. Problems are turmeric. */

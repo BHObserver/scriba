@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Card, CardHeader, Notice, formatBytes } from "@/components/ui";
 import { EXTENSION_FOR, type ImageInspection, inspectImage } from "@/lib/images/inspect";
 import { createBrowserSupabase } from "@/lib/supabase/browser";
+import { sha256Hex, uploadWithProgress } from "./capture/upload";
 
 type Selected = {
   file: File;
@@ -13,34 +14,6 @@ type Selected = {
   previewUrl: string;
   inspection: Extract<ImageInspection, { ok: true }>;
 };
-
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/** Upload the exact original bytes to the private bucket, reporting progress. */
-function uploadWithProgress(opts: {
-  url: string;
-  token: string;
-  apiKey: string;
-  body: Blob;
-  contentType: string;
-  onProgress: (fraction: number) => void;
-}): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", opts.url);
-    xhr.setRequestHeader("Authorization", `Bearer ${opts.token}`);
-    xhr.setRequestHeader("apikey", opts.apiKey);
-    xhr.setRequestHeader("Content-Type", opts.contentType);
-    xhr.setRequestHeader("x-upsert", "false");
-    xhr.upload.onprogress = (e) => e.lengthComputable && opts.onProgress(e.loaded / e.total);
-    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Storage upload failed (${xhr.status}).`)));
-    xhr.onerror = () => reject(new Error("Network error during upload."));
-    xhr.send(opts.body);
-  });
-}
 
 export function UploadPanel({ userId, maxUploadBytes }: { userId: string; maxUploadBytes: number }) {
   const router = useRouter();

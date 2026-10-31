@@ -1,0 +1,63 @@
+import type { ComponentProps } from "react";
+import { notFound } from "next/navigation";
+import { readingFromRun } from "@/components/capture/problems";
+import { CheckScreen } from "@/components/check/check-screen";
+import { STORAGE_BUCKET, getLimitsConfig } from "@/lib/config";
+import { turnsForProcessingMode } from "@/lib/images/orientation";
+import { UUID_RE, requireUser } from "@/lib/server/auth";
+import { RUN_SUMMARY_COLUMNS, loadRunReview, toRunSummary } from "@/lib/server/review-data";
+
+export const metadata = { title: "Check" };
+
+type Supabase = Awaited<ReturnType<typeof requireUser>>["supabase"];
+
+/** Pages captured together arrive as `?pages=id1,id2,…` so the screen can say "page 2 of 3". */
+function pageQueue(param: string | string[] | undefined, documentId: string): string[] {
+  const ids = (typeof param === "string" ? param.split(",") : []).filter((id) => UUID_RE.test(id)).slice(0, 20);
+  return ids.includes(documentId) ? ids : [documentId];
+}
+
+/** Everything the screen needs, read through the user's own client (RLS). Reads only. */
+async function loadCheck(supabase: Supabase, documentId: string, queue: string[]): Promise<ComponentProps<typeof CheckScreen> | null> {
+  const { data: doc } = await supabase.from("ledger_documents").select("id, storage_path, width, height").eq("id", documentId).maybeSingle();
+  if (!doc) return null;
+
+  const [{ data: signed }, { data: runRows }] = await Promise.all([
+    supabase.storage.from(STORAGE_BUCKET).createSignedUrl(doc.storage_path, 600),
+    supabase.from("extraction_runs").select(RUN_SUMMARY_COLUMNS).eq("document_id", documentId).order("started_at", { ascending: false }),
+  ]);
+  const runs = (runRows ?? []).map(toRunSummary);
+  const succeeded = runs.find((r) => r.status === "succeeded") ?? null;
+  const review = succeeded ? await loadRunReview(supabase, succeeded.id) : null;
+  const latest = runs[0] ?? null;
+
+  const index = queue.indexOf(documentId);
+  const nextId = queue[index + 1];
+  return {
+    documentId,
+    photo: {
+      src: signed?.signedUrl ?? null,
+      width: doc.width,
+      height: doc.height,
+      turns: turnsForProcessingMode((succeeded ?? latest)?.processingMode),
+    },
+    review: review ? { page: review.page, rows: review.rows } : null,
+    serverReading: review ? null : readingFromRun(latest, Date.now(), getLimitsConfig().stalePendingMs),
+    readTurns: turnsForProcessingMode(latest?.processingMode),
+    pageNumber: index + 1,
+    pageCount: queue.length,
+    nextHref: nextId ? `/check/${nextId}?pages=${queue.join(",")}` : null,
+    detailsHref: `/documents/${documentId}`,
+  };
+}
+
+/** Opening this page only reads stored data. It never sends the photo to be read. */
+export default async function CheckPage({ params, searchParams }: PageProps<"/check/[documentId]">) {
+  const { documentId } = await params;
+  const { pages } = await searchParams;
+  if (!UUID_RE.test(documentId)) notFound();
+  const { supabase } = await requireUser(`/check/${documentId}`);
+  const props = await loadCheck(supabase, documentId, pageQueue(pages, documentId));
+  if (!props) notFound();
+  return <CheckScreen key={documentId} {...props} />;
+}
