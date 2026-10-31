@@ -12,7 +12,7 @@ Chosen by the author on 31 Oct 2026: option **1b** (modern, Anek Bangla, khata d
 |---|---|---|
 | Binding band | Top edge of every screen | 7 px, `--red`, full width, above the status bar area |
 | Stitched edge | Top of hero cards (drawer cash, page summary) | 18 px `--red` band inside the card top, with a 2 px dashed cream line 8 px from its top, inset 14 px |
-| Red cover | Header of **Today** and **Close the day** only | Woven cloth: `repeating-linear-gradient(45deg, oklch(1 0 0/.045) 0 2px, transparent 2px 5px), repeating-linear-gradient(-45deg, oklch(0 0 0/.07) 0 2px, transparent 2px 5px), linear-gradient(180deg, oklch(.45 .15 27), oklch(.41 .14 25))`; cream text; gold double rule (two 1 px lines, 5 px apart) 9 px above its bottom edge, inset 16 px |
+| Red cover | Header of **Today**, **Close the day** and the onboarding **Welcome** (opening a new halkhata; added in D4) only | Woven cloth: `repeating-linear-gradient(45deg, oklch(1 0 0/.045) 0 2px, transparent 2px 5px), repeating-linear-gradient(-45deg, oklch(0 0 0/.07) 0 2px, transparent 2px 5px), linear-gradient(180deg, oklch(.45 .15 27), oklch(.41 .14 25))`; cream text; gold double rule (two 1 px lines, 5 px apart) 9 px above its bottom edge, inset 16 px |
 | Seal | A page or day that balances | Double circle (3 px + 1.5 px), `--red`, rotated −12°, text "হিসাব মিলেছে" in Noto Serif Bengali 700 |
 | Handwriting strip | Every check card, ledger entries, reminders | The line cut from his photo (CSS crop in the app; never a font), 84 px tall, radius 12, tag "ছবি থেকে" top right |
 | Turmeric highlight | A value that needs a look | `--turmeric` fill, radius 6, inset bottom line `oklch(.75 .13 85)`, ink text |
