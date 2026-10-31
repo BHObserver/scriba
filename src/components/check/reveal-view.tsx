@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { OrientedImage } from "@/components/photo-orientation";
-import { ButtonLink, Chip, EmptyState, StatusMark, TopBar } from "@/components/kit";
+import { Button, ButtonLink, Chip, EmptyState, StatusMark, TopBar } from "@/components/kit";
 import { cx } from "@/components/ui";
 import { useI18n } from "@/lib/i18n/client";
 import type { BoundingBox } from "@/lib/ledger/types";
@@ -47,7 +47,7 @@ export function RevealView({
   page,
   sub,
   backHref,
-  startHref,
+  onStart,
   nextHref,
   nextPage,
 }: {
@@ -56,7 +56,8 @@ export function RevealView({
   page: PageState;
   sub: string;
   backHref: string;
-  startHref: string;
+  /** Opens the check deck. */
+  onStart: () => void;
   nextHref?: string | null;
   /** The next page's number, for "See page 2". */
   nextPage?: number;
@@ -105,9 +106,9 @@ export function RevealView({
               {counts.look > 0 ? <Chip kind="look">{t("rv.look", counts.look)}</Chip> : null}
               {counts.plain > 0 ? <Chip>{t("rv.plain", counts.plain)}</Chip> : null}
             </div>
-            <ButtonLink href={startHref} variant="red" wide>
+            <Button variant="red" wide onClick={onStart}>
               {t("rv.start")}
-            </ButtonLink>
+            </Button>
             {nextHref && nextPage ? (
               <ButtonLink href={nextHref} variant="ghost" wide>
                 {t("rv.nextPage", nextPage)}

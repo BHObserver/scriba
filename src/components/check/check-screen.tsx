@@ -12,7 +12,9 @@ import type { QuarterTurns } from "@/lib/images/orientation";
 import type { PageState, ReviewRow } from "@/lib/review/state";
 import { ProblemView } from "./problem-view";
 import { type Photo, ReadingView } from "./reading-view";
-import { NothingView, RevealView } from "./reveal-view";
+import { NothingView } from "./reveal-view";
+import { type ReviewApi, httpReviewApi } from "./review-api";
+import { ReviewSession } from "./review-session";
 
 /** How often a page that is being read elsewhere (a reload, another tab) asks the server again. */
 const POLL_MS = 4000;
@@ -23,7 +25,7 @@ type Props = {
   documentId: string;
   photo: Photo;
   /** The latest successful reading's review state; null until the page has been read. */
-  review: { page: PageState; rows: ReviewRow[] } | null;
+  review: { runId: string; page: PageState; rows: ReviewRow[] } | null;
   /** The stored run's state when there is no review: being read, or a problem. Null: never read. */
   serverReading: Reading | null;
   /** Orientation to use when the page is read (again). */
@@ -31,8 +33,10 @@ type Props = {
   pageNumber: number;
   pageCount: number;
   nextHref: string | null;
-  /** The details page: run history and, until the deck lands (B3), the review workspace. */
+  /** The details page: run history and the full review workspace. */
   detailsHref: string;
+  /** Development only: the dev board saves and confirms in memory. */
+  api?: ReviewApi;
 };
 
 /**
@@ -40,7 +44,7 @@ type Props = {
  * started (on /capture, or "try again" here) comes from the reading queue; otherwise the stored
  * run decides. Opening this screen never sends a page to be read: only a tap does.
  */
-export function CheckScreen({ documentId, photo, review, serverReading, readTurns, pageNumber, pageCount, nextHref, detailsHref }: Props) {
+export function CheckScreen({ documentId, photo, review, serverReading, readTurns, pageNumber, pageCount, nextHref, detailsHref, api }: Props) {
   const { t, digits } = useI18n();
   const router = useRouter();
   const { readings, read, forget } = useReadingQueue();
@@ -85,15 +89,14 @@ export function CheckScreen({ documentId, photo, review, serverReading, readTurn
     const { accountName, dateText } = review.page.values;
     const sub = [pageTitle, accountName, dateText && digits(dateText)].filter(Boolean).join(" · ");
     return (
-      <RevealView
+      <ReviewSession
+        api={api ?? httpReviewApi(review.runId)}
+        initial={{ page: review.page, rows: review.rows }}
         photo={photo}
-        rows={review.rows}
-        page={review.page}
         sub={sub}
-        backHref="/"
-        startHref={detailsHref}
+        pageNumber={pageNumber}
         nextHref={nextHref}
-        nextPage={nextHref ? pageNumber + 1 : undefined}
+        detailsHref={detailsHref}
       />
     );
   }

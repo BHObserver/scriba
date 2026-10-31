@@ -41,7 +41,7 @@ async function loadCheck(supabase: Supabase, documentId: string, queue: string[]
       height: doc.height,
       turns: turnsForProcessingMode((succeeded ?? latest)?.processingMode),
     },
-    review: review ? { page: review.page, rows: review.rows } : null,
+    review: review && succeeded ? { runId: succeeded.id, page: review.page, rows: review.rows } : null,
     serverReading: review ? null : readingFromRun(latest, Date.now(), getLimitsConfig().stalePendingMs),
     readTurns: turnsForProcessingMode(latest?.processingMode),
     pageNumber: index + 1,

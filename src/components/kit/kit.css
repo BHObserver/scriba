@@ -87,6 +87,9 @@ body:has(.cloth) .binding { background: oklch(0.36 0.12 25); }
   top: calc((var(--strip-h, 84px) - var(--bh) * var(--ih)) / 2 - var(--by) * var(--ih));
   user-select: none; pointer-events: none;
 }
+.strip-turn { overflow: hidden; }
+.strip-turn img { position: absolute; left: 50%; top: 50%; max-width: none; width: var(--iw); height: var(--ih); transform: translate(-50%, -50%) rotate(var(--turn)); }
+.strip-turn.odd img { width: var(--ih); height: var(--iw); }
 .strip-fade { position: absolute; left: 0; right: 0; background: oklch(0.95 0.03 88 / 0.8); pointer-events: none; height: max(0px, calc((var(--strip-h, 84px) - var(--bh) * var(--ih)) / 2 - 2px)); }
 .strip-tag { position: absolute; top: 6px; right: 8px; font: 600 11px/1.4 var(--font-ui); color: var(--ink-soft); background: oklch(0.99 0.01 85 / 0.88); padding: 1px 8px; border-radius: 999px; }
 .strip.none { display: grid; place-items: center; background: var(--chip); box-shadow: inset 0 0 0 1.5px var(--hair); font: 500 14px var(--font-ui); color: var(--ink-soft); }
