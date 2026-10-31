@@ -338,4 +338,21 @@ export const bn = {
   "pg.dateEmpty": "তারিখ না লিখলে ছবি তোলার দিন {1} ধরা হবে।",
   "pg.datePh": "যেমন ৩১/১০/২৬",
   "pg.recheck": "বদলালে পুরো পাতা আবার মেলানো হবে।",
+
+  // E2: Scriba's note and the dues reasons (src/lib/insights/text.ts). Numbers are inserted by code.
+  "note.pending.one": "পাতা {1} এখনো দেখা হয়নি, তাই এর লাইন আজকের হিসাবে ধরা হয়নি।",
+  "note.pending.many": "{1}টি পাতা এখনো দেখা হয়নি, তাই সেগুলোর লাইন আজকের হিসাবে ধরা হয়নি।",
+  "note.sales": "আজ বিক্রি {1}, এর মধ্যে {2} বাকিতে।",
+  "note.sales.cash": "আজ বিক্রি {1}, সবটাই নগদে।",
+  "note.sales.none": "আজকের খাতায় এখনো কোনো বিক্রি নেই।",
+  "note.due": "{1} {2} বাকি, {3}।",
+  "note.week.up": "এই সাত দিনে বিক্রি আগের সাত দিনের চেয়ে {1} বেশি।",
+  "note.week.down": "এই সাত দিনে বিক্রি আগের সাত দিনের চেয়ে {1} কম।",
+  "note.week.same": "এই সাত দিনে বিক্রি আগের সাত দিনের সমান।",
+  "risk.no_payment.customer": "{1} দিন কোনো জমা নেই",
+  "risk.no_payment.supplier": "{1} দিন কিছু দেওয়া হয়নি",
+  "risk.growing.customer": "{1} সপ্তাহ ধরে বাকি বাড়ছে",
+  "risk.growing.supplier": "{1} সপ্তাহ ধরে দেনা বাড়ছে",
+  "risk.big_credit.customer": "একবারে {1} বাকি, সাধারণত {2}",
+  "risk.big_credit.supplier": "একবারে {1}-এর মাল বাকিতে, সাধারণত {2}",
 } as const;

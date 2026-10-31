@@ -339,4 +339,21 @@ export const en = {
   "pg.dateEmpty": "With no date, the photo's day, {1}, is used.",
   "pg.datePh": "e.g. 31/10/26",
   "pg.recheck": "Changing this checks the whole page again.",
+
+  // E2: Scriba's note and the dues reasons (src/lib/insights/text.ts). Numbers are inserted by code.
+  "note.pending.one": "Page {1} isn't checked yet, so its lines aren't in today's figures.",
+  "note.pending.many": "{1} pages aren't checked yet, so their lines aren't in today's figures.",
+  "note.sales": "Sales today {1}, {2} of it on credit.",
+  "note.sales.cash": "Sales today {1}, all of it in cash.",
+  "note.sales.none": "No sales in today's khata yet.",
+  "note.due": "{1} owes {2}. {3}.",
+  "note.week.up": "Sales these 7 days are {1} more than the 7 days before.",
+  "note.week.down": "Sales these 7 days are {1} less than the 7 days before.",
+  "note.week.same": "Sales these 7 days match the 7 days before.",
+  "risk.no_payment.customer": "No payment in {1} days",
+  "risk.no_payment.supplier": "Nothing paid to them in {1} days",
+  "risk.growing.customer": "Dues up {1} weeks running",
+  "risk.growing.supplier": "What you owe is up {1} weeks running",
+  "risk.big_credit.customer": "{1} on credit at once, usually {2}",
+  "risk.big_credit.supplier": "{1} of stock on credit at once, usually {2}",
 } as const satisfies Record<MessageKey, string>;

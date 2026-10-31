@@ -48,6 +48,7 @@ review screen (client)
 | `src/lib/extraction/pipeline.ts` | Credit-control orchestration with an injected repository and model caller | all of the above (types only for Meta) |
 | `src/lib/server/*` | Supabase repository, auth helpers, review loader | Supabase |
 | `src/lib/evaluation/*` | Ground-truth format and metrics | engine, approval |
+| `src/lib/insights/*` | The money screens' figures, computed only from confirmed records: day summary and drawer cash, party accounts (FIFO, risks with reasons), sales trends, Scriba's note. Every figure carries the ids of the records behind it | ledger types, i18n (text only) |
 | `src/app/api/*` | Route handlers; each verifies the user | lib |
 | `src/components/*` | Upload, analyze, review workspace, ground-truth editor | lib (client-safe parts) |
 
