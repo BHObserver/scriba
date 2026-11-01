@@ -1,71 +1,74 @@
 import Link from "next/link";
-import { Card, CardHeader, Pill, formatBytes, formatDateTime } from "@/components/ui";
-import { UploadPanel } from "@/components/upload-panel";
-import { STORAGE_BUCKET, getLimitsConfig } from "@/lib/config";
+import { DetailsTop } from "@/components/details/details-top";
+import { PageThumb } from "@/components/history/page-thumb";
+import { Chip, EmptyState } from "@/components/kit";
+import { formatBytes } from "@/components/ui";
+import { getI18n } from "@/lib/i18n/server";
+import { turnsForProcessingMode } from "@/lib/images/orientation";
+import { dhakaDate } from "@/lib/ledger/dates";
 import { requireUser } from "@/lib/server/auth";
+import { loadShopProfile } from "@/lib/server/shop-data";
+import { hasPhoto } from "@/lib/shop/rows";
 
-const DOC_STATUS: Record<string, { label: string; tone: "neutral" | "pass" | "warn" | "accent" }> = {
-  uploaded: { label: "Not analyzed", tone: "neutral" },
-  extracted: { label: "Ready to review", tone: "accent" },
-  partially_confirmed: { label: "Partly confirmed", tone: "warn" },
-  confirmed: { label: "Confirmed", tone: "pass" },
-};
+export const metadata = { title: "All photos" };
 
-export default async function DocumentsPage() {
-  const { supabase, user } = await requireUser("/documents");
-  const { data: docs } = await supabase
-    .from("ledger_documents")
-    .select("id, storage_path, original_filename, byte_size, width, height, uploaded_at, status, sample_label")
-    .order("uploaded_at", { ascending: false })
-    .limit(100);
+const STATUS = {
+  uploaded: "dt.st.uploaded",
+  extracted: "dt.st.extracted",
+  partially_confirmed: "dt.st.partially_confirmed",
+  confirmed: "dt.st.confirmed",
+} as const;
 
-  const paths = (docs ?? []).map((d) => d.storage_path);
-  const { data: signed } = paths.length
-    ? await supabase.storage.from(STORAGE_BUCKET).createSignedUrls(paths, 600)
-    : { data: [] };
-  const thumb = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
+/** সব ছবি: every page photo, newest first, each opening its full record. New pages come in through /capture. */
+export default async function DocumentsPage({ searchParams }: PageProps<"/documents">) {
+  const { orphan } = await searchParams;
+  const { supabase } = await requireUser("/documents");
+  const [{ data: docs }, profile, i18n] = await Promise.all([
+    supabase
+      .from("ledger_documents")
+      .select("id, original_filename, byte_size, width, height, uploaded_at, business_date, status, sample_label, dataset_label, extraction_runs(processing_mode, started_at)")
+      .order("uploaded_at", { ascending: false })
+      .limit(100),
+    loadShopProfile(supabase),
+    getI18n(),
+  ]);
+  const { t } = i18n;
+  const list = docs ?? [];
 
   return (
-    <div className="details-page space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Documents</h1>
-        <p className="text-sm text-ink-soft">Upload → Analyze → Review → Correct → Validate → Confirm.</p>
-      </div>
-
-      <div id="upload" className="scroll-mt-4">
-        <UploadPanel userId={user.id} maxUploadBytes={getLimitsConfig().maxUploadBytes} />
-      </div>
-
-      <Card>
-        <CardHeader title="Recent photos" subtitle="Opening a document never calls the model." />
-        {docs && docs.length > 0 ? (
-          <ul className="divide-y divide-rule">
-            {docs.map((d) => {
-              const status = DOC_STATUS[d.status] ?? DOC_STATUS.uploaded!;
-              const url = thumb.get(d.storage_path);
+    <div className="dt">
+      <DetailsTop title={t("more.photos")} sub={t("dt.pages", list.length)} backHref="/settings" sample={profile?.isSample ?? false} note={t("dt.tech")} />
+      <div className="dt-body">
+        {orphan ? <p className="panel-soft t-body">{t("dt.docs.orphan")}</p> : null}
+        {list.length === 0 ? (
+          <EmptyState title={t("dt.docs.empty.t")} body={t("dt.docs.empty.b")} />
+        ) : (
+          <ul className="card dt-list">
+            {list.map((d) => {
+              const photo = hasPhoto(d);
+              const latest = [...(d.extraction_runs ?? [])].sort((a, b) => b.started_at.localeCompare(a.started_at))[0];
+              const page = { documentId: d.id, photo: photo ? { width: d.width, height: d.height, turns: turnsForProcessingMode(latest?.processing_mode) } : null };
+              const day = d.business_date ?? dhakaDate(new Date(d.uploaded_at));
+              const status = STATUS[d.status as keyof typeof STATUS] ?? STATUS.uploaded;
               return (
                 <li key={d.id}>
-                  <Link href={`/documents/${d.id}`} className="flex items-center gap-4 px-4 py-3 hover:bg-paper">
-                    <div className="h-14 w-20 shrink-0 overflow-hidden rounded border border-rule bg-paper">
-                      {/* eslint-disable-next-line @next/next/no-img-element -- private original via short-lived signed URL */}
-                      {url ? <img src={url} alt="" className="h-full w-full object-cover" /> : null}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{d.sample_label ?? d.original_filename ?? "Ledger photo"}</p>
-                      <p className="text-xs text-ink-soft">
-                        {formatDateTime(d.uploaded_at)} · {d.width}×{d.height} · {formatBytes(d.byte_size)}
-                      </p>
-                    </div>
-                    <Pill tone={status.tone}>{status.label}</Pill>
+                  <Link href={`/documents/${d.id}`} className="dt-doc">
+                    <PageThumb page={page} width={48} />
+                    <span className="dt-doc-text">
+                      <span className="dt-doc-t">{photo ? (d.sample_label ?? d.original_filename ?? i18n.dayMonth(day)) : t("dt.sample.t")}</span>
+                      <span className="t-small">
+                        {i18n.dayMonth(day)}
+                        {photo ? ` · ${i18n.digits(`${d.width}×${d.height} · ${formatBytes(d.byte_size)}`)}` : ` · ${t("dt.sample.none")}`}
+                      </span>
+                    </span>
+                    <Chip kind={d.status === "confirmed" ? "ok" : undefined}>{t(status)}</Chip>
                   </Link>
                 </li>
               );
             })}
           </ul>
-        ) : (
-          <p className="px-4 py-6 text-sm text-ink-soft">No photos yet. Add one above.</p>
         )}
-      </Card>
+      </div>
     </div>
   );
 }

@@ -1,14 +1,21 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AnalyzePanel } from "@/components/analyze-panel";
+import { DetailsTop } from "@/components/details/details-top";
 import { DeleteDocumentButton } from "@/components/delete-document-button";
 import { OrientationProvider, PhotoPreview } from "@/components/photo-orientation";
 import { ReviewWorkspace } from "@/components/review-workspace";
 import { Card, CardHeader, Notice, Pill, formatBytes, formatDateTime } from "@/components/ui";
 import { STORAGE_BUCKET } from "@/lib/config";
+import { getI18n } from "@/lib/i18n/server";
 import { describeTurns, turnsForProcessingMode } from "@/lib/images/orientation";
+import { dhakaDate } from "@/lib/ledger/dates";
 import { UUID_RE, requireUser } from "@/lib/server/auth";
 import { RUN_SUMMARY_COLUMNS, loadRunReview, toRunSummary } from "@/lib/server/review-data";
+import { loadShopProfile } from "@/lib/server/shop-data";
+import { hasPhoto } from "@/lib/shop/rows";
+
+export const metadata = { title: "Page record" };
 
 const RUN_TONE: Record<string, "pass" | "fail" | "warn" | "neutral"> = {
   succeeded: "pass",
@@ -28,15 +35,19 @@ export default async function DocumentPage({ params, searchParams }: PageProps<"
 
   const { data: doc } = await supabase
     .from("ledger_documents")
-    .select("id, storage_path, sha256, original_filename, mime_type, byte_size, width, height, has_gps_metadata, uploaded_at, status, sample_label")
+    .select("id, storage_path, sha256, original_filename, mime_type, byte_size, width, height, has_gps_metadata, uploaded_at, business_date, status, sample_label, dataset_label")
     .eq("id", id)
     .maybeSingle();
   if (!doc) notFound();
 
-  const [{ data: signed }, { data: runRows }] = await Promise.all([
-    supabase.storage.from(STORAGE_BUCKET).createSignedUrl(doc.storage_path, 600),
+  const photo = hasPhoto(doc);
+  const [{ data: signed }, { data: runRows }, profile, i18n] = await Promise.all([
+    photo ? supabase.storage.from(STORAGE_BUCKET).createSignedUrl(doc.storage_path, 600) : Promise.resolve({ data: null }),
     supabase.from("extraction_runs").select(RUN_SUMMARY_COLUMNS).eq("document_id", id).order("started_at", { ascending: false }),
+    loadShopProfile(supabase),
+    getI18n(),
   ]);
+  const { t } = i18n;
   const runs = (runRows ?? []).map(toRunSummary);
   const succeeded = runs.filter((r) => r.status === "succeeded");
   const chosen =
@@ -49,16 +60,21 @@ export default async function DocumentPage({ params, searchParams }: PageProps<"
       : null;
 
   return (
-    <div className="details-page space-y-6">
+    <div className="dt">
+      <DetailsTop
+        title={photo ? (doc.sample_label ?? doc.original_filename ?? i18n.dayMonth(dhakaDate(new Date(doc.uploaded_at)))) : t("dt.sample.t")}
+        sub={i18n.dayMonth(doc.business_date ?? dhakaDate(new Date(doc.uploaded_at)))}
+        backHref="/documents"
+        sample={profile?.isSample ?? false}
+        note={t("dt.tech")}
+      />
+      <div className="dt-body">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link href="/documents" className="text-sm text-accent hover:underline">← Documents</Link>
-          <h1 className="mt-1 text-xl font-semibold">{doc.sample_label ?? doc.original_filename ?? "Ledger photo"}</h1>
-          <p className="text-xs text-ink-soft">
-            Uploaded {formatDateTime(doc.uploaded_at)} · {doc.width}×{doc.height} · {formatBytes(doc.byte_size)} · {doc.mime_type} ·
-            SHA-256 <span className="font-mono">{doc.sha256.slice(0, 12)}…</span>
-          </p>
-        </div>
+        <p className="text-xs text-ink-soft">
+          Uploaded {formatDateTime(doc.uploaded_at)}
+          {photo ? <> · {doc.width}×{doc.height} · {formatBytes(doc.byte_size)} · {doc.mime_type}</> : null} · SHA-256{" "}
+          <span className="font-mono">{doc.sha256.slice(0, 12)}…</span>
+        </p>
         <DeleteDocumentButton documentId={doc.id} />
       </div>
 
@@ -83,6 +99,7 @@ export default async function DocumentPage({ params, searchParams }: PageProps<"
                 initialPage={review.page}
                 warnings={review.extraction?.warnings ?? []}
                 legibility={review.extraction?.page.legibility ?? null}
+                noPhotoNote={photo ? undefined : t("kh.samplePage")}
               />
             ) : (
               <Card>
@@ -138,6 +155,7 @@ export default async function DocumentPage({ params, searchParams }: PageProps<"
           </aside>
         </div>
       </OrientationProvider>
+      </div>
     </div>
   );
 }

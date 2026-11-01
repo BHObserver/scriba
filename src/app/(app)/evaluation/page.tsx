@@ -1,10 +1,16 @@
 import Link from "next/link";
+import { DetailsTop } from "@/components/details/details-top";
 import { GroundTruthEditor } from "@/components/ground-truth-editor";
 import { RunEvaluationButton } from "@/components/run-evaluation-button";
 import { Card, CardHeader, Notice, Pill, formatDateTime } from "@/components/ui";
 import { type EvaluationSummary, type Ratio, SCORED_FIELDS, formatRatio } from "@/lib/evaluation/metrics";
+import { getI18n } from "@/lib/i18n/server";
 import { PRICING_SOURCE } from "@/lib/pricing";
 import { requireUser } from "@/lib/server/auth";
+import { loadShopProfile } from "@/lib/server/shop-data";
+import { hasPhoto, isSeededPage } from "@/lib/shop/rows";
+
+export const metadata = { title: "Accuracy" };
 
 function Metric({ label, ratio, help }: { label: string; ratio: Ratio; help: string }) {
   return (
@@ -16,17 +22,32 @@ function Metric({ label, ratio, help }: { label: string; ratio: Ratio; help: str
   );
 }
 
+/** A run on a page the demo seed wrote. PostgREST embeds the page as one object; the untyped client calls it an array. */
+function seededRun(run: { ledger_documents: unknown }): boolean {
+  const doc = (Array.isArray(run.ledger_documents) ? run.ledger_documents[0] : run.ledger_documents) as { dataset_label: string | null } | null | undefined;
+  return doc != null && isSeededPage(doc);
+}
+
+/**
+ * পড়া কতটা ঠিক হয়: real requests to Meta and what they cost, ground truth, and evaluations.
+ * Readings the demo seed wrote were never requests, so they are left out and said so.
+ */
 export default async function EvaluationPage() {
   const { supabase } = await requireUser("/evaluation");
-  const [{ data: runs }, { count: cacheHits }, { data: docs }, { data: truths }, { data: evaluations }] = await Promise.all([
-    supabase.from("extraction_runs").select("status, model_id, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, elapsed_ms, estimated_cost_usd"),
+  const [{ data: runRows }, { count: cacheHits }, { data: docRows }, { data: truths }, { data: evaluations }, profile, { t }] = await Promise.all([
+    supabase.from("extraction_runs").select("status, model_id, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, elapsed_ms, estimated_cost_usd, ledger_documents(dataset_label)"),
     supabase.from("extraction_cache_hits").select("id", { count: "exact", head: true }),
-    supabase.from("ledger_documents").select("id, original_filename, sample_label, uploaded_at").order("uploaded_at"),
+    supabase.from("ledger_documents").select("id, original_filename, sample_label, dataset_label, uploaded_at").order("uploaded_at"),
     supabase.from("ground_truth_annotations").select("document_id, gt_version").order("gt_version", { ascending: false }),
     supabase.from("evaluation_runs").select("id, created_at, label, model_id, prompt_version, schema_version, validator_version, metrics_version, processing_mode, sample_count, summary").order("created_at", { ascending: false }).limit(10),
+    loadShopProfile(supabase),
+    getI18n(),
   ]);
 
-  const all = runs ?? [];
+  const seeded = (runRows ?? []).filter(seededRun).length;
+  const all = (runRows ?? []).filter((r) => !seededRun(r));
+  // Ground truth is written from a photo, so sample pages (no photo) aren't listed.
+  const docs = (docRows ?? []).filter(hasPhoto);
   const byStatus = all.reduce<Record<string, number>>((m, r) => ({ ...m, [r.status]: (m[r.status] ?? 0) + 1 }), {});
   const withUsage = all.filter((r) => r.input_tokens != null);
   const sum = (k: "input_tokens" | "cached_input_tokens" | "output_tokens" | "reasoning_tokens") => withUsage.reduce((s, r) => s + (r[k] ?? 0), 0);
@@ -37,15 +58,15 @@ export default async function EvaluationPage() {
   for (const t of truths ?? []) if (!latestGt.has(t.document_id)) latestGt.set(t.document_id, t.gt_version);
 
   return (
-    <div className="details-page space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Evaluation &amp; usage</h1>
-        <p className="text-sm text-ink-soft">Measured values only, always with their counts. Small samples are exploratory.</p>
-      </div>
+    <div className="dt">
+      <DetailsTop title={t("more.eval")} backHref="/settings" sample={profile?.isSample ?? false} note={t("dt.tech")} />
+      <div className="dt-body">
+      {seeded > 0 ? <p className="panel-soft t-body">{t("dt.ev.seeded", seeded)}</p> : null}
+      <p className="t-small">Measured values only, always with their counts. Small samples are exploratory.</p>
 
       <Card>
         <CardHeader title="Meta API usage" subtitle={`Estimated with published prices (${PRICING_SOURCE.retrieved}); image input is billed through the reported input tokens.`} />
-        <div className="grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
           <Stat label="Requests sent" value={String(all.length)} />
           <Stat label="Succeeded" value={String(byStatus.succeeded ?? 0)} />
           <Stat label="Failed / incomplete / uncertain" value={`${(byStatus.failed ?? 0) + (byStatus.invalid_output ?? 0)} / ${byStatus.incomplete ?? 0} / ${byStatus.uncertain ?? 0}`} />
@@ -61,10 +82,10 @@ export default async function EvaluationPage() {
       <Card>
         <CardHeader title="Ground truth" subtitle="Written by a person from each photo, independently of the model. Stored privately." action={<RunEvaluationButton />} />
         <ul className="divide-y divide-rule">
-          {(docs ?? []).map((d, i) => (
+          {docs.map((d, i) => (
             <li key={d.id} className="px-4 py-2 text-sm">
               <div className="flex flex-wrap items-center gap-3">
-                <Link href={`/documents/${d.id}`} className="min-w-0 flex-1 truncate hover:underline">
+                <Link href={`/documents/${d.id}`} className="flex min-h-11 min-w-0 flex-1 items-center truncate hover:underline">
                   {d.sample_label ?? d.original_filename ?? `Photo ${i + 1}`}
                 </Link>
                 {latestGt.has(d.id) ? <Pill tone="pass">ground truth v{latestGt.get(d.id)}</Pill> : <Pill>no ground truth</Pill>}
@@ -72,7 +93,7 @@ export default async function EvaluationPage() {
               <GroundTruthEditor documentId={d.id} sampleId={d.sample_label ?? `S${String(i + 1).padStart(2, "0")}`} currentVersion={latestGt.get(d.id) ?? null} />
             </li>
           ))}
-          {(docs ?? []).length === 0 ? <li className="px-4 py-6 text-sm text-ink-soft">Upload photos first.</li> : null}
+          {docs.length === 0 ? <li className="px-4 py-6 text-sm text-ink-soft">Upload photos first.</li> : null}
         </ul>
       </Card>
 
@@ -110,6 +131,7 @@ export default async function EvaluationPage() {
           );
         })
       )}
+      </div>
     </div>
   );
 }

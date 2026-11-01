@@ -8,6 +8,8 @@ import type { PartyKind } from "@/lib/ledger/parties";
 
 /** Demo-shop pages that have no photo: their records are sample data and show "no photo". */
 export const SAMPLE_PAGE_DATASET = "demo-sample";
+/** The author's development photos copied into the demo shop with their stored readings. */
+export const DEMO_PHOTO_DATASET = "demo-photo";
 
 export const RECORD_COLUMNS =
   "id, document_id, run_id, extracted_entry_id, line_order, transaction_type, party_id, customer_alias, item_name, source_text, quantity_text, unit, unit_rate_text, amount_text, amount_poisha, was_corrected, confirmed_at";
@@ -68,6 +70,11 @@ export function toShopProfile(row: ShopProfileRow): ShopProfile {
 
 export function hasPhoto(doc: Pick<DocumentRow, "dataset_label">): boolean {
   return doc.dataset_label !== SAMPLE_PAGE_DATASET;
+}
+
+/** Pages the demo seed wrote, with readings that were never sent to Meta. */
+export function isSeededPage(doc: Pick<DocumentRow, "dataset_label">): boolean {
+  return doc.dataset_label === SAMPLE_PAGE_DATASET || doc.dataset_label === DEMO_PHOTO_DATASET;
 }
 
 /** Records whose page is missing (deleted) are left out: they have no business date. */

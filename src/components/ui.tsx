@@ -16,7 +16,7 @@ export function Button({
     <button
       {...props}
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-colors",
+        "inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-3.5 py-2 text-sm font-medium transition-colors",
         "disabled:cursor-not-allowed disabled:opacity-50",
         variant === "primary" && "bg-accent text-white hover:bg-accent-strong",
         variant === "secondary" && "border border-rule bg-card text-ink hover:bg-paper",
@@ -29,7 +29,8 @@ export function Button({
 }
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <section className={cx("rounded-lg border border-rule bg-card", className)}>{children}</section>;
+  // Same surface as the kit's .card, so the details pages sit in the shell.
+  return <section className={cx("rounded-[26px] bg-card shadow-[var(--shadow)]", className)}>{children}</section>;
 }
 
 export function CardHeader({ title, subtitle, action }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode }) {

@@ -22,7 +22,7 @@ export default async function DuesPage({ searchParams }: PageProps<"/parties">) 
   const asOf = dhakaDate(new Date());
   const customers = duesData(shop, "customer", asOf).dues;
   const suppliers = duesData(shop, "supplier", asOf).dues;
-  const waiting = waitingPages(shop.pages.map(toPageView));
+  const waiting = waitingPages(shop.pages.map(toPageView), "/parties");
   return (
     <DuesScreen
       asOf={asOf}

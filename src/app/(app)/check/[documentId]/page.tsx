@@ -1,6 +1,7 @@
 import type { ComponentProps } from "react";
 import { notFound } from "next/navigation";
 import { readingFromRun } from "@/components/capture/problems";
+import { checkBackHref, checkHref } from "@/components/check/back-href";
 import { CheckScreen } from "@/components/check/check-screen";
 import { STORAGE_BUCKET, getLimitsConfig } from "@/lib/config";
 import { turnsForProcessingMode } from "@/lib/images/orientation";
@@ -18,7 +19,7 @@ function pageQueue(param: string | string[] | undefined, documentId: string): st
 }
 
 /** Everything the screen needs, read through the user's own client (RLS). Reads only. */
-async function loadCheck(supabase: Supabase, documentId: string, queue: string[]): Promise<ComponentProps<typeof CheckScreen> | null> {
+async function loadCheck(supabase: Supabase, documentId: string, queue: string[], backHref: string): Promise<ComponentProps<typeof CheckScreen> | null> {
   const { data: doc } = await supabase.from("ledger_documents").select("id, storage_path, width, height, uploaded_at").eq("id", documentId).maybeSingle();
   if (!doc) return null;
 
@@ -47,18 +48,22 @@ async function loadCheck(supabase: Supabase, documentId: string, queue: string[]
     readTurns: turnsForProcessingMode(latest?.processingMode),
     pageNumber: index + 1,
     pageCount: queue.length,
-    nextHref: nextId ? `/check/${nextId}?pages=${queue.join(",")}` : null,
+    nextHref: nextId ? checkHref(nextId, { pages: queue, from: backHref }) : null,
+    backHref,
     detailsHref: `/documents/${documentId}`,
   };
 }
 
-/** Opening this page only reads stored data. It never sends the photo to be read. */
+/**
+ * Opening this page only reads stored data. It never sends the photo to be read.
+ * `?from=` names the screen back returns to (History, Close the day); otherwise Today.
+ */
 export default async function CheckPage({ params, searchParams }: PageProps<"/check/[documentId]">) {
   const { documentId } = await params;
-  const { pages } = await searchParams;
+  const { pages, from } = await searchParams;
   if (!UUID_RE.test(documentId)) notFound();
   const { supabase } = await requireUser(`/check/${documentId}`);
-  const props = await loadCheck(supabase, documentId, pageQueue(pages, documentId));
+  const props = await loadCheck(supabase, documentId, pageQueue(pages, documentId), checkBackHref(from));
   if (!props) notFound();
   return <CheckScreen key={documentId} {...props} />;
 }

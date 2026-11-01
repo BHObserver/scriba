@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { checkHref } from "@/components/check/back-href";
 import { Button, ButtonLink, Cover, Keypad, type KeypadKey, Money, Seal, Sheet, StatusMark, applyKey, groupTyped } from "@/components/kit";
 import { useI18n } from "@/lib/i18n/client";
 import type { DaySummary } from "@/lib/insights/day";
@@ -37,7 +38,7 @@ export function CloseScreen(view: CloseView) {
   const [failed, setFailed] = useState(false);
   const mode = closeMode(day, counted);
   const expected = day.expectedCash.poisha;
-  const waiting = waitingPages(view.pages);
+  const waiting = waitingPages(view.pages, "/close");
   const isToday = view.date === view.asOf;
 
   const show = (next: Drill) => {
@@ -100,7 +101,7 @@ export function CloseScreen(view: CloseView) {
           <h2 className="t-sec">{isToday ? t("cl.pages") : t("cl.pagesOn", i18n.dayMonth(view.date))}</h2>
           {view.pages.length === 0 ? <p className="t-small" style={{ padding: "8px 0" }}>{t("cl.noPages")}</p> : null}
           {view.pages.map((p, i) => (
-            <PageRow key={p.documentId} page={p} n={i + 1} href={waiting.href ? `/check/${p.documentId}?pages=${waiting.ids.join(",")}` : `/check/${p.documentId}`} />
+            <PageRow key={p.documentId} page={p} n={i + 1} href={checkHref(p.documentId, { pages: waiting.ids, from: "/close" })} />
           ))}
           {isToday ? (
             <Link href="/capture" className="cl-add">

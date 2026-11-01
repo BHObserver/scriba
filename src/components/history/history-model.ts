@@ -1,3 +1,4 @@
+import { checkHref } from "@/components/check/back-href";
 import type { MarkKind } from "@/components/kit";
 import type { I18n } from "@/lib/i18n/format";
 import { addDays } from "@/lib/insights/calendar";
@@ -15,6 +16,9 @@ export type HistoryPageView = {
   /** The day view lists a checked page's confirmed lines; the day list doesn't need them. */
   recordIds?: string[];
 };
+
+/** What a thumbnail needs (also used by the all-photos details page). */
+export type ThumbPage = Pick<HistoryPageView, "documentId" | "photo">;
 
 export type HistoryDayView = {
   date: string;
@@ -95,21 +99,22 @@ export function closeStatus(close: CloseStatus | null, i18n: I18n): { mark: Mark
 
 /**
  * Where a page opens: the check flow. A page still waiting brings the day's other waiting pages
- * along, so he can go through them in a row.
+ * along, so he can go through them in a row. Back returns to the day.
  */
-export function pageHref(page: HistoryPageView, day: Pick<HistoryDayView, "pages">): string {
-  if (page.state === "checked") return `/check/${page.documentId}`;
+export function pageHref(page: HistoryPageView, day: Pick<HistoryDayView, "date" | "pages">): string {
+  const from = `/history/${day.date}`;
+  if (page.state === "checked") return checkHref(page.documentId, { from });
   const queue = day.pages.filter((p) => p.state !== "checked").map((p) => p.documentId);
-  return `/check/${page.documentId}?pages=${queue.join(",")}`;
+  return checkHref(page.documentId, { pages: queue, from });
 }
 
 /** The small upright copy of a page (GET /api/documents/[id]/thumb); the turn keeps the cache honest. */
-export function thumbSrc(page: HistoryPageView, width: 96 | 320): string | null {
+export function thumbSrc(page: ThumbPage, width: 96 | 320): string | null {
   return page.photo ? `/api/documents/${page.documentId}/thumb?w=${width}&t=${page.photo.turns}` : null;
 }
 
 /** The photo's height at `width` once turned upright; sample pages use a khata page's 3 : 4. */
-export function thumbHeight(page: HistoryPageView, width: number): number {
+export function thumbHeight(page: ThumbPage, width: number): number {
   if (!page.photo || page.photo.width <= 0 || page.photo.height <= 0) return Math.round((width * 4) / 3);
   const sideways = page.photo.turns % 2 === 1;
   const [w, h] = sideways ? [page.photo.height, page.photo.width] : [page.photo.width, page.photo.height];

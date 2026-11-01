@@ -86,6 +86,7 @@ describe("pages and the close", () => {
     ];
     expect(waitingPages(pages)).toEqual({ ids: ["b", "c"], href: "/check/b?pages=b,c" });
     expect(waitingPages(pages.slice(0, 1))).toEqual({ ids: [], href: null });
+    expect(waitingPages(pages, "/close").href).toBe("/check/b?pages=b,c&from=/close");
   });
 
   test("a count matches only to the poisha", () => {

@@ -9,7 +9,7 @@ import { partyLinkFor } from "@/lib/ledger/parties";
 import { validateLedger } from "@/lib/validation/engine";
 import { closeSnapshots, demoShop } from "./demo";
 import { historyDays, mergeProblem, searchLines } from "./history";
-import { type DocumentRow, type RecordRow, SAMPLE_PAGE_DATASET, dayPages, pageInfos, toBookInput } from "./rows";
+import { DEMO_PHOTO_DATASET, type DocumentRow, type RecordRow, SAMPLE_PAGE_DATASET, dayPages, isSeededPage, pageInfos, toBookInput } from "./rows";
 
 const NOW = new Date("2026-11-01T11:30:00+06:00");
 
@@ -147,6 +147,13 @@ describe("rows", () => {
       { documentId: "c", checked: false, waitingLines: 0 },
     ]);
     expect(dayPages(pages, "2026-10-30")).toEqual([]);
+  });
+
+  test("only the demo seed's pages count as seeded (their readings were never sent to Meta)", () => {
+    expect(isSeededPage({ dataset_label: SAMPLE_PAGE_DATASET })).toBe(true);
+    expect(isSeededPage({ dataset_label: DEMO_PHOTO_DATASET })).toBe(true);
+    expect(isSeededPage({ dataset_label: null })).toBe(false);
+    expect(isSeededPage({ dataset_label: "development" })).toBe(false);
   });
 });
 

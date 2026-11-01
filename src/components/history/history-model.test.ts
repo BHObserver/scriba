@@ -93,8 +93,8 @@ describe("day and page text", () => {
 describe("pages", () => {
   test("a waiting page brings the day's other waiting pages along", () => {
     const d = day("2026-11-01", [page("a"), page("b", { state: "waiting" }), page("c", { state: "unread" })]);
-    expect(pageHref(d.pages[0]!, d)).toBe("/check/a");
-    expect(pageHref(d.pages[2]!, d)).toBe("/check/c?pages=b,c");
+    expect(pageHref(d.pages[0]!, d)).toBe("/check/a?from=/history/2026-11-01");
+    expect(pageHref(d.pages[2]!, d)).toBe("/check/c?pages=b,c&from=/history/2026-11-01");
   });
 
   test("thumbnails exist only for real photos, upright", () => {

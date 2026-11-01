@@ -34,6 +34,8 @@ type Props = {
   pageNumber: number;
   pageCount: number;
   nextHref: string | null;
+  /** Where back goes: the screen that opened the page (History, Close the day), else Today. */
+  backHref: string;
   /** The details page: run history and the full review workspace. */
   detailsHref: string;
   /** Development only: the dev board saves and confirms in memory. */
@@ -45,7 +47,7 @@ type Props = {
  * started (on /capture, or "try again" here) comes from the reading queue; otherwise the stored
  * run decides. Opening this screen never sends a page to be read: only a tap does.
  */
-export function CheckScreen({ documentId, photo, review, serverReading, capturedAt, readTurns, pageNumber, pageCount, nextHref, detailsHref, api }: Props) {
+export function CheckScreen({ documentId, photo, review, serverReading, capturedAt, readTurns, pageNumber, pageCount, nextHref, backHref, detailsHref, api }: Props) {
   const { t } = useI18n();
   const router = useRouter();
   const { readings, read, forget } = useReadingQueue();
@@ -93,16 +95,17 @@ export function CheckScreen({ documentId, photo, review, serverReading, captured
         capturedAt={capturedAt}
         pageNumber={pageNumber}
         nextHref={nextHref}
+        backHref={backHref}
         detailsHref={detailsHref}
       />
     );
   }
-  if (review || reading?.phase === "done") return <ReadingView photo={sentPhoto} sub={readingSub} step={2} backHref="/" />;
-  if (reading?.phase === "reading" || reading?.phase === "server") return <ReadingView photo={sentPhoto} sub={readingSub} step={1} backHref="/" />;
+  if (review || reading?.phase === "done") return <ReadingView photo={sentPhoto} sub={readingSub} step={2} backHref={backHref} />;
+  if (reading?.phase === "reading" || reading?.phase === "server") return <ReadingView photo={sentPhoto} sub={readingSub} step={1} backHref={backHref} />;
 
   if (reading?.phase === "problem") {
     return (
-      <ProblemView kind={reading.problem} title={pageTitle} photo={sentPhoto} kept backHref="/">
+      <ProblemView kind={reading.problem} title={pageTitle} photo={sentPhoto} kept backHref={backHref}>
         <ProblemActions
           kind={reading.problem}
           detailsHref={detailsHref}
@@ -119,7 +122,7 @@ export function CheckScreen({ documentId, photo, review, serverReading, captured
   // Never read: the photo is stored but nothing has been sent. Turn it upright, then one tap reads it.
   return (
     <div className="flow column">
-      <TopBar title={pageTitle} backHref="/" />
+      <TopBar title={pageTitle} backHref={backHref} />
       <div className="pad pb-main">
         {photo.src ? (
           <div className="rd-photo">

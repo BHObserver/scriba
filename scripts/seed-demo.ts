@@ -22,7 +22,7 @@ import type { EntryValues, PageValues } from "@/lib/ledger/types";
 import { confirmRecordFor, findingRows } from "@/lib/review/confirm-record";
 import { type ReviewRow, toValidationInput } from "@/lib/review/state";
 import { DEMO_PROFILE, closeSnapshots, demoShop } from "@/lib/shop/demo";
-import { DOCUMENT_COLUMNS, type DocumentRow, type PartyRow, RECORD_COLUMNS, type RecordRow, SAMPLE_PAGE_DATASET, toBookInput } from "@/lib/shop/rows";
+import { DOCUMENT_COLUMNS, type DocumentRow, type PartyRow, RECORD_COLUMNS, type RecordRow, DEMO_PHOTO_DATASET, SAMPLE_PAGE_DATASET, toBookInput } from "@/lib/shop/rows";
 import { VALIDATOR_VERSION, deriveNumbers, validateLedger } from "@/lib/validation/engine";
 
 const args = new Set(process.argv.slice(2));
@@ -201,7 +201,7 @@ if (withPhotos) {
     must(await db.storage.from("scriba-originals").upload(path, bytes, { contentType: "image/jpeg", upsert: true }), `upload ${id}`);
     const at = new Date(now.getTime() - (PHOTO_PAGES.length - i) * 60_000).toISOString();
     await addPage({
-      document: { storage_path: path, sha256: sha(bytes), original_filename: `${id}.jpg`, mime_type: "image/jpeg", byte_size: bytes.length, width, height, uploaded_at: at, dataset_label: "demo-photo", sample_label: id },
+      document: { storage_path: path, sha256: sha(bytes), original_filename: `${id}.jpg`, mime_type: "image/jpeg", byte_size: bytes.length, width, height, uploaded_at: at, dataset_label: DEMO_PHOTO_DATASET, sample_label: id },
       run: { model: saved.model, promptVersion: saved.promptVersion, schemaVersion: saved.schemaVersion, result: parsed.extraction, startedAt: at },
       page: { dateText: parsed.extraction.page.dateText, ledgerType: parsed.extraction.page.ledgerType, accountName: parsed.extraction.page.accountName },
       entries: parsed.extraction.entries.map((e) => ({ values: e.values, candidateId: e.candidateId, line: e.line, bbox: e.bbox, reviewFields: e.reviewFields, uncertaintyReason: e.uncertaintyReason })),

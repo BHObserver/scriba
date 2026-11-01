@@ -1,75 +1,83 @@
 import Link from "next/link";
-import { Card, CardHeader, Notice, Pill, formatDateTime } from "@/components/ui";
-import { TRANSACTION_TYPE_LABELS, type TransactionType } from "@/lib/ledger/types";
-import { formatQuantity, formatTaka } from "@/lib/numerals";
+import { DetailsTop } from "@/components/details/details-top";
+import { Chip, EmptyState } from "@/components/kit";
+import { getI18n } from "@/lib/i18n/server";
+import type { MessageKey } from "@/lib/i18n/messages";
+import { dhakaDate } from "@/lib/ledger/dates";
+import { formatQuantity } from "@/lib/numerals";
 import { requireUser } from "@/lib/server/auth";
+import { loadShopProfile } from "@/lib/server/shop-data";
 
+export const metadata = { title: "Confirmed lines" };
+
+const LIMIT = 500;
+
+/**
+ * মিলিয়ে নেওয়া লাইন: every line a person confirmed, newest first, as written in the khata, with
+ * how it was reviewed and a link back to its photo and reading. A table from 900 px.
+ */
 export default async function RecordsPage() {
   const { supabase } = await requireUser("/records");
-  const { data: records } = await supabase
-    .from("confirmed_records")
-    .select(
-      "id, document_id, run_id, line_order, transaction_type, source_text, customer_alias, item_name, quantity_milli, unit, unit_rate_poisha, amount_poisha, balance_poisha, was_corrected, acknowledgements, confirmed_at",
-    )
-    .order("confirmed_at", { ascending: false })
-    .order("line_order")
-    .limit(500);
+  const [{ data: records }, profile, i18n] = await Promise.all([
+    supabase
+      .from("confirmed_records")
+      .select("id, document_id, run_id, transaction_type, source_text, customer_alias, item_name, quantity_milli, unit, unit_rate_poisha, amount_poisha, was_corrected, acknowledgements, confirmed_at")
+      .order("confirmed_at", { ascending: false })
+      .order("line_order")
+      .limit(LIMIT),
+    loadShopProfile(supabase),
+    getI18n(),
+  ]);
+  const { t, money, digits } = i18n;
+  const list = records ?? [];
 
   return (
-    <div className="details-page space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">Confirmed records</h1>
-        <p className="text-sm text-ink-soft">Lines a person approved. Each links back to its photo, the model&apos;s reading and the review trail.</p>
-      </div>
-      <Notice tone="info">These are reviewed Scriba records. They are not double-entry journal postings and are not sent to any other system.</Notice>
-      <Card>
-        <CardHeader title={`${records?.length ?? 0} record(s)`} />
-        {records && records.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead className="border-b border-rule text-left text-xs text-ink-soft">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Written</th>
-                  <th className="px-2 py-2 font-medium">Type</th>
-                  <th className="px-2 py-2 font-medium">Item / customer</th>
-                  <th className="px-2 py-2 text-right font-medium">Qty × rate</th>
-                  <th className="px-2 py-2 text-right font-medium">Amount</th>
-                  <th className="px-2 py-2 font-medium">Review</th>
-                  <th className="px-4 py-2 font-medium">Confirmed</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-rule">
-                {records.map((r) => {
-                  const accepted = (r.acknowledgements?.accepted ?? []) as unknown[];
-                  return (
-                    <tr key={r.id}>
-                      <td className="bn max-w-xs px-4 py-2">{r.source_text}</td>
-                      <td className="px-2 py-2">{TRANSACTION_TYPE_LABELS[r.transaction_type as TransactionType]}</td>
-                      <td className="bn px-2 py-2">{[r.item_name, r.customer_alias].filter(Boolean).join(" · ") || "—"}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">
-                        {r.quantity_milli != null ? `${formatQuantity(r.quantity_milli)}${r.unit ? ` ${r.unit}` : ""}` : "—"}
-                        {r.unit_rate_poisha != null ? ` × ${formatTaka(r.unit_rate_poisha)}` : ""}
-                      </td>
-                      <td className="px-2 py-2 text-right font-medium tabular-nums">{formatTaka(r.amount_poisha)}</td>
-                      <td className="space-x-1 px-2 py-2">
-                        {r.was_corrected ? <Pill tone="accent">corrected</Pill> : <Pill>as read</Pill>}
-                        {accepted.length > 0 ? <Pill tone="warn">{accepted.length} accepted warning(s)</Pill> : null}
-                      </td>
-                      <td className="px-4 py-2 text-xs text-ink-soft">
-                        {formatDateTime(r.confirmed_at)}
-                        <br />
-                        <Link href={`/documents/${r.document_id}?run=${r.run_id}`} className="text-accent hover:underline">Source photo</Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+    <div className="dt">
+      <DetailsTop title={t("more.records")} sub={t("dt.lines", list.length)} backHref="/settings" sample={profile?.isSample ?? false} note={t("dt.rec.lead")} />
+      <div className="dt-body">
+        {list.length === 0 ? (
+          <EmptyState title={t("dt.rec.empty.t")} body={t("dt.rec.empty.b")} />
         ) : (
-          <p className="px-4 py-6 text-sm text-ink-soft">Nothing confirmed yet.</p>
+          <div className="card overflow-hidden">
+            <div className="dt-head" aria-hidden="true">
+              <span>{t("dt.col.written")}</span>
+              <span>{t("dt.col.type")}</span>
+              <span>{t("dt.col.what")}</span>
+              <span>{t("dt.col.qty")}</span>
+              <span>{t("dt.col.amount")}</span>
+              <span>{t("dt.col.review")}</span>
+              <span>{t("dt.col.when")}</span>
+            </div>
+            <ul className="dt-list">
+              {list.map((r) => {
+                const accepted = ((r.acknowledgements as { accepted?: unknown[] } | null)?.accepted ?? []).length;
+                const qty = r.quantity_milli != null ? `${digits(formatQuantity(r.quantity_milli))}${r.unit ? ` ${r.unit}` : ""}` : null;
+                const qtyRate = [qty, r.unit_rate_poisha != null ? money(r.unit_rate_poisha) : null].filter(Boolean).join(" × ");
+                return (
+                  <li key={r.id} className="dt-rec">
+                    <span className="dt-src bn">{r.source_text}</span>
+                    <span className="dt-meta">
+                      <span>{t(`type.${r.transaction_type}` as MessageKey)}</span>
+                      <span className="bn">{[r.item_name, r.customer_alias].filter(Boolean).join(" · ") || "—"}</span>
+                      <span className="dt-qty">{qtyRate || "—"}</span>
+                    </span>
+                    <span className="dt-amt num">{money(r.amount_poisha)}</span>
+                    <span className="dt-rev">
+                      <Chip>{t(r.was_corrected ? "dt.rec.corrected" : "dt.rec.asRead")}</Chip>
+                      {accepted > 0 ? <Chip kind="look">{t("dt.rec.accepted", accepted)}</Chip> : null}
+                    </span>
+                    <span className="dt-when">
+                      <span>{i18n.dayMonth(dhakaDate(new Date(r.confirmed_at)))}</span>
+                      <Link href={`/documents/${r.document_id}?run=${r.run_id}`}>{t("dt.rec.photo")}</Link>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         )}
-      </Card>
+        {list.length === LIMIT ? <p className="t-small">{t("dt.rec.limit", LIMIT)}</p> : null}
+      </div>
     </div>
   );
 }

@@ -142,7 +142,7 @@ export function SummaryView({
  * removed, nothing fails and at least one check passed. Otherwise the page is "in" and the
  * screen says plainly what still doesn't add up.
  */
-export function SealedView({ photo, rows, findings, outcome, land, pageNumber, accountName, sub, nextHref }: { photo: Photo; rows: readonly ReviewRow[]; findings: readonly Finding[]; outcome: PageOutcome; land: boolean; pageNumber: number; accountName: string | null; sub: string; nextHref: string | null }) {
+export function SealedView({ photo, rows, findings, outcome, land, pageNumber, accountName, sub, nextHref, backHref }: { photo: Photo; rows: readonly ReviewRow[]; findings: readonly Finding[]; outcome: PageOutcome; land: boolean; pageNumber: number; accountName: string | null; sub: string; nextHref: string | null; backHref: string }) {
   const i18n = useI18n();
   const { t, money } = i18n;
   const hero = pageSentence(i18n, rows, findings);
@@ -158,7 +158,7 @@ export function SealedView({ photo, rows, findings, outcome, land, pageNumber, a
   })();
   return (
     <div className="flow column">
-      <TopBar title={t("sl.title")} sub={sub} backHref="/" />
+      <TopBar title={t("sl.title")} sub={sub} backHref={backHref} />
       {photo.src ? (
         <div className="sl-photo">
           <OrientedImage src={photo.src} alt="" turns={photo.turns} size={photo} maxHeightVh={40} />

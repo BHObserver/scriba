@@ -1,11 +1,11 @@
 import { cx } from "@/components/ui";
-import { type HistoryPageView, thumbHeight, thumbSrc } from "./history-model";
+import { type ThumbPage, thumbHeight, thumbSrc } from "./history-model";
 
 /**
  * A page as a small picture: his photo, upright, from the thumbnail route; or, for a sample
  * page that has no photo, a drawn ruled page (never fake handwriting).
  */
-export function PageThumb({ page, width, label, className }: { page: HistoryPageView; width: number; label?: string; className?: string }) {
+export function PageThumb({ page, width, label, className }: { page: ThumbPage; width: number; label?: string; className?: string }) {
   const height = thumbHeight(page, width);
   const src = thumbSrc(page, width > 96 ? 320 : 96);
   if (!src) {

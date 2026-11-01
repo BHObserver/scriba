@@ -68,6 +68,7 @@ export function ReviewSession({
   capturedAt,
   pageNumber,
   nextHref,
+  backHref,
   detailsHref,
 }: {
   api: ReviewApi;
@@ -79,6 +80,7 @@ export function ReviewSession({
   capturedAt: string;
   pageNumber: number;
   nextHref: string | null;
+  backHref: string;
   detailsHref: string;
 }) {
   const i18n = useI18n();
@@ -287,13 +289,13 @@ export function ReviewSession({
 
   const screen = (() => {
     if (stage === "nothing") {
-      return <NothingView title={pageTitle} photo={photo} backHref="/" retakeHref="/capture" onAdd={() => openAdd(lastRow?.id ?? null)} />;
+      return <NothingView title={pageTitle} photo={photo} backHref={backHref} retakeHref="/capture" onAdd={() => openAdd(lastRow?.id ?? null)} />;
     }
     if (stage === "reveal") {
-      return <RevealView photo={photo} rows={review.rows} page={review.page} sub={sub} backHref="/" onStart={start} nextHref={nextHref} nextPage={nextHref ? pageNumber + 1 : undefined} />;
+      return <RevealView photo={photo} rows={review.rows} page={review.page} sub={sub} backHref={backHref} onStart={start} nextHref={nextHref} nextPage={nextHref ? pageNumber + 1 : undefined} />;
     }
     if (stage === "done") {
-      return <SealedView photo={photo} rows={review.rows} findings={findings} outcome={pageOutcome(review, findings)} land={landed} pageNumber={pageNumber} accountName={accountName} sub={sub} nextHref={nextHref} />;
+      return <SealedView photo={photo} rows={review.rows} findings={findings} outcome={pageOutcome(review, findings)} land={landed} pageNumber={pageNumber} accountName={accountName} sub={sub} nextHref={nextHref} backHref={backHref} />;
     }
     if (stage === "summary") {
       const statusOf = (row: ReviewRow) => cardStatus(row, entries.get(row.id), findings, acceptances[row.id]);

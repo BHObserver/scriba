@@ -3,6 +3,7 @@
  * it is tested without a browser. No figure is computed here: every amount comes from the
  * engine (`DaySummary`, `WeekComparison`), which computed it from confirmed lines.
  */
+import { checkHref } from "@/components/check/back-href";
 import type { I18n } from "@/lib/i18n/format";
 import type { MessageKey } from "@/lib/i18n/messages";
 import type { CashPart, CashPartKey, DaySummary } from "@/lib/insights/day";
@@ -80,9 +81,9 @@ export function weekLine(total: number, diff: number | null, i18n: I18n): string
 }
 
 /** Pages he still has to check, in capture order, and where the first one opens. */
-export function waitingPages(pages: readonly DayPageView[]): { ids: string[]; href: string | null } {
+export function waitingPages(pages: readonly DayPageView[], from?: string): { ids: string[]; href: string | null } {
   const ids = pages.filter((p) => p.state !== "checked").map((p) => p.documentId);
-  return { ids, href: ids.length > 0 ? `/check/${ids[0]}?pages=${ids.join(",")}` : null };
+  return { ids, href: ids.length > 0 ? checkHref(ids[0]!, { pages: ids, from }) : null };
 }
 
 /** Likely reasons for a gap between counted and expected cash (counted − expected). */

@@ -76,6 +76,11 @@ button.rc-row:not([disabled]) .rc-l::after { content: " ›"; color: var(--ink-s
 
 /* close the day: a flow screen (no tab bar), the actions docked at the bottom */
 .close-flow { padding-bottom: 190px; }
+/* Laptop: the flow is a centred 480 px column with the cover as a card on top, like Today. */
+@media (min-width: 768px) {
+  .close-flow { width: 100%; max-width: 480px; margin: 0 auto; padding-top: 20px; }
+  .close-flow .cloth { border-radius: 24px; }
+}
 .close-dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 22px 20px calc(24px + var(--safe-b)); background: linear-gradient(to top, var(--paper) 74%, oklch(0.972 0.014 85 / 0)); }
 .close-dock-in { max-width: 480px; margin: 0 auto; display: grid; gap: 8px; }
 .close-dock .t-small { text-align: center; }

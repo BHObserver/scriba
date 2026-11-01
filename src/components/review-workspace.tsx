@@ -30,6 +30,8 @@ type Props = {
   initialPage: PageState;
   warnings: string[];
   legibility: string | null;
+  /** Said instead of "could not be loaded" when the page has no photo (a sample page). */
+  noPhotoNote?: string;
 };
 
 const NO_ACK: Acknowledgements = { findings: [], uncheckable: false };
@@ -46,7 +48,7 @@ function NumberPreview({ parsed, kind }: { parsed: ParsedNumber | null; kind: "m
   return <span className="text-ink-soft">= {kind === "money" ? formatTaka(parsed.value) : formatQuantity(parsed.value)}</span>;
 }
 
-export function ReviewWorkspace({ runId, imageUrl, imageSize, imageTurns, initialRows, initialPage, warnings, legibility }: Props) {
+export function ReviewWorkspace({ runId, imageUrl, imageSize, imageTurns, initialRows, initialPage, warnings, legibility, noPhotoNote }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState(initialRows);
   const [page, setPage] = useState(initialPage);
@@ -252,7 +254,7 @@ export function ReviewWorkspace({ runId, imageUrl, imageSize, imageTurns, initia
                 ) : null}
               </OrientedImage>
             ) : (
-              <Notice tone="warn">The photograph could not be loaded.</Notice>
+              <Notice tone={noPhotoNote ? "info" : "warn"}>{noPhotoNote ?? "The photograph could not be loaded."}</Notice>
             )}
             <p className="mt-2 text-xs text-ink-soft">
               {focusRow && !box ? "No reliable position for this line; use the whole photo. " : ""}
@@ -596,7 +598,7 @@ export function ReviewWorkspace({ runId, imageUrl, imageSize, imageTurns, initia
           })}
         </ol>
 
-        <div className="sticky bottom-0 z-10 -mx-1 rounded-t-lg border border-rule bg-card/95 p-3 shadow-sm backdrop-blur">
+        <div className="rounded-lg border border-rule bg-card p-3">
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-sm">
               <span className="font-semibold">{selected.size}</span> line(s) selected
