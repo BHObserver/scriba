@@ -34,6 +34,7 @@ export default async function TodayPage() {
       note={insights.note}
       pages={pages.map(toPageView)}
       duesHref={TABS.find((tab) => tab.id === "dues")!.href}
+      askName={dues.parties[0]?.name ?? null}
     />
   );
 }

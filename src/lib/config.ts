@@ -62,6 +62,35 @@ export function getVoiceConfig(): VoiceConfig {
   };
 }
 
+export type AskConfig = {
+  /** SCRIBA_ASK=off refuses every typed or spoken question (a kill switch). Suggestions still work. */
+  enabled: boolean;
+  modelId: string;
+  reasoningEffort: ReasoningEffort;
+  maxOutputTokens: number;
+  timeoutMs: number;
+  maxQuestionChars: number;
+  perHour: number;
+  perDay: number;
+};
+
+export function getAskConfig(): AskConfig {
+  const effort = (process.env.SCRIBA_ASK_REASONING_EFFORT ?? "low").trim() as ReasoningEffort;
+  if (!REASONING_EFFORTS.includes(effort)) {
+    throw new Error(`SCRIBA_ASK_REASONING_EFFORT must be one of ${REASONING_EFFORTS.join(", ")}.`);
+  }
+  return {
+    enabled: (process.env.SCRIBA_ASK ?? "on").trim().toLowerCase() !== "off",
+    modelId: process.env.META_ASK_MODEL_ID?.trim() || process.env.META_MODEL_ID?.trim() || "muse-wonder-1.0",
+    reasoningEffort: effort,
+    maxOutputTokens: intFromEnv("SCRIBA_ASK_MAX_OUTPUT_TOKENS", 2000, { min: 256, max: 8000 }),
+    timeoutMs: intFromEnv("META_ASK_TIMEOUT_MS", 45_000, { min: 5_000, max: 120_000 }),
+    maxQuestionChars: 200,
+    perHour: intFromEnv("SCRIBA_ASK_PER_HOUR", 20),
+    perDay: intFromEnv("SCRIBA_ASK_PER_DAY", 60),
+  };
+}
+
 export type LimitsConfig = {
   maxUploadBytes: number;
   extractionsPerHour: number;

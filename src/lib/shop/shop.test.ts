@@ -3,45 +3,15 @@ import { prepareBook } from "@/lib/insights/book";
 import { duesList } from "@/lib/insights/accounts";
 import { daySummary } from "@/lib/insights/day";
 import { bookInput, makeParty, makeRecords } from "@/lib/insights/testing";
-import type { BookInput, InsightParty, InsightRecord, RecordType } from "@/lib/insights/types";
 import { businessDateFor } from "@/lib/ledger/dates";
-import { partyLinkFor } from "@/lib/ledger/parties";
 import { validateLedger } from "@/lib/validation/engine";
-import { closeSnapshots, demoShop } from "./demo";
+import { closeSnapshots, demoBookInput as demoInput, demoShop } from "./demo";
 import { historyDays, mergeProblem, searchLines } from "./history";
 import { DEMO_PHOTO_DATASET, type DocumentRow, type RecordRow, SAMPLE_PAGE_DATASET, dayPages, isSeededPage, pageInfos, toBookInput } from "./rows";
 
 const NOW = new Date("2026-11-01T11:30:00+06:00");
 
-/** The demo as the confirm function would store it: parties by kind + key, records per line. */
-function demoBookInput(): BookInput {
-  const shop = demoShop(NOW);
-  const parties = new Map<string, InsightParty>();
-  const records: InsightRecord[] = [];
-  for (const p of shop.pages) {
-    const types = p.lines.map((l) => l.type);
-    p.lines.forEach((l, i) => {
-      const link = partyLinkFor(l, p.page, types);
-      const partyId = link ? `${link.kind}:${link.key}` : null;
-      if (link && partyId && !parties.has(partyId)) parties.set(partyId, makeParty(partyId, link.kind, link.name));
-      records.push({
-        id: `${p.key}-${i}`,
-        documentId: p.key,
-        runId: `run-${p.key}`,
-        businessDate: p.date,
-        capturedAt: p.capturedAt,
-        lineOrder: i + 1,
-        type: l.type as RecordType,
-        partyId,
-        itemName: l.item,
-        amountPoisha: Number(l.amountText!.replace(/[০-৯]/g, (d) => String("০১২৩৪৫৬৭৮৯".indexOf(d)))) * 100,
-        wasCorrected: false,
-        confirmedAt: p.capturedAt,
-      });
-    });
-  }
-  return { records, parties: [...parties.values()], closes: [], usualOpeningCashPoisha: 150_000 };
-}
+const demoBookInput = () => demoInput(NOW);
 
 describe("demo shop", () => {
   const shop = demoShop(NOW);

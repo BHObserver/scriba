@@ -3,6 +3,7 @@
 @import "../components/check/flow.css" layer(components);
 @import "../components/money/money.css" layer(components);
 @import "../components/history/history.css" layer(components);
+@import "../components/ask/ask.css" layer(components);
 @import "../components/details/details.css" layer(components);
 
 /* Scriba: নতুন হালখাতা. Tokens from design/DIRECTION.md; meaning is fixed:

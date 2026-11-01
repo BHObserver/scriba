@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { AskPill, AskSheet } from "@/components/ask/ask-sheet";
 import { ButtonLink, Cover, EmptyState, Money, Seal, StatusMark } from "@/components/kit";
 import { cx } from "@/components/ui";
 import { useI18n } from "@/lib/i18n/client";
@@ -25,6 +26,8 @@ export type TodayView = {
   note: NoteSentence[];
   pages: DayPageView[];
   duesHref: string;
+  /** The riskiest customer's name, for Ask Scriba's first suggestion. */
+  askName: string | null;
 };
 
 /**
@@ -38,6 +41,7 @@ export function TodayScreen(view: TodayView) {
   const { day } = view;
   const [drill, setDrill] = useState<Drill | null>(null);
   const [open, setOpen] = useState(false);
+  const [asking, setAsking] = useState(false);
   const show = (next: Drill) => {
     setDrill(next);
     setOpen(true);
@@ -140,8 +144,11 @@ export function TodayScreen(view: TodayView) {
                 {t("td.waiting")}
               </ButtonLink>
             ) : null}
+            <AskPill onOpen={() => setAsking(true)} />
           </section>
-        ) : null}
+        ) : (
+          <AskPill solo onOpen={() => setAsking(true)} />
+        )}
 
         {day.close ? <ClosedRow day={day} /> : (
           <ButtonLink href="/close" variant="red" wide>
@@ -175,6 +182,7 @@ export function TodayScreen(view: TodayView) {
       </div>
 
       <DrillSheet day={day} asOf={view.asOf} drill={drill} open={open} onDrill={show} onClose={() => setOpen(false)} />
+      <AskSheet open={asking} onClose={() => setAsking(false)} name={view.askName} />
     </div>
   );
 }

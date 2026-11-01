@@ -13,6 +13,7 @@
     "live:extract": "bun scripts/live-extract.ts",
     "live:smoke": "bun scripts/live-smoke.ts",
     "live:voice": "bun scripts/live-voice.ts",
+    "live:ask": "bun scripts/live-ask.ts",
     "shot": "bun scripts/shot.ts",
     "seed:demo": "bun scripts/seed-demo.ts",
     "db:push": "supabase db push",

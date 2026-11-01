@@ -255,6 +255,9 @@ describe("structural guarantee: only explicit paths can reach Meta", () => {
     // P1: one clip per press of "stop" in the fix sheet; never retried, never chained to a model.
     "src/app/api/voice/route.ts",
     "scripts/live-voice.ts",
+    // P2: one text call per typed or spoken question (never per suggestion), never retried.
+    "src/app/api/ask/route.ts",
+    "scripts/live-ask.ts",
   ]);
 
   function files(dir: string): string[] {

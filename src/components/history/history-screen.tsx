@@ -3,6 +3,7 @@
 import { Search, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { AskPill, AskSheet } from "@/components/ask/ask-sheet";
 import { Button, ButtonLink, EmptyState, SampleBadge, StatusMark } from "@/components/kit";
 import { RecordRow } from "@/components/money/drill-sheet";
 import { possessiveName } from "@/components/money/dues-model";
@@ -22,6 +23,8 @@ export type HistoryView = {
   /** A search from the URL (`?q=`), so back from a result returns to it. */
   query: string;
   searchLimit: number;
+  /** The riskiest customer's name, for Ask Scriba's first suggestion. */
+  askName: string | null;
 };
 
 type Found = { query: string; lines: LineDetail[] | null; failed: boolean };
@@ -63,6 +66,7 @@ export function HistoryScreen(view: HistoryView) {
   const { t } = i18n;
   const [query, setQuery] = useState(view.query);
   const search = useSearch(query);
+  const [asking, setAsking] = useState(false);
   const change = (next: string) => {
     setQuery(next);
     const q = next.trim();
@@ -94,6 +98,7 @@ export function HistoryScreen(view: HistoryView) {
             ) : null}
           </div>
         ) : null}
+        {view.days.length > 0 && !search.q ? <AskPill solo onOpen={() => setAsking(true)} /> : null}
       </div>
       <div className="pad money-body">
         {view.days.length === 0 ? (
@@ -120,6 +125,7 @@ export function HistoryScreen(view: HistoryView) {
           </>
         )}
       </div>
+      <AskSheet open={asking} onClose={() => setAsking(false)} name={view.askName} />
     </div>
   );
 }

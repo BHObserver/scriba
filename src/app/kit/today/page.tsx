@@ -37,6 +37,7 @@ function view(step: Step): TodayView {
     },
     dues: { totalPoisha: insights.customerDues.total.poisha, people: insights.customerDues.parties.length, flagged: insights.customerDues.flagged },
     note: insights.note,
+    askName: insights.customerDues.parties[0]?.name ?? null,
     pages,
     duesHref: "/kit/today",
   };

@@ -9,8 +9,9 @@
 import { prepareBook } from "@/lib/insights/book";
 import { addDays, weekdayOf } from "@/lib/insights/calendar";
 import { type DayCloseSnapshot, dayCloseSnapshot, daySummary } from "@/lib/insights/day";
-import type { BookInput, InsightDayClose } from "@/lib/insights/types";
+import type { BookInput, InsightDayClose, InsightParty, InsightRecord, RecordType } from "@/lib/insights/types";
 import { dhakaDate } from "@/lib/ledger/dates";
+import { partyLinkFor } from "@/lib/ledger/parties";
 import type { EntryValues, PageValues, TransactionType } from "@/lib/ledger/types";
 import { toBanglaDigits } from "@/lib/numerals";
 
@@ -206,4 +207,37 @@ export function closeSnapshots(input: BookInput, closes: readonly DemoClose[]): 
       });
       return snapshot;
     });
+}
+
+/**
+ * The demo as the confirm function would store it (parties by kind + key, records per line),
+ * without a database: for tests and `bun run live:ask`.
+ */
+export function demoBookInput(now: Date): BookInput {
+  const shop = demoShop(now);
+  const parties = new Map<string, InsightParty>();
+  const records: InsightRecord[] = [];
+  for (const p of shop.pages) {
+    const types = p.lines.map((l) => l.type);
+    p.lines.forEach((l, i) => {
+      const link = partyLinkFor(l, p.page, types);
+      const partyId = link ? `${link.kind}:${link.key}` : null;
+      if (link && partyId && !parties.has(partyId)) parties.set(partyId, { id: partyId, kind: link.kind, displayName: link.name, mergedInto: null });
+      records.push({
+        id: `${p.key}-${i}`,
+        documentId: p.key,
+        runId: `run-${p.key}`,
+        businessDate: p.date,
+        capturedAt: p.capturedAt,
+        lineOrder: i + 1,
+        type: l.type as RecordType,
+        partyId,
+        itemName: l.item,
+        amountPoisha: Number(l.amountText!.replace(/[০-৯]/g, (d) => String("০১২৩৪৫৬৭৮৯".indexOf(d)))) * 100,
+        wasCorrected: false,
+        confirmedAt: p.capturedAt,
+      });
+    });
+  }
+  return { records, parties: [...parties.values()], closes: [], usualOpeningCashPoisha: DEMO_PROFILE.openingCashPoisha };
 }

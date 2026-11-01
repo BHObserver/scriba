@@ -23,10 +23,10 @@ function errorFor(status: number, code: unknown): VoiceError {
 }
 
 /**
- * The fix sheet's microphone: listening → sending → heard. What was heard goes to `onHeard`;
- * nothing is saved here. Closing the sheet mid-recording releases the microphone.
+ * The fix sheet's (and Ask Scriba's) microphone: listening → sending → heard. The number read
+ * from what was heard, and the words, go to `onHeard`; nothing is saved here. Closing the sheet mid-recording releases the microphone.
  */
-export function useVoice(lang: "bn" | "en", onHeard: (number: SpokenNumber) => void) {
+export function useVoice(lang: "bn" | "en", onHeard: (number: SpokenNumber, transcript: string) => void) {
   const supported = useSyncExternalStore(noSubscribe, voiceSupported, () => false);
   const [state, setState] = useState<VoiceState>({ s: "idle" });
   const recording = useRef<Recording | null>(null);
@@ -56,7 +56,7 @@ export function useVoice(lang: "bn" | "en", onHeard: (number: SpokenNumber) => v
         return;
       }
       setState({ s: "heard", transcript: body.transcript ?? "", number: body.number });
-      heard.current(body.number);
+      heard.current(body.number, body.transcript ?? "");
     } catch {
       if (mine === turn.current) setState({ s: "error", error: "failed" });
     }
