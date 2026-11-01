@@ -1,6 +1,7 @@
 /**
- * Explicit live check of voice correction (P1): send ONE WAV clip to Muse Voice Transcribe and
- * print what it heard and the number the code reads from it. Never run by tests or builds.
+ * Explicit live check of voice correction (P1) and spoken answers (U2): send ONE WAV clip to Muse
+ * Voice Transcribe and print what it heard, and the number and yes/no the code reads from it.
+ * Never run by tests or builds.
  * Each run spends a little credit ($0.18 per audio hour, so about $0.0005 for a 10 s clip).
  *
  *   bun run live:voice <clip.wav>             # Bangla bias, as on the Bangla screen
@@ -14,6 +15,7 @@ import { readFileSync } from "node:fs";
 import { getMetaConfig, getVoiceConfig } from "@/lib/config";
 import { buildTranscribeRequest, createTranscriber, type VoiceLanguage } from "@/lib/meta/voice";
 import { estimateVoiceCostUsd } from "@/lib/pricing";
+import { readYesNo } from "@/lib/voice/answer-words";
 import { parseSpokenNumber } from "@/lib/voice/number-words";
 import { readWavInfo, wavProblem } from "@/lib/voice/wav";
 
@@ -46,4 +48,5 @@ if (!result.ok) {
 }
 console.log("Heard:", JSON.stringify(result.transcript));
 console.log("Number:", JSON.stringify(parseSpokenNumber(result.transcript)));
+console.log("Yes/no:", JSON.stringify(readYesNo(result.transcript)));
 console.log(`Audio ${result.audioDurationMs} ms · about $${estimateVoiceCostUsd(result.audioDurationMs).toFixed(6)} · ${result.elapsedMs} ms round trip · session ${result.sessionId ?? "?"}`);

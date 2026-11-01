@@ -74,12 +74,30 @@ export type BlockValues = {
   dateText: string | null;
 };
 
+/**
+ * A question Scriba asked and the answer the shopkeeper gave (U2). Kept with the page, so the
+ * audit trail records it and the question isn't asked again while its subject is unchanged.
+ */
+export type AnswerRecord = {
+  /** The question, e.g. "meaning:b1". */
+  q: string;
+  /** What the question was about; when that changes, it is asked again. */
+  fp: string;
+  /** The option chosen, or "value" for a typed or spoken answer. */
+  a: string;
+  /** Problems this answer accepted, as approval fingerprints (`ackFingerprint`). */
+  accepted?: string[];
+  at: string;
+};
+
 export type PageValues = {
   dateText: string | null;
   ledgerType: LedgerType;
   accountName: string | null;
   /** Schema 3 readings only. Absent: the page-level rules apply, as for prompt 4. */
   blocks?: BlockValues[];
+  /** Answers to Scriba's questions, latest per question. */
+  answers?: AnswerRecord[];
 };
 
 export const SALE_TYPES: ReadonlySet<TransactionType> = new Set(["credit_sale", "cash_sale"]);

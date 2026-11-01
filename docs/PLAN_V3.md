@@ -61,12 +61,13 @@ Same tracks as the master plan: A in `scriba/` on `scriba-mvp`, B in `../scriba-
 | D5 | A | Design: scanner, block cards, "Scriba asks" cards, answering by button, voice and typing | U1 note (the data shape) |
 | C2 | A | Page finder: detect corners, flatten, drag corners | C1, D5 |
 | U2 | B | Questions engine and answer API | U1 |
-| B7 | A | The new check flow: blocks and questions in the slider | D5, U2 |
+| U2b | B | Question copy: D5's wording in the engine's keys, visit figures, the khata's last due, per-unit figures | U2, D5 |
+| B7 | A | The new check flow: blocks and questions in the slider | D5, U2, U2b |
 | U3 | B | Two-pass reading, measured against single pass | U1, C2 |
 | U4 | B | Company memo (challan): read it, link it to the visit, fill prices | U2, B7 |
 | F2 | with user | Testing and evaluation (MASTER_PLAN), plus the v3 test pages | all of the above |
 
-Order if one account does everything: C1 → U1 → D5 → C2 → U2 → B7 → U3 → U4 → F2 → F3 → F4.
+Order if one account does everything: C1 → U1 → D5 → C2 → U2 → U2b → B7 → U3 → U4 → F2 → F3 → F4.
 
 ---
 
