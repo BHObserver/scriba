@@ -68,6 +68,7 @@ Nothing a shopkeeper must read goes below 13 px; explanations and actions stay a
 - Radii: cards and tiles 26; strips 12; buttons and chips fully round (999).
 - Buttons 56 px tall; every touch target ≥ 44 px. Primary is `--red` with cream text; secondary is a 1.5 px ink outline.
 - Card elevation: `0 1px 0 oklch(0.85 0.02 70), 0 12px 32px oklch(0.4 0.03 60 / .10)`. No other shadows except the camera button.
+- **Since D5 (plan v3, "sleek and modern")** the new screens (scanner, block cards, "Scriba asks") use `--depth` instead: `0 1px 2px oklch(0.4 0.03 60 / .08), 0 10px 24px -6px oklch(0.4 0.03 60 / .14), 0 28px 60px -18px oklch(0.35 0.04 60 / .22)`, with no hairline borders; soft fills `--tint: oklch(0.955 0.012 80)` and `--blue-soft: oklch(0.94 0.035 262)` replace borders. Blocks carry a tone: visit/supplier blue, day sales green (outline, tag, avatar, progress). A finished block gets the small red stamp "মিলেছে"; the page keeps the big seal.
 - Tab bar: 86 px, `--paper-card`, hairline top border; tabs আজ, খাতা, (camera), বাকি, আরও; the active tab has a 22 × 4 px red mark above its label; the camera button is a 66 px red circle with a cream ring lens, raised 26 px above the bar.
 - Reference frame 390 × 844. On laptops: flows (capture, check, close) in a centered 480 px column; Today and History may use two columns from 1024 px.
 

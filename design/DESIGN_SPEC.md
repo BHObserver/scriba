@@ -1,4 +1,4 @@
-# Scriba design spec (for build sessions B1–B6)
+# Scriba design spec (for build sessions B1–B7, C2)
 
 Screen by screen: what to build, its states, interactions and motion, the kit components it uses, and the prototype to open. Read `design/DIRECTION.md` first (tokens, type, motion values) and take strings from `design/COPY.md`. Written in D4, 31 Oct 2026.
 
@@ -10,6 +10,7 @@ Screen by screen: what to build, its states, interactions and motion, the kit co
 | `Money Screens.html` (D3) | Today, drill-downs, Ask, Close the day, Dues, party ledger, reminder | `today drill expected closed ask listen answer unknown close count match gap dues payables party remind`, `&pending=1` |
 | `Shop Screens.html` (D4) | onboarding, History, More, learning, empty and error states, English check, kit | `welcome how shop cash newToday history day search search-none history-empty more learn dues-empty nothing unreadable small sideways offline failed busy waiting file en-today en-card kit`, `&lang=en` |
 | `Khata Page.html` (D4) | printable A5 Scriba khata page | n/a |
+| `Scan and Ask.html` (D5) | scanner, corners, flatten, reading into blocks, block overview, the "Scriba asks" deck, block and page seals | see the D5 section |
 
 Open a prototype file with `read_file`, or screenshot one step, only for the screen you are building. Porting is mostly mechanical: the JSX uses plain React state and the class names in `kit.css`, `flow.css`, `money.css` and `more.css`.
 
@@ -91,6 +92,28 @@ Open a prototype file with `read_file`, or screenshot one step, only for the scr
 ## Printable khata page (P4) · `Khata Page.html`
 
 A5 portrait, prints as exactly one page at 100%. Four corner markers (6 mm ink squares with a white centre) for finding the page; header "Scriba খাতা" (serif, red) with a one-line promise, দোকান ____, পাতা নং box; columns তারিখ 13% | নাম 22% | জিনিস 19% | পরিমাণ 11% | দর 10% | টাকা 15% | বাকি/জমা 10%, red header rules and a red margin rule after তারিখ; a carried-balance row ("আগের পাতা থেকে জের"), 17 writing rows (each বাকি/জমা cell prints a faint "বা জ" to circle), a total row ("মোট · পরের পাতায় জের"); footer tips. The carry rows feed the `cross_record_continuity` check. P4 renders this as a PDF and tells the prompt the column order so position decides qty vs rate vs amount.
+
+## D5: scan and ask (C2, B7) · `Scan and Ask.html`
+
+Written 2 Nov 2026 for plan v3. The page is a mock of the north-star page: the day's sales, with a company visit written beside it. Data and copy are in `proto/ask-data.js`; pieces in `scan-kit.jsx`; screens in `screens-scan.jsx` and `screens-asks.jsx`; styles in `scan.css` plus six review fixes in the HTML's `<style>` (fold them into `scan.css` when porting). Steps: `scan scan-far scan-khata corners flatten reading overview q1 q2 q3 q4 voice seal-b2 seal-gap q5 q6 rest seal-b1 page page-gap`, `&lang=en`.
+
+**Sleeker than D2, same direction:** cards have no hairlines, only the layered `--depth` shadow (three layers); soft fills (`--tint`, `--blue-soft`) replace borders; the question is 26/1.3 600; one red action per card, everything else is a soft pill. Blocks have a tone (visit = blue, day sales = green) used for the region outline, the kicker tag, the avatar and the progress segments. Red stays the khata, turmeric stays "needs a look".
+
+- **Scanner** (C2, dark): wood-table viewfinder 390 × 560. Before the page is found: four white guide corners and "পাতা খুঁজছি…". Found: the outline (turmeric stroke, 10 % fill, corner dots) follows the page every frame; the status pill says "hold still"; with auto shutter on, a ring fills round the shutter in 1.6 s and fires (manual shutter always works; the auto chip toggles, 44 px). **Too far** (page < ~35 % of the frame): dashed cream outline, turmeric pill "আরেকটু কাছে আনুন", no auto shot. **Scriba khata**: the four corner squares give an exact lock: green outline and pill.
+- **Corners**: the still photo with the detector's quad; four 40 px translucent handles. Dragging shows a 120 px loupe (3×, crosshair) on the opposite side from the finger. Retake (cream outline) / সোজা করুন (red).
+- **Flatten**: the page animates from the photo's quad to a rectangle in 700 ms (ease-out cubic) using the same homography (`quadMatrix` in `scan-kit.jsx`, Heckbert square-to-quad as CSS `matrix3d`); then "পাতা সোজা হয়েছে", "this straightened page is what gets read", কোণ ঠিক করুন / পড়তে দিন. Reduced motion: no travel, the flat page appears.
+- **Reading**: the flattened page with the scan line; three honest steps (reading, sorting into parts, checking); the block regions draw in turn (tone outline, numbered tag "১ দিনের বিক্রি", "২ প্রাণ · সেলিম"), then lift (scale 1.03, shadow) as the page splits; then the overview.
+- **Block overview**: page thumbnail with tinted regions + "এই পাতায় ২টা অংশ পেয়েছি" (30 px) and "৬টা প্রশ্ন, এক মিনিটের মতো". One card per block with its number badge and a turmeric "Nটা প্রশ্ন" chip; a page row for page-level questions (no date). Dock: দেখা শুরু করুন.
+- **Company-visit card** (`VisitCard`): avatar (first letters, tone fill), party, "<person> এসেছিলেন · কোম্পানি এসেছিল". Rows: আগের দেনা, আজ দিয়েছেন (− amount), মাল এসেছে with each item + qty and its price or a **gap** (turmeric-soft fill, 2 px dashed turmeric-edge outline, "দাম ?", tappable). Footer এখন দেনা: the full figure (30 px) when every item is priced, else the known part + gap pill "+ মালের দাম". Never a zero. Compact variant for lists. `SalesCard` is the same frame with the day's total.
+- **The deck** ("Scriba asks"): back + progress segments (one per question, tinted by block); the card fills the area with two ghost cards behind; it rises in (380 ms) and leaves right (240 ms). Order: page questions, then block by block: its questions → quick confirm of its other lines → its stamp; the page seal last. Card anatomy: kicker (red dot, "Scriba জানতে চায়", block tag) → visual (crop, date tile, match pair or item chips; centred in the free space) → the sentence → why (code's reason, a tick when code verified it) → answer.
+  - **Confirm** (`q1` date, `q2` visit meaning): one red button that states the answer ("হ্যাঁ, আজ · ২ নভেম্বর", "ঠিক আছে"); pills "না, বদলাব" (sheet "কোনটা ভুল?" listing the fields) and "বলে দিন"; hint "ডানে সরালেও ঠিক হয়". **Swipe right only on confirm cards and the quick-confirm card**; a green "ঠিক আছে" tag fades in with the drag.
+  - **Choose** (`q3` same party, `q6` cash or credit): 64 px option tiles; one tap answers (ink ring, then the card leaves after 260 ms; back undoes). `q5` doubtful digit: the line's crop with a turmeric ring round the doubtful amount, two 116 px tiles with the readings and **code-computed context** ("৬টা, ৳১৫ করে" vs "৳১.৬৭ করে"), plus "বলে দিন".
+  - **Type** (`q4` missing prices): one row per goods line (crop of the item, reading, price slot or the value); tapping opens the keypad sheet; a live "এখন দেনা" row recomputes as prices go in. "দাম রাখুন" enables when all are priced; "পরে দেব" leaves the gap open.
+  - **Voice**: in the keypad sheet, "বলে দিন" → dark listening panel (bars, "দামটা বলুন", an example) → the heard words + the parsed value placed in the field (turmeric) with "‘রাখুন’ চাপলে তবেই বসবে।" Never auto-saved.
+  - **Quick confirm** (`rest`): "বাকি ৫টা লাইন দেখে নিন", rows of crop + reading + amount (tap to fix), one button সব ঠিক আছে.
+  - **Block done**: the block's card with a small red **stamp** "মিলেছে" (66 px, double ring, −12°, lands like the seal) and "প্রাণের হিসাব হয়ে গেছে" + "worked out by code, from your answers". Prices left for later: no stamp, the open due as the title and a turmeric-soft note.
+- **Page seal**: the page with its regions and the big seal straddling its bottom-right corner (only when nothing is open), "পুরো পাতা দেখা হয়েছে", one row per block (visit due, day's sales), খাতায় তুলুন → "খাতায় উঠেছে · আজকের হিসাবে যোগ হয়েছে". With prices still missing: no seal, the open due and the note; confirming leaves the unpriced goods unconfirmed (approval rules unchanged).
+- **Question → answer → events** (for U2/B7): every answer becomes review events; a "No" opens the field edit, never a silent change. Kinds designed here: no date, block meaning, same party, missing price, doubtful digit (model options), cash or credit. Unbalanced block and unknown direction reuse the choose card.
 
 ## Accessibility (all screens)
 

@@ -561,3 +561,95 @@ Extracted from the prototype files; B1–B5 give each a key when they port the s
 - ${poss(p.name)} ${poss(dateLabel(o.rec.ago))} বাকির ${tk(o.left)} এখনো শোধ হয়নি। ${bn(o.rec.ago)} দিন হলো।
 - আজ নগদ বিক্রির ${bn(d.recs.cash_sale.length)}টি লাইন, যোগ ${tk(d.cash)}।
 
+## Part 3: D5 scan and ask (bn + en)
+
+Source: `proto/ask-data.js` (`T`) in the Claude Design project. Names, items, units and khata text in `{1}` slots are the user’s words and are never translated.
+
+| Key | বাংলা | English |
+|---|---|---|
+| `asks` | Scriba জানতে চায় | Scriba asks |
+| `scan.finding` | পাতা খুঁজছি… | Looking for the page… |
+| `scan.found` | পাতা পেয়েছি · ফোন স্থির রাখুন | Page found · hold still |
+| `scan.far` | পাতা ছোট দেখাচ্ছে · আরেকটু কাছে আনুন | The page looks small · come a little closer |
+| `scan.khata` | Scriba খাতা · চার কোণ একদম ঠিক | Scriba khata · all four corners exact |
+| `scan.auto` | নিজে থেকে তুলবে | Auto shutter |
+| `on` | চালু | On |
+| `off` | বন্ধ | Off |
+| `scan.shutter` | ছবি তুলুন | Take the photo |
+| `scan.tip` | পুরো পাতাটা ফ্রেমে রাখুন | Keep the whole page in the frame |
+| `corners.title` | পাতার কোণ ঠিক আছে? | Are the corners right? |
+| `corners.tip` | গোল দাগ টেনে পাতার আসল কোণে বসান। | Drag a dot onto the page's real corner. |
+| `retake` | আবার তুলুন | Retake |
+| `flatten` | সোজা করুন | Straighten |
+| `flat.title` | পাতা সোজা হয়েছে | The page is straight |
+| `flat.body` | এই সোজা পাতাটাই পড়া হবে। | This straightened page is what gets read. |
+| `flat.fix` | কোণ ঠিক করুন | Fix corners |
+| `flat.send` | পড়তে দিন | Read it |
+| `read.1` | লেখা পড়ছি | Reading the writing |
+| `read.2` | কোন লেখা কোন হিসাবের, ভাগ করছি | Sorting the writing into parts |
+| `read.3` | হিসাব মেলাচ্ছি | Checking the sums |
+| `read.note` | লেখা পড়ে AI, হিসাব মেলায় কোড, শেষ কথা আপনার। | AI reads, code does the sums, you have the final say. |
+| `page` | পাতা {1} | Page {1} |
+| `ov.title` | এই পাতায় {1}টা অংশ পেয়েছি | Scriba found {1} parts on this page |
+| `ov.sub` | {1}টা প্রশ্ন, এক মিনিটের মতো লাগবে। | {1} questions, about a minute. |
+| `ov.start` | দেখা শুরু করুন | Start checking |
+| `ov.q` | {1}টা প্রশ্ন | Questions: {1} |
+| `ov.nodate` | পাতায় তারিখ নেই | No date on the page |
+| `supplier_visit` | কোম্পানি এসেছিল | Company visit |
+| `day_sales` | দিনের বিক্রি | Day's sales |
+| `visit.rep` | {1} এসেছিলেন | {1} came |
+| `visit.before` | আগের দেনা | Owed before |
+| `visit.paid` | আজ দিয়েছেন | Paid today |
+| `visit.goods` | মাল এসেছে | Goods received |
+| `visit.now` | এখন দেনা | Owed now |
+| `visit.gap` | দাম ? | price ? |
+| `visit.gapNow` | + মালের দাম | + the goods |
+| `sales.lines` | {1}টা লাইন | {1} lines |
+| `sales.total` | মোট বিক্রি | Total sales |
+| `note` | নোট | Note |
+| `prev` | আগের প্রশ্ন | Previous |
+| `yes` | ঠিক আছে | That's right |
+| `no` | না, বদলাব | No, change it |
+| `say` | বলে দিন | Say it |
+| `swipe` | ডানে সরালেও ঠিক হয় | Or swipe right |
+| `other` | অন্য কিছু | Something else |
+| `q.date` | পাতায় কোনো তারিখ লেখা নেই। আজকের তারিখ ধরব? | There's no date on this page. Shall I use today's? |
+| `q.date.yes` | হ্যাঁ, আজ · {1} | Yes, today · {1} |
+| `q.date.other` | অন্য দিন | Another day |
+| `q.date.yday` | গতকাল · {1} | Yesterday · {1} |
+| `q.visit` | {1} কোম্পানির {2} এসেছিলেন। আগে দেনা ছিল {3}, আজ তাঁকে দিয়েছেন {4}। ঠিক বুঝেছি? | {2} came from {1}. You owed {3} before, and paid {2} {4} today. Did I get that right? |
+| `q.party` | ‘{1}’ কি আপনার খাতার ‘{2}’? | Is ‘{1}’ the ‘{2}’ in your khata? |
+| `q.party.why` | খাতায় তাদের কাছে শেষ দেনা ছিল {1}। এই পাতার ‘আগের’ লেখাও {1}। | Your khata last showed {1} owed to them. This page's ‘before’ is also {1}. |
+| `q.party.same` | হ্যাঁ, একই কোম্পানি | Yes, the same company |
+| `q.party.new` | না, নতুন মহাজন | No, a new supplier |
+| `q.price` | {1}টা মালের দাম লেখা নেই। দাম কত ছিল? | {1} goods have no price written. What did they cost? |
+| `q.price.why` | কোম্পানির মেমো থাকলে দেখে বলুন। Scriba দাম আন্দাজ করবে না। | Check the company's memo if you have it. Scriba won't guess a price. |
+| `q.price.save` | দাম রাখুন | Save the prices |
+| `q.price.later` | পরে দেব | Later |
+| `q.price.slot` | দাম দিন | Add price |
+| `q.egg` | ডিমের টাকা দুইভাবে পড়া যায়। কোনটা লেখা? | The eggs' amount reads two ways. Which is written? |
+| `q.egg.each` | {1}টা, {2} করে | {1} at {2} each |
+| `q.cash` | এই {1}টা বিক্রি কি সব নগদে? | Were these {1} sales all cash? |
+| `q.cash.why` | পাতায় নগদ বা বাকি লেখা নেই। | The page doesn't say cash or credit. |
+| `q.cash.yes` | হ্যাঁ, সব নগদ | Yes, all cash |
+| `q.cash.some` | কিছু বাকিতে | Some on credit |
+| `rest.title` | বাকি {1}টা লাইন দেখে নিন | Check the other {1} lines |
+| `rest.tap` | কোনোটা ভুল হলে সেটায় চাপুন | Tap any line that's wrong |
+| `rest.ok` | সব ঠিক আছে | All correct |
+| `bs.stamp` | মিলেছে | Checked |
+| `bs.visit` | {1} হিসাব হয়ে গেছে | Done: {1} |
+| `bs.sales` | দিনের বিক্রি মিলেছে | The day's sales are checked |
+| `bs.gap` | মালের দাম এখনো বাকি। দাম দিলে দেনা পুরো হবে। | The goods still have no price. The amount owed is complete once you add it. |
+| `bs.code` | হিসাব করেছে কোড, আপনার উত্তর থেকে | Worked out by code, from your answers |
+| `bs.next` | পরের অংশ | Next part |
+| `ps.title` | পুরো পাতা দেখা হয়েছে | The whole page is checked |
+| `ps.confirm` | খাতায় তুলুন | Add to the khata |
+| `ps.done` | খাতায় উঠেছে · আজকের হিসাবে যোগ হয়েছে | Added · it now counts in Today |
+| `fix.which` | কোনটা ভুল? | What's wrong? |
+| `fix.party` | কোম্পানি আর লোক | Company and person |
+| `voice.listen` | শুনছি… দামটা বলুন | Listening… say the price |
+| `voice.eg` | যেমন ‘আটশো চল্লিশ’ | For example ‘eight hundred forty’ |
+| `voice.heard` | শুনেছি: ‘{1}’ | Heard: ‘{1}’ |
+| `voice.never` | ‘রাখুন’ চাপলে তবেই বসবে। | Nothing is saved until you tap Keep. |
+| `keep` | রাখুন | Keep |
+| `del` | মুছুন | Delete |
