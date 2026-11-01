@@ -2,9 +2,9 @@
  * U3: how a reading groups the lines into blocks, against ground truth. Pure, like metrics.ts.
  *
  * Grouping agreement looks at every pair of ground-truth lines: they are in the same block or
- * not, and the reading agrees or not. Lines are aligned by reading order, as in evaluateSample,
- * so a missing or split line counts against the reading. A pair is scored only when the reading
- * has both lines.
+ * not, and the reading agrees or not. The caller aligns the lines (by order, or alignByContent)
+ * and gives each read line under the number of the truth line it was paired with. A pair is
+ * scored only when the reading has both lines.
  */
 import type { Ratio } from "./metrics";
 

@@ -63,7 +63,7 @@ function numberOrText(parse: typeof parseMoney, text: string | null): number | s
   return p.ok ? p.value : `unparsed:${normText(text)}`;
 }
 
-function expectedValue(gt: GroundTruthEntry, field: ScoredField): string | number | null {
+export function expectedValue(gt: GroundTruthEntry, field: ScoredField): string | number | null {
   switch (field) {
     case "type":
       return gt.type;
@@ -84,7 +84,7 @@ function expectedValue(gt: GroundTruthEntry, field: ScoredField): string | numbe
   }
 }
 
-function observedValue(v: EntryValues, field: ScoredField): string | number | null {
+export function observedValue(v: EntryValues, field: ScoredField): string | number | null {
   switch (field) {
     case "type":
       return v.type;
@@ -129,17 +129,28 @@ export function isArithmeticallyChecked(entryId: string, findings: Finding[]): b
   );
 }
 
+/** A ground-truth line and the reading's line scored against it; null on one side is a missing or extra line. */
+export type LinePair = { gtLine: number | null; line: number | null };
+
 /**
  * Evaluate the model's original output for one image against its ground truth.
  * Entries are aligned by reading order (line 1 with line 1, ...). This is strict:
  * a split or merged line misaligns everything after it, which is counted as error.
+ * `pairs` replaces that alignment (alignByContent, for the U3 scorer); the app's
+ * evaluations keep the strict one.
  */
 export function evaluateSample(
   gt: GroundTruth,
   extracted: { ledgerType: LedgerType; entries: NormalizedEntry[] },
+  pairs?: LinePair[],
 ): SampleEvaluation {
   const gtEntries = [...gt.entries].sort((a, b) => a.line - b.line);
   const exEntries = [...extracted.entries].sort((a, b) => a.line - b.line);
+  const gtIndex = new Map(gtEntries.map((g, i) => [g.line, i]));
+  const exIndex = new Map(exEntries.map((x, i) => [x.line, i]));
+  const order = pairs
+    ? pairs.map((p) => [p.gtLine == null ? -1 : gtIndex.get(p.gtLine)!, p.line == null ? -1 : exIndex.get(p.line)!] as const)
+    : Array.from({ length: Math.max(gtEntries.length, exEntries.length) }, (_, i) => [i, i] as const);
 
   const validationEntries: ValidationEntry[] = exEntries.map((e) => ({
     id: e.candidateId,
@@ -172,11 +183,14 @@ export function evaluateSample(
     expectedFlagsCaught: 0,
   };
 
-  const length = Math.max(gtEntries.length, exEntries.length);
-  for (let i = 0; i < length; i++) {
-    const g = gtEntries[i];
-    const x = exEntries[i];
-    const v = x ? validationEntries[i]! : null;
+  let missingEntries = 0;
+  let extraEntries = 0;
+  for (const [gi, xi] of order) {
+    const g = gtEntries[gi];
+    const x = exEntries[xi];
+    const v = x ? validationEntries[xi]! : null;
+    if (g && !x) missingEntries++;
+    if (x && !g) extraEntries++;
     const flagged = v ? isFlagged(v, findings) : false;
     if (v && flagged) c.entriesFlagged++;
 
@@ -234,8 +248,8 @@ export function evaluateSample(
     split: gt.split,
     gtEntries: gtEntries.length,
     extractedEntries: exEntries.length,
-    missingEntries: Math.max(0, gtEntries.length - exEntries.length),
-    extraEntries: Math.max(0, exEntries.length - gtEntries.length),
+    missingEntries,
+    extraEntries,
     comparisons,
     counts: c,
   };

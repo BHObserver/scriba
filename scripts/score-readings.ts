@@ -4,21 +4,26 @@
  * extra, how the lines are grouped into blocks, and what each reading cost.
  *
  *   bun scripts/score-readings.ts private-test-data/ground-truth/V01.json private-test-data/responses/V01.jpg.*.private.json
+ *   bun scripts/score-readings.ts --align=order <truth> <responses>...   # strict, as the app's evaluations
  *
  * Reads the files live:extract writes (one call, or `--two-pass`). Block scores need the
- * ground truth's `_blocks` (informal: kind and line numbers per block).
+ * ground truth's `_blocks` (informal: kind and line numbers per block). Lines are paired by
+ * content (alignByContent) unless `--align=order`, so a merged line costs only its own lines.
  */
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
+import { alignByContent } from "@/lib/evaluation/align";
 import { type TruthBlocks, groupingAgreement, kindsFound } from "@/lib/evaluation/blocks";
 import { groundTruthSchema } from "@/lib/evaluation/ground-truth";
-import { evaluateSample, formatRatio } from "@/lib/evaluation/metrics";
+import { type LinePair, evaluateSample, formatRatio } from "@/lib/evaluation/metrics";
 import { type ModelResponseSummary, type NormalizedExtraction, parseModelResponse } from "@/lib/extraction/parse";
 import { type TokenUsage, estimateCostUsd } from "@/lib/pricing";
 
-const [truthPath, ...files] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const byOrder = args.includes("--align=order");
+const [truthPath, ...files] = args.filter((a) => !a.startsWith("--"));
 if (!truthPath || files.length === 0) {
-  console.error("Usage: bun scripts/score-readings.ts <ground-truth.json> <response.private.json>...");
+  console.error("Usage: bun scripts/score-readings.ts [--align=order] <ground-truth.json> <response.private.json>...");
   process.exit(2);
 }
 
@@ -45,7 +50,14 @@ function readingOf(saved: Saved): { x: NormalizedExtraction; calls: number; cost
   return { x: parsed.extraction, calls: 1, cost: estimateCostUsd(saved.model, saved.result.usage), ms: saved.result.elapsedMs };
 }
 
-console.log(`Ground truth ${truth.sample_id}: ${truth.entries.length} lines${truthBlocks ? `, ${truthBlocks.length} blocks` : ", no _blocks (block scores skipped)"}\n`);
+/** Line 1 with line 1, and so on: evaluateSample's own alignment, spelled out for the grouping score. */
+function pairsByOrder(readLines: number[]): LinePair[] {
+  const gt = truth.entries.map((g) => g.line).sort((a, b) => a - b);
+  const read = [...readLines].sort((a, b) => a - b);
+  return Array.from({ length: Math.max(gt.length, read.length) }, (_, i) => ({ gtLine: gt[i] ?? null, line: read[i] ?? null }));
+}
+
+console.log(`Ground truth ${truth.sample_id}: ${truth.entries.length} lines${truthBlocks ? `, ${truthBlocks.length} blocks` : ", no _blocks (block scores skipped)"}, lines paired by ${byOrder ? "order" : "content"}\n`);
 for (const file of files) {
   const saved = JSON.parse(readFileSync(file, "utf8")) as Saved;
   const r = readingOf(saved);
@@ -54,7 +66,8 @@ for (const file of files) {
     console.log(`  skipped: ${r}\n`);
     continue;
   }
-  const e = evaluateSample(truth, { ledgerType: r.x.page.ledgerType, entries: r.x.entries });
+  const pairs = byOrder ? pairsByOrder(r.x.entries.map((x) => x.line)) : alignByContent(truth.entries, r.x.entries);
+  const e = evaluateSample(truth, { ledgerType: r.x.page.ledgerType, entries: r.x.entries }, pairs);
   const c = e.counts;
   console.log(`  cost     ${r.calls} call${r.calls === 1 ? "" : "s"}  $${r.cost?.toFixed(4) ?? "?"}  ${(r.ms / 1000).toFixed(1)} s`);
   console.log(`  lines    ${e.extractedEntries} read for ${e.gtEntries} (missing ${e.missingEntries}, extra ${e.extraEntries})`);
@@ -63,12 +76,15 @@ for (const file of files) {
   // Numbers are compared in poisha (money) and thousandths (quantities).
   const shown = (field: string, v: string | number | null) => (typeof v !== "number" ? (v ?? "—") : field === "qty" ? v / 1000 : v / 100);
   const wrong = e.comparisons.filter((x) => !x.correct && x.field !== "type");
-  if (wrong.length > 0) console.log(`  misread  ${wrong.map((x) => `L${x.gtLine}.${x.field} ${shown(x.field, x.observed)} (is ${shown(x.field, x.expected)})`).join(", ")}`);
+  const lineName = (x: (typeof wrong)[number]) => (x.gtLine != null ? `L${x.gtLine}` : `extra ${x.extractedLine}`);
+  if (wrong.length > 0) console.log(`  misread  ${wrong.map((x) => `${lineName(x)}.${x.field} ${shown(x.field, x.observed)} (is ${shown(x.field, x.expected)})`).join(", ")}`);
   if (truthBlocks) {
     const blocks = r.x.blocks ?? [];
+    const blockOf = new Map(r.x.entries.map((x) => [x.line, x.values.block ?? null]));
+    const paired = pairs.flatMap((p) => (p.gtLine != null && p.line != null ? [{ line: p.gtLine, block: blockOf.get(p.line) ?? null }] : []));
     console.log(`  blocks   ${blocks.map((b) => `${b.id} ${b.kind}${b.party ? ` ${b.party}` : ""}`).join(" | ") || "none"}`);
     console.log(`  kinds    ${formatRatio(kindsFound(truthBlocks, blocks.map((b) => b.kind)))}`);
-    console.log(`  grouping ${formatRatio(groupingAgreement(truthBlocks, r.x.entries.map((x) => ({ line: x.line, block: x.values.block ?? null }))))}`);
+    console.log(`  grouping ${formatRatio(groupingAgreement(truthBlocks, paired))}`);
   }
   if (r.x.reading?.fallback) console.log(`  fallback ${r.x.reading.fallback}`);
   console.log("");

@@ -150,6 +150,7 @@ Order if one account does everything: C1 → U1 → D5 → C2 → U2 → U2b →
 - **Credit rules change** from "one call per run" to "one run = at most 1 + N calls, N ≤ 6, each logged and counted". Update `tests/credit-control.test.ts` first.
 - **Measure** against single pass on the test pages, for accuracy and cost. Ship behind an env switch only if it's better.
 - **Live**: ≤ $2, logged.
+- **Result (2 Nov):** not better on flattened pages (fewer amounts right, 2.5× the cost), so `SCRIBA_TWO_PASS` stays off. Spent $0.836. See `docs/sessions/U3.md`.
 
 ### U4: company memo (Track B, small UI)
 
