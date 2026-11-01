@@ -5,14 +5,14 @@ export type TabId = "today" | "khata" | "dues" | "more";
 /**
  * Bottom-bar destinations. Routes that don't exist yet point at the closest working page, so
  * every tab leads somewhere real; each build session switches its tab when its page lands:
- * B4 today → "/" (done), B5 dues → "/parties" (done), B6 khata → "/history". The camera is "/capture" (B2).
+ * B4 today → "/", B5 dues → "/parties", B6 khata → "/history" (all done). The camera is "/capture" (B2).
  */
 export const TABS: ReadonlyArray<{ id: TabId; label: MessageKey; href: string; match: readonly string[] }> = [
   { id: "today", label: "tab.today", href: "/", match: ["/"] },
-  { id: "khata", label: "tab.khata", href: "/documents", match: ["/documents", "/history"] },
+  { id: "khata", label: "tab.khata", href: "/history", match: ["/history"] },
   { id: "dues", label: "tab.dues", href: "/parties", match: ["/parties"] },
   // Confirmed lines and accuracy are details pages reached from Settings (MASTER_PLAN routes).
-  { id: "more", label: "tab.more", href: "/settings", match: ["/settings", "/evaluation", "/records"] },
+  { id: "more", label: "tab.more", href: "/settings", match: ["/settings", "/evaluation", "/records", "/documents"] },
 ];
 
 export const CAMERA_HREF = "/capture";

@@ -49,6 +49,13 @@ export function formatDayMonth(iso: string, locale: Locale): string {
   return `${localDigits(String(p.d), locale)} ${MONTHS[locale][p.m - 1] ?? ""}`.trim();
 }
 
+/** The month a business date falls in, for a heading: "অক্টোবর ২০২৬" / "Oct 2026". */
+export function formatMonthYear(iso: string, locale: Locale): string {
+  const p = parseIsoDate(iso);
+  if (!p) return iso;
+  return `${MONTHS[locale][p.m - 1] ?? ""} ${localDigits(String(p.y), locale)}`.trim();
+}
+
 export function formatWeekday(iso: string, locale: Locale, short = false): string {
   const p = parseIsoDate(iso);
   if (!p) return "";
@@ -75,6 +82,7 @@ export type I18n = {
   count: (n: number) => string;
   digits: (text: string) => string;
   dayMonth: (iso: string) => string;
+  monthYear: (iso: string) => string;
   weekday: (iso: string) => string;
   weekdayShort: (iso: string) => string;
 };
@@ -87,6 +95,7 @@ export function makeI18n(locale: Locale): I18n {
     count: (n) => formatCount(n, locale),
     digits: (text) => localDigits(text, locale),
     dayMonth: (iso) => formatDayMonth(iso, locale),
+    monthYear: (iso) => formatMonthYear(iso, locale),
     weekday: (iso) => formatWeekday(iso, locale),
     weekdayShort: (iso) => formatWeekday(iso, locale, true),
   };

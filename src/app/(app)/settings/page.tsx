@@ -1,22 +1,29 @@
-import { ChevronRight } from "lucide-react";
-import Link from "next/link";
-import { LanguageSwitch } from "@/components/shell/language-switch";
+import { redirect } from "next/navigation";
+import { MoreScreen } from "@/components/more/more-screen";
 import { Card, CardHeader, Notice, Pill } from "@/components/ui";
 import { configurationStatus, getLimitsConfig, getMetaConfig } from "@/lib/config";
 import { getExtractionProfile } from "@/lib/extraction/prompt";
 import { METRICS_VERSION } from "@/lib/evaluation/metrics";
 import { PRICING_SOURCE, isContributorModel } from "@/lib/pricing";
-import { getI18n } from "@/lib/i18n/server";
+import { getI18n, getLocale } from "@/lib/i18n/server";
+import { openingCash } from "@/lib/insights/day";
+import { dhakaDate } from "@/lib/ledger/dates";
+import { requireUser } from "@/lib/server/auth";
+import { loadShop } from "@/lib/server/shop-data";
 import { VALIDATOR_VERSION } from "@/lib/validation/engine";
 
-/** Shows which settings are present. Never displays a secret value. */
+export const metadata = { title: "More" };
+
+/**
+ * আরও: the shop, the language, the details pages and sign-out; below them, which server
+ * settings are present (never a secret value), for anyone auditing the build.
+ */
 export default async function SettingsPage() {
-  const { t } = await getI18n();
-  const details = [
-    ["/documents", t("more.photos")],
-    ["/records", t("more.records")],
-    ["/evaluation", t("more.eval")],
-  ] as const;
+  const { supabase } = await requireUser("/settings");
+  const shop = await loadShop(supabase);
+  if (!shop.profile) redirect("/welcome");
+  const [{ t }, locale] = await Promise.all([getI18n(), getLocale()]);
+  const asOf = dhakaDate(new Date());
   const status = configurationStatus();
   const meta = getMetaConfig();
   const limits = getLimitsConfig();
@@ -27,33 +34,16 @@ export default async function SettingsPage() {
     ["META_MODEL_API_KEY", status.metaApiKey, "Server only: Meta Model API"],
   ];
   return (
-    <div className="details-page space-y-6">
-      <div className="column grid gap-3">
-        <h1 className="t-title pt-2">{t("more.title")}</h1>
-        <section className="card grid gap-3 p-5">
-          <h2 className="t-label">{t("more.lang")}</h2>
-          <LanguageSwitch />
-        </section>
-        <section className="card p-2">
-          <div className="px-3 pb-1 pt-3">
-            <h2 className="t-sec">{t("more.details")}</h2>
-            <p className="t-small">{t("more.details.b")}</p>
-          </div>
-          <ul>
-            {details.map(([href, label]) => (
-              <li key={href}>
-                <Link href={href} className="flex min-h-14 items-center justify-between rounded-2xl px-3 text-[17px] font-semibold text-ink hover:bg-paper">
-                  {label}
-                  <ChevronRight size={22} aria-hidden="true" className="text-ink-soft" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-        <form action="/auth/signout" method="post">
-          <button className="btn btn-line w-full">{t("more.signout")}</button>
-        </form>
-      </div>
+    <div className="space-y-6 pb-6">
+      <MoreScreen
+        asOf={asOf}
+        sample={shop.profile.isSample}
+        shopName={shop.profile.shopName}
+        usualCashPoisha={shop.profile.openingCashPoisha}
+        opening={openingCash(shop.book, asOf)}
+        language={locale}
+      />
+      <div className="details-page space-y-6">
       <h2 className="pt-6 text-xl font-semibold">{t("more.system")}</h2>
       <Card>
         <CardHeader title="Configuration" subtitle="Values are read from server environment variables." />
@@ -85,6 +75,7 @@ export default async function SettingsPage() {
       <Notice tone="info">
         Privacy: originals stay in a private bucket and are sent to Meta only when you click Analyze, with response storage disabled. Use synthetic or consented ledgers only. See docs/SECURITY_AND_PRIVACY.md for the retirement checklist.
       </Notice>
+      </div>
     </div>
   );
 }

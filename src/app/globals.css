@@ -2,6 +2,7 @@
 @import "../components/kit/kit.css" layer(components);
 @import "../components/check/flow.css" layer(components);
 @import "../components/money/money.css" layer(components);
+@import "../components/history/history.css" layer(components);
 
 /* Scriba: নতুন হালখাতা. Tokens from design/DIRECTION.md; meaning is fixed:
    red is the khata (identity, primary action, seal), never danger. Problems are turmeric. */
@@ -95,6 +96,9 @@ body {
   outline: 3px solid var(--blue);
   outline-offset: 2px;
 }
+/* A field inside a pill (the History search): the pill carries the ring, not the bare input. */
+.kh-search input:focus-visible { outline: none; }
+.kh-search:has(input:focus-visible) { outline: 3px solid var(--blue); outline-offset: 2px; }
 
 /* Page transitions (React <ViewTransition>, see components/shell/route-transition.tsx):
    220 ms rise-in, the binding band and tab bar stay put. Reduced motion: fades only. */

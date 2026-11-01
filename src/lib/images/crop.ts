@@ -71,3 +71,22 @@ export async function stackLineCrops(lines: readonly LineCrop[]): Promise<Buffer
     .jpeg({ quality: 82 })
     .toBuffer();
 }
+
+/** History thumbnails come in two widths: the day list's small page and the day view's card. */
+export const THUMB_WIDTHS = [96, 320] as const;
+export type ThumbWidth = (typeof THUMB_WIDTHS)[number];
+
+/** The whole page, upright as it was read, scaled to `width` as a small JPEG without metadata. */
+export async function pageThumbnail(bytes: Uint8Array, turns: QuarterTurns, width: ThumbWidth): Promise<Buffer> {
+  // Shrink while decoding (EXIF orientation applied in the same pass), then turn the small copy.
+  // A quarter turn makes the photo's height the thumbnail's width.
+  const sideways = turns % 2 === 1;
+  const small = await sharp(bytes, { failOn: "error" })
+    .rotate()
+    .resize(sideways ? { height: width, withoutEnlargement: true } : { width, withoutEnlargement: true })
+    .toBuffer();
+  return sharp(small)
+    .rotate(turns * 90)
+    .jpeg({ quality: width > 100 ? 72 : 65 })
+    .toBuffer();
+}

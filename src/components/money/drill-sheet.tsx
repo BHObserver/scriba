@@ -14,7 +14,7 @@ export type Drill = { key: DrillKey; fromReceipt: boolean };
 type Loaded = { ids: string; lines: LineDetail[] | null; failed: boolean };
 
 /** The confirmed lines behind some record ids, with their strips (POST /api/lines). */
-function useLines(recordIds: readonly string[] | null) {
+export function useLines(recordIds: readonly string[] | null) {
   const ids = recordIds && recordIds.length > 0 ? recordIds.join(",") : null;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [attempt, setAttempt] = useState(0);

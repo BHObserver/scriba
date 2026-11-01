@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatCount, formatDayMonth, formatMoney, formatWeekday, localDigits, makeI18n, translate } from "./format";
+import { formatCount, formatDayMonth, formatMoney, formatMonthYear, formatWeekday, localDigits, makeI18n, translate } from "./format";
 import { isLocale } from "./locale";
 import { MESSAGES, type MessageKey } from "./messages";
 
@@ -29,6 +29,8 @@ describe("dates", () => {
   test("day and month from a business date, without time zones", () => {
     expect(formatDayMonth("2026-11-01", "bn")).toBe("১ নভেম্বর");
     expect(formatDayMonth("2026-11-01", "en")).toBe("1 Nov");
+    expect(formatMonthYear("2026-10-31", "bn")).toBe("অক্টোবর ২০২৬");
+    expect(formatMonthYear("2026-10-31", "en")).toBe("Oct 2026");
     expect(formatDayMonth("2026-10-31T23:30:00Z", "en")).toBe("31 Oct");
     expect(formatDayMonth("not a date", "bn")).toBe("not a date");
   });
