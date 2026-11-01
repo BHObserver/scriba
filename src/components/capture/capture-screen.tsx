@@ -14,6 +14,7 @@ import type { QuarterTurns } from "@/lib/images/orientation";
 import { type ProblemKind, RETRYABLE } from "./problems";
 import { useKhataPages } from "./khata-pref";
 import { useReadingQueue } from "./reading-queue";
+import { takeShot } from "./still-photo";
 import { UploadError, problemForRejection, sha256Hex, uploadPage } from "./upload";
 
 /** Pages per send. Each is one paid reading; the hourly limit is 30 by default. */
@@ -65,7 +66,8 @@ async function shownSize(url: string, fallback: { width: number; height: number 
  * `/capture` (DESIGN_SPEC D2): a live camera with a guide frame, the tray of taken pages (turn,
  * remove), and "read" which stores every original, starts their readings and opens /check.
  * No camera (a laptop, permission refused): the phone's own camera or the gallery instead.
- * Frames from the live camera are encoded once here, as the original; nothing is resized later.
+ * A shot from the live camera is a full-resolution still where the browser offers one, else the
+ * preview's frame (`still-photo.ts`). It is encoded once here, as the original; nothing is resized later.
  */
 export function CaptureScreen({ userId, maxUploadBytes }: { userId: string; maxUploadBytes: number }) {
   const { t, count, locale } = useI18n();
@@ -79,6 +81,9 @@ export function CaptureScreen({ userId, maxUploadBytes }: { userId: string; maxU
   const [stage, setStage] = useState<Stage>({ kind: "camera" });
   const [camera, setCamera] = useState<Camera>("starting");
   const [flash, setFlash] = useState(0);
+  /** A still can take a second; one press at a time. */
+  const [shooting, setShooting] = useState(false);
+  const shootingRef = useRef(false);
 
   const galleryInput = useRef<HTMLInputElement>(null);
   const phoneCamInput = useRef<HTMLInputElement>(null);
@@ -148,16 +153,20 @@ export function CaptureScreen({ userId, maxUploadBytes }: { userId: string; maxU
 
   async function shoot() {
     const video = videoRef.current;
-    if (!video || video.videoWidth === 0 || pagesRef.current.length >= MAX_PAGES) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    if (!video || video.videoWidth === 0 || pagesRef.current.length >= MAX_PAGES || shootingRef.current) return;
+    shootingRef.current = true;
+    setShooting(true);
     setFlash((n) => n + 1);
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY));
-    if (!blob) return;
-    const problem = await addPhoto(blob, null);
-    if (problem) setStage({ kind: "problem", problem });
+    try {
+      const track = streamRef.current?.getVideoTracks()[0] ?? null;
+      const blob = await takeShot(video, track, { maxBytes: maxUploadBytes, quality: JPEG_QUALITY });
+      if (!blob) return;
+      const problem = await addPhoto(blob, null);
+      if (problem) setStage({ kind: "problem", problem });
+    } finally {
+      shootingRef.current = false;
+      setShooting(false);
+    }
   }
 
   async function pickFiles(files: FileList | null) {
@@ -365,7 +374,14 @@ export function CaptureScreen({ userId, maxUploadBytes }: { userId: string; maxU
           <button type="button" className="cap-side" onClick={() => galleryInput.current?.click()} disabled={full}>
             {t("cap.gallery")}
           </button>
-          <button type="button" className="cap-shutter" onClick={() => void shoot()} disabled={camera !== "live" || full} aria-label={t("cap.shoot")}>
+          <button
+            type="button"
+            className="cap-shutter"
+            onClick={() => void shoot()}
+            disabled={camera !== "live" || full || shooting}
+            aria-busy={shooting}
+            aria-label={t("cap.shoot")}
+          >
             <i />
           </button>
           <button type="button" className="cap-side done" onClick={() => startRead()} disabled={pages.length === 0}>

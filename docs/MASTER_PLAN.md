@@ -1,5 +1,7 @@
 # Scriba master plan (v2: the shopkeeper product)
 
+> **Since 2 Nov 2026, new work follows `docs/PLAN_V3.md`** (scan and understand: page detection, blocks, "Scriba asks"). This file's rules, non-negotiables, architecture decisions and tracks still apply.
+
 Written 31 Oct 2026. This is the plan for turning the working MVP (photo → Muse Wonder reading → code checks → review → confirmed records) into the product in the story: a shopkeeper photographs his khata, checks it on his phone in a minute, and Scriba shows him his day, his cash, and who owes him, in Bangla he can read.
 
 ## How to use this file (every session)
