@@ -34,7 +34,7 @@ import { type ReviewRow, toValidationInput } from "@/lib/review/state";
 import { FIELD_TO_VALUE_KEY } from "@/lib/review/values";
 import { type Finding, accountSign, deriveNumbers, validateLedger } from "@/lib/validation/engine";
 import { soundsAlike } from "./similar";
-import type { Change, KnownParty, Question, QuestionInput, QuestionOption, QuestionSet, Sentence, SentenceArg } from "./types";
+import type { Change, KnownParty, Question, QuestionInput, QuestionOption, QuestionSet, Sentence, SentenceArg, Why } from "./types";
 
 /** FNV-1a over the parts: a short, stable fingerprint of what a question is about. */
 export function fingerprint(parts: ReadonlyArray<string | number | null | undefined>): string {
@@ -123,6 +123,11 @@ const SAY_PLAIN: Partial<Record<TransactionType, MessageKey>> = {
 const SAY_BALANCE: Record<PartyKind, { opening: MessageKey; closing: MessageKey }> = {
   supplier: { opening: "q.say.opening.supplier", closing: "q.say.closing.supplier" },
   customer: { opening: "q.say.opening.customer", closing: "q.say.closing.customer" },
+};
+/** "Yes, the same company" / "No, a new customer", and the khata's last due for "why". */
+const SAME_PARTY: Record<PartyKind, { yes: MessageKey; no: MessageKey; due: MessageKey; match: MessageKey }> = {
+  supplier: { yes: "q.same.yes.supplier", no: "q.same.no.supplier", due: "q.same.due.supplier", match: "q.same.match.supplier" },
+  customer: { yes: "q.same.yes.customer", no: "q.same.no.customer", due: "q.same.due.customer", match: "q.same.match.customer" },
 };
 
 const DOUBT_FIELDS = ["customer", "item", "qty", "unit", "rate", "amount", "balance"] as const satisfies readonly ReviewableField[];
@@ -216,15 +221,38 @@ function sayAs(type: TransactionType, row: ReviewRow, g: Group): Sentence {
   return { key: TYPE_LABEL[type] };
 }
 
-function question(q: Omit<Question, "entries" | "input" | "proposed"> & Partial<Pick<Question, "entries" | "input" | "proposed">>): Question {
-  return { entries: q.entry ? [q.entry] : [], input: null, proposed: null, ...q };
+function question(q: Omit<Question, "entries" | "input" | "proposed" | "why"> & Partial<Pick<Question, "entries" | "input" | "proposed" | "why">>): Question {
+  return { entries: q.entry ? [q.entry] : [], input: null, proposed: null, why: null, ...q };
 }
 
 const later: QuestionOption = { id: "later", label: { key: "q.later" }, changes: [], later: true };
+/** "Later" for a price: he'll give it once he has the memo. */
+const priceLater: QuestionOption = { ...later, label: { key: "q.price.later" } };
+const PRICE_WHY: Why = { sentence: { key: "q.price.why" }, verified: false };
+
+const amountOf = (r: ReviewRow): number | null => {
+  const n = deriveNumbers(r.values).amount;
+  return n?.ok ? n.value : null;
+};
 
 // ---------------------------------------------------------------------------
 // Block questions
 // ---------------------------------------------------------------------------
+
+/**
+ * "You owed ৳2,800 before, and paid ৳1,500 this time": a visit's due before and payments as
+ * read (several payments summed by code). Null when neither reads as a number.
+ */
+function visitFigures(rows: ReviewRow[]): Sentence | null {
+  const opening = rows.find((r) => r.values.type === "opening_balance");
+  const before = opening ? amountOf(opening) : null;
+  const payments = rows.filter((r) => r.values.type === "supplier_payment").map(amountOf);
+  const paid = payments.length > 0 && payments.every((n) => n != null) ? payments.reduce<number>((s, n) => s + n!, 0) : null;
+  if (before != null && paid != null) return { key: "q.visit.both", args: [{ money: before }, { money: paid }] };
+  if (before != null) return { key: "q.visit.before", args: [{ money: before }] };
+  if (paid != null) return { key: "q.visit.paid", args: [{ money: paid }] };
+  return null;
+}
 
 function meaningQuestion(block: BlockValues, rows: ReviewRow[]): Question | null {
   if (block.kind === "day_sales" || block.kind === "expenses") return null;
@@ -252,7 +280,10 @@ function meaningQuestion(block: BlockValues, rows: ReviewRow[]): Question | null
 
   let sentence: Sentence;
   if (block.kind === "supplier_visit") {
-    sentence = person ? { key: "q.meaning.visit.rep", args: [{ text: person }, { text: party }] } : { key: "q.meaning.visit", args: [{ text: party }] };
+    const figures = visitFigures(rows);
+    const who: SentenceArg[] = person ? [{ text: person }, { text: party }] : [{ text: party }];
+    if (figures) sentence = { key: person ? "q.meaning.visit.rep.figures" : "q.meaning.visit.figures", args: [...who, { say: figures }] };
+    else sentence = { key: person ? "q.meaning.visit.rep" : "q.meaning.visit", args: who };
   } else {
     sentence = { key: block.kind === "supplier_account" ? "q.meaning.supplier" : "q.meaning.customer", args: [{ text: party }] };
   }
@@ -279,10 +310,16 @@ function samePartyQuestion(
       ? [{ op: "block", block: subject.block, values: { party: p.name } }]
       : subject.rows.map((r) => ({ op: "edit" as const, entry: r.id, values: { customer: p.name } }));
   const single = alike.length === 1;
+  const words = SAME_PARTY[link.kind];
   const options: QuestionOption[] = [
-    ...alike.map((p) => ({ id: `party:${p.id}`, label: single ? { key: "q.same.yes" as const } : { key: "q.value" as const, args: [{ text: p.name }] }, changes: rename(p) })),
-    { id: "no", label: { key: "q.same.no" }, changes: [] },
+    ...alike.map((p) => ({ id: `party:${p.id}`, label: single ? { key: words.yes } : { key: "q.value" as const, args: [{ text: p.name }] }, changes: rename(p) })),
+    { id: "no", label: { key: words.no }, changes: [] },
   ];
+  // Why he might say yes: the due the khata last showed, and whether this page's "before" is the same.
+  const due = single ? ctx.input.dues?.get(alike[0]!.id) : undefined;
+  const opening = subject.rows.find((r) => r.values.type === "opening_balance");
+  const match = opening != null && amountOf(opening) === due;
+  const why: Why | null = due != null && due > 0 ? { sentence: { key: match ? words.match : words.due, args: [{ money: due }] }, verified: match } : null;
   return question({
     id: subject.block ? `party:${subject.block}` : `party:${link.kind}:${link.key}`,
     kind: "same_party",
@@ -292,7 +329,16 @@ function samePartyQuestion(
     field: subject.block ? null : "customer",
     entries: subject.rows.map((r) => r.id),
     sentence: single ? { key: "q.same", args: [{ text: written }, { text: alike[0]!.name }] } : { key: "q.same.which", args: [{ text: written }] },
+    why,
     options,
+  });
+}
+
+/** The book's parties whose last due would explain a "same party?" question: one per question with a single match. */
+export function partiesToExplain(set: QuestionSet): string[] {
+  return set.questions.flatMap((q) => {
+    const matches = q.kind === "same_party" ? q.options.filter((o) => o.id.startsWith("party:")) : [];
+    return matches.length === 1 ? [matches[0]!.id.slice("party:".length)] : [];
   });
 }
 
@@ -320,6 +366,7 @@ function blockKindQuestion(ctx: Ctx, block: BlockValues, rows: ReviewRow[]): Que
   return question({
     ...base,
     sentence: { key: "q.sales", args: [{ count: unknown.length }] },
+    why: { sentence: { key: "q.sales.why" }, verified: false },
     options: [{ id: "cash", label: { key: "q.sales.cash" }, changes: setAll("cash_sale") }, ...credit, each],
     proposed: "cash",
   });
@@ -342,7 +389,8 @@ function deliveryQuestion(ctx: Ctx, g: Group, rows: ReviewRow[]): Question | nul
     field: "amount",
     entries: goods.map((r) => r.id),
     sentence: { key: "q.delivery", args: [who, { count: goods.length }] },
-    options: [{ id: "each", label: { key: "q.delivery.each" }, changes: [] }, later],
+    why: PRICE_WHY,
+    options: [{ id: "each", label: { key: "q.delivery.each" }, changes: [] }, priceLater],
     input: {
       kind: "money",
       target: { to: "delivery", block: g.block.id, entries: goods.map((r) => r.id), after: goods[goods.length - 1]!.id, type: goods[0]!.values.type },
@@ -471,6 +519,20 @@ function directionQuestion(ctx: Ctx, row: ReviewRow, g: Group, blockAsked: boole
   });
 }
 
+/**
+ * "6 at ৳15 each": what one reading of a line's amount comes to per unit, worked out by code, so
+ * he can tell ৳90 for six eggs from ৳10. Only when the quantity reads as a number above zero.
+ */
+function perUnit(values: EntryValues, amountText: string): Sentence | null {
+  const qty = parseQuantity(values.quantityText);
+  const amount = parseMoney(amountText);
+  if (!qty.ok || qty.value <= 0 || !amount.ok) return null;
+  const each: SentenceArg = { money: Math.round((amount.value * 1000) / qty.value) };
+  const count: SentenceArg = { text: values.quantityText!.trim() };
+  const unit = values.unit?.trim();
+  return unit ? { key: "q.per.unit", args: [count, { text: unit }, each] } : { key: "q.per", args: [count, each] };
+}
+
 /** A value the model doubted (with its readings), or one that doesn't read as a number. */
 function doubtQuestions(ctx: Ctx, row: ReviewRow, g: Group): Question[] {
   const out: Question[] = [];
@@ -485,13 +547,17 @@ function doubtQuestions(ctx: Ctx, row: ReviewRow, g: Group): Question[] {
     const mixed = format != null && !unreadable;
     const doubt = ctx.doubts.get(`${row.id}|${field}`);
     const readings = [...new Set([...(current && !unreadable ? [current] : []), ...(doubt?.options ?? [])])].filter((v) => !numeric || readsAsNumber(field, v));
-    const options: QuestionOption[] = readings.map((v, i) => ({
-      id: `value:${i}`,
-      label: { key: "q.value", args: [valueArg(field, v)] },
-      value: v,
-      changes: v === current ? [{ op: "edit", entry: row.id, checked: [field] }] : [{ op: "edit", entry: row.id, values: { [key]: v } }],
-      ...(v === current && mixed ? { accepts: [ackFingerprint(format)] } : {}),
-    }));
+    const options: QuestionOption[] = readings.map((v, i) => {
+      const detail = field === "amount" ? perUnit(row.values, v) : null;
+      return {
+        id: `value:${i}`,
+        label: { key: "q.value", args: [valueArg(field, v)] },
+        ...(detail ? { detail } : {}),
+        value: v,
+        changes: v === current ? [{ op: "edit", entry: row.id, checked: [field] }] : [{ op: "edit", entry: row.id, values: { [key]: v } }],
+        ...(v === current && mixed ? { accepts: [ackFingerprint(format)] } : {}),
+      };
+    });
 
     let sentence: Sentence;
     if (unreadable || readings.length === 0) {
@@ -535,7 +601,8 @@ function priceQuestion(row: ReviewRow, g: Group): Question | null {
     entry: row.id,
     field: "amount",
     sentence: { key: "q.price", args: [quote(row)] },
-    options: [later],
+    why: PRICE_WHY,
+    options: [priceLater],
     input: { kind: "money", target: { to: "entry", entry: row.id, field: "amount" } },
   });
 }
@@ -575,7 +642,8 @@ function dateQuestion(ctx: Ctx): Question | null {
     block: null,
     entry: null,
     field: null,
-    sentence: { key: "q.date" },
+    // With the photo's day there is one day to propose; without it, he says which.
+    sentence: { key: day ? "q.date" : "q.date.which" },
     options,
     proposed: day ? "photo" : null,
     input: { kind: "date", target: { to: "date" } },

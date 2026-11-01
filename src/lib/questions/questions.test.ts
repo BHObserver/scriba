@@ -25,7 +25,7 @@ import { keepAnswers, pageValuesSchema } from "@/lib/review/values";
 import { validateLedger } from "@/lib/validation/engine";
 import { readYesNo } from "@/lib/voice/answer-words";
 import { acceptedFindings, answerQuestion, applyChanges } from "./answer";
-import { buildQuestions, writtenDay } from "./engine";
+import { buildQuestions, partiesToExplain, writtenDay } from "./engine";
 import { romanize, soundsAlike } from "./similar";
 import { spokenAnswer } from "./speech";
 import { sentenceText } from "./text";
@@ -125,8 +125,20 @@ describe("the Pran page", () => {
     const q = find(start, "meaning:b1");
     expect(q.proposed).toBe("yes");
     expect(q.options.map((o) => o.id)).toEqual(["yes", "kind:supplier_account", "kind:customer_account"]);
-    expect(sentenceText(bn, q.sentence)).toBe("Praan কোম্পানি থেকে Selim এসেছিলেন — ঠিক?");
-    expect(sentenceText(en, q.sentence)).toBe("Selim came from Praan, a company you buy from. Right?");
+    expect(sentenceText(bn, q.sentence)).toBe("Praan কোম্পানির Selim এসেছিলেন। আগে দেনা ছিল ৳২,৮০০, এবার দিয়েছেন ৳১,৫০০। ঠিক বুঝেছি?");
+    expect(sentenceText(en, q.sentence)).toBe("Selim came from Praan. You owed ৳2,800 before, and paid ৳1,500 this time. Did I get that right?");
+  });
+
+  test("the visit's figures are what is written, payments summed by code; without any, it names the company", () => {
+    const sentence = (entries: unknown[]) => sentenceText(en, find(inputOf(read({ blocks: [VISIT], entries })), "meaning:b1").sentence);
+    const [before, given, juice] = PRAN_LINES;
+    const again = line("e6", "b1", "Given - 500", "supplier_payment", { amount: "500" });
+    expect(sentence([before, given, again, juice])).toBe("Selim came from Praan. You owed ৳2,800 before, and paid ৳2,000 this time. Did I get that right?");
+    expect(sentence([before, juice])).toBe("Selim came from Praan. You owed ৳2,800 before. Did I get that right?");
+    expect(sentence([given, juice])).toBe("Selim came from Praan. You paid ৳1,500 this time. Did I get that right?");
+    expect(sentence([juice])).toBe("Selim came from Praan, a company you buy from. Did I get that right?");
+    const noRep = find(inputOf(read({ blocks: [{ ...VISIT, person: null }], entries: [before, juice] })), "meaning:b1");
+    expect(sentenceText(bn, noRep.sentence)).toBe("Praan কোম্পানি থেকে লোক এসেছিল। আগে দেনা ছিল ৳২,৮০০। ঠিক বুঝেছি?");
   });
 
   test("three goods with no price are one question, with no proposed answer", () => {
@@ -134,14 +146,18 @@ describe("the Pran page", () => {
     expect(q.entries).toEqual(["r3", "r4", "r5"]);
     expect(q.proposed).toBeNull();
     expect(q.input?.kind).toBe("money");
-    expect(sentenceText(bn, q.sentence)).toBe("Selim (Praan) ৩টা জিনিস দিয়ে গেছেন। সব মিলিয়ে দাম কত?");
+    expect(sentenceText(bn, q.sentence)).toBe("Selim (Praan) ৩টা মাল দিয়ে গেছেন, দাম লেখা নেই। সব মিলিয়ে কত ছিল?");
+    expect(sentenceText(en, q.why!.sentence)).toBe("Check the company's memo if you have it. Scriba won't guess a price.");
+    expect(sentenceText(bn, q.options.find((o) => o.later)!.label)).toBe("পরে দেব");
   });
 
   test("seven type cards become one: were these sales all cash?", () => {
     const q = find(start, "kind:b2");
     expect(q.entries).toEqual(["r6", "r7", "r8"]);
     expect(q.options.map((o) => o.id)).toEqual(["cash", "each"]); // no names, so not "all on credit"
-    expect(sentenceText(en, q.sentence)).toBe("Were these 3 sales all paid in cash?");
+    expect(sentenceText(en, q.sentence)).toBe("Were these 3 sales all cash?");
+    expect(sentenceText(bn, q.why!.sentence)).toBe("পাতায় নগদ বা বাকি লেখা নেই।");
+    expect(sentenceText(bn, q.options[1]!.label)).toBe("কিছু বাকিতে");
   });
 
   test("confirming the visit is remembered on the page and not asked again", () => {
@@ -201,12 +217,21 @@ describe("the Pran page", () => {
   test("no date: the photo's day is proposed; the day before is written in a form the date reader takes", () => {
     const q = find(start, "date");
     expect(q.proposed).toBe("photo");
-    expect(sentenceText(bn, q.options[0]!.label)).toBe("১ নভেম্বর, ছবি তোলার দিন");
+    expect(sentenceText(en, q.sentence)).toBe("There's no date on this page. Shall I use the day the photo was taken?");
+    expect(sentenceText(bn, q.options[0]!.label)).toBe("হ্যাঁ, ছবির দিন · ১ নভেম্বর");
+    expect(sentenceText(bn, q.options[1]!.label)).toBe("আগের দিন · ৩১ অক্টোবর");
     const before = answer(start, "date", { option: "before" });
     expect(before.page.dateText).toBe("31/10/2026");
     expect(parseWrittenDate(before.page.dateText, new Date("2026-11-01T06:00:00Z"))).toBe("2026-10-31");
     expect(writtenDay("2026-01-05")).toBe("5/1/2026");
     expect(ids(answer(start, "date", { option: "photo" }))).not.toContain("date");
+  });
+
+  test("with no photo day there is nothing to propose: he says which day", () => {
+    const q = find({ ...start, capturedOn: null }, "date");
+    expect(q.options).toEqual([]);
+    expect(q.proposed).toBeNull();
+    expect(sentenceText(en, q.sentence)).toBe("There's no date on this page. Which day is it from?");
   });
 
   test("a typed date must be one the date reader understands", () => {
@@ -236,11 +261,49 @@ describe("a name that may already be in the book", () => {
     const start = inputOf(read(), { parties: [pran] });
     expect(ids(start).slice(0, 2)).toEqual(["meaning:b1", "party:b1"]);
     const q = find(start, "party:b1");
-    expect(sentenceText(bn, q.sentence)).toBe("“Praan” আর খাতার প্রাণ কি একই?");
+    expect(sentenceText(bn, q.sentence)).toBe("“Praan” কি আপনার খাতার “প্রাণ”?");
+    expect(q.options.map((o) => sentenceText(en, o.label))).toEqual(["Yes, the same company", "No, a new supplier"]);
+    expect(q.why).toBeNull(); // the khata's due wasn't loaded
     expect(q.proposed).toBeNull();
     const yes = answer(answer(start, "meaning:b1", { option: "yes" }), "party:b1", { option: "party:p1" });
     expect(yes.page.blocks?.[0]?.party).toBe("প্রাণ");
     expect(ids(yes).slice(0, 1)).toEqual(["delivery:b1"]); // the visit stays confirmed
+  });
+
+  test("why: the khata's last due, and whether this page's “before” is the same", () => {
+    const base = inputOf(read(), { parties: [pran] });
+    expect(partiesToExplain(buildQuestions(base))).toEqual(["p1"]);
+    const why = (due: number) => {
+      const q = find({ ...base, dues: new Map([["p1", due]]) }, "party:b1");
+      return [sentenceText(en, q.why!.sentence), sentenceText(bn, q.why!.sentence), q.why!.verified];
+    };
+    expect(why(280_000)).toEqual([
+      "Your khata last showed ৳2,800 owed to them. This page's “before” is also ৳2,800.",
+      "খাতায় তাদের কাছে শেষ দেনা ছিল ৳২,৮০০। এই পাতার “আগের” লেখাও ৳২,৮০০।",
+      true, // code checked it: the screen shows a tick
+    ]);
+    expect(why(310_000)).toEqual(["Your khata last showed ৳3,100 owed to them.", "খাতায় তাদের কাছে শেষ দেনা ছিল ৳৩,১০০।", false]);
+    expect(find({ ...base, dues: new Map([["p1", 0]]) }, "party:b1").why).toBeNull(); // nothing owed says nothing
+  });
+
+  test("two names that both sound alike are a choice by name, with no why", () => {
+    const pran2: KnownParty = { id: "p2", kind: "supplier", name: "Pran", key: normalizePartyName("Pran")! };
+    const input = inputOf(read(), { parties: [pran, pran2] });
+    const q = find({ ...input, dues: new Map([["p1", 280_000]]) }, "party:b1");
+    expect(q.options.map((o) => sentenceText(en, o.label))).toEqual(["প্রাণ", "Pran", "No, a new supplier"]);
+    expect(q.why).toBeNull();
+    expect(partiesToExplain(buildQuestions(input))).toEqual([]);
+  });
+
+  test("a customer's name gets a customer's words", () => {
+    const karim: KnownParty = { id: "c1", kind: "customer", name: "করিম", key: normalizePartyName("করিম")! };
+    const entries = [line("e1", "b1", "Karim 300", "credit_sale", { customer: "Karim", amount: "300" }), line("e2", "b1", "ডাল ১২০", "cash_sale", { amount: "১২০" })];
+    const input = inputOf(read({ blocks: [{ ...SALES, id: "b1" }], entries, date: "1/11/26" }), { parties: [karim] });
+    const [id] = partiesToExplain(buildQuestions(input));
+    expect(id).toBe("c1");
+    const q = buildQuestions({ ...input, dues: new Map([["c1", 150_000]]) }).questions.find((x) => x.kind === "same_party")!;
+    expect(q.options.map((o) => sentenceText(en, o.label))).toEqual(["Yes, the same person", "No, a new customer"]);
+    expect(sentenceText(bn, q.why!.sentence)).toBe("খাতায় তাদের শেষ বাকি ছিল ৳১,৫০০।");
   });
 
   test("no keeps the new name and isn't asked again", () => {
@@ -278,6 +341,19 @@ describe("readings the model doubted", () => {
     expect(q.proposed).toBeNull();
     expect(sentenceText(bn, q.options[1]!.label)).toBe("৳২৪০");
     expect(sentenceText(en, q.sentence)).toBe("“চাল 2 কেজি 140”: which amount is written?"); // digits follow the language
+  });
+
+  test("each reading of an amount shows what it comes to per unit, so ৳90 for six eggs reads apart from ৳10", () => {
+    const eggs = line("e7", "b2", "ডিম ৬ ৯০", "cash_sale", { item: "ডিম", qty: "৬", amount: "৯০" });
+    const input = inputOf(read({ entries: [...PRAN_LINES, SALES_LINES[0]!, eggs], doubts: [{ entry: "e7", field: "amount", options: ["১০"], note: null }] }));
+    const q = find(input, "doubt:r7:amount");
+    expect(q.options.map((o) => sentenceText(bn, o.detail!))).toEqual(["৬টা, ৳১৫ করে", "৬টা, ৳১.৬৭ করে"]);
+    expect(q.options.map((o) => sentenceText(en, o.detail!))).toEqual(["6 at ৳15 each", "6 at ৳1.67 each"]);
+    const rice = find(inputOf(read({ doubts })), "doubt:r6:amount");
+    expect(rice.options.map((o) => sentenceText(en, o.detail!))).toEqual(["2 কেজি at ৳70 per কেজি", "2 কেজি at ৳120 per কেজি"]);
+    expect(sentenceText(bn, rice.options[0]!.detail!)).toBe("২ কেজি, প্রতি কেজি ৳৭০");
+    const noQty = find(inputOf(read({ doubts: [{ entry: "e8", field: "amount", options: ["১৩০"], note: null }] })), "doubt:r8:amount");
+    expect(noQty.options.every((o) => o.detail === undefined)).toBe(true);
   });
 
   test("choosing the other reading changes the line and clears the doubt", () => {
@@ -513,10 +589,12 @@ test("every sentence and option renders in both languages with no placeholder le
     inputOf(read({ doubts: [{ entry: "e6", field: "amount", options: ["২৪০"], note: null }] }), { parties: [{ id: "p1", kind: "supplier", name: "প্রাণ", key: "প্রান" }] }),
     inputOf(read({ blocks: [VISIT], entries: [PRAN_LINES[1]!, line("e3", "b1", "Now 100", "closing_balance", { amount: "100" })], date: "1/11/26" })),
   ];
+  inputs[0] = { ...inputs[0]!, dues: new Map([["p1", 280_000]]) };
   for (const input of inputs) {
     for (const q of buildQuestions(input).questions) {
+      const sentences = [q.sentence, q.why?.sentence, ...q.options.flatMap((o) => [o.label, o.detail])].filter((s) => s != null);
       for (const i18n of [bn, en]) {
-        for (const s of [q.sentence, ...q.options.map((o) => o.label)]) expect(sentenceText(i18n, s)).not.toMatch(/\{\d\}|undefined|NaN/);
+        for (const s of sentences) expect(sentenceText(i18n, s)).not.toMatch(/\{\d\}|undefined|NaN/);
       }
     }
   }

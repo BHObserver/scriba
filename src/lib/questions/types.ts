@@ -37,6 +37,9 @@ export type SentenceArg = { text: string } | { money: number } | { count: number
 /** A sentence from the i18n dictionary, `{1}`, `{2}`… filled from `args`. */
 export type Sentence = { key: MessageKey; args?: SentenceArg[] };
 
+/** `verified`: code checked it against his records (the screen shows a tick), not only a reason. */
+export type Why = { sentence: Sentence; verified: boolean };
+
 /** One change an answer makes, applied through the same review rows and page as a manual edit. */
 export type Change =
   /** Set values on a line; `checked` fields were looked at and kept as read. */
@@ -51,6 +54,8 @@ export type QuestionOption = {
   /** Stable within its question: "yes", "type:cash_sale", "value:1", "later"… */
   id: string;
   label: Sentence;
+  /** A second line under the label, worked out by code: "6 at ৳15 each". */
+  detail?: Sentence;
   changes: Change[];
   /** For a reading or a number, the value it stands for (voice answers match on it). */
   value?: string;
@@ -85,6 +90,8 @@ export type Question = {
   /** Every line the question touches, for the handwriting strips. */
   entries: string[];
   sentence: Sentence;
+  /** A smaller line under the question: why Scriba asks, or what code found that helps him judge. */
+  why: Why | null;
   options: QuestionOption[];
   /** The option one tap confirms, when Scriba has a reading to propose. Null: he must choose. */
   proposed: string | null;
@@ -111,6 +118,12 @@ export type QuestionInput = {
   parties: readonly KnownParty[];
   /** The day the photo was taken, in Bangladesh (YYYY-MM-DD), for the date question. */
   capturedOn: string | null;
+  /**
+   * What the khata last showed for some of the parties, in poisha (positive: they owe the shop,
+   * or the shop owes them), so "same party?" can say why it asks. Only the parties
+   * `partiesToExplain` names; absent when not loaded.
+   */
+  dues?: ReadonlyMap<string, number>;
 };
 
 /** An answer from the check screen: a chosen option, or a typed or spoken value. */

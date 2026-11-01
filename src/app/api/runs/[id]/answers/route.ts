@@ -40,7 +40,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/runs/[id]/a
   if (!parsed.success) return jsonError("Invalid answer.", 400);
   const { question, fingerprint, answer } = parsed.data;
 
-  const loaded = await loadQuestionInput(supabase, runId);
+  const loaded = await loadQuestionInput(supabase, runId, { dues: false });
   if (!loaded) return jsonError("Not found.", 404);
   const outcome = answerQuestion(loaded.input, question, fingerprint, answer, new Date());
   if (!outcome.ok) {

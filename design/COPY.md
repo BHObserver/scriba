@@ -565,6 +565,8 @@ Extracted from the prototype files; B1–B5 give each a key when they port the s
 
 Source: `proto/ask-data.js` (`T`) in the Claude Design project. Names, items, units and khata text in `{1}` slots are the user’s words and are never translated.
 
+The question rows (`q.*`) are in Part 4: U2b reconciled them with U2's questions engine, and the table there shows which D5 key each one replaced.
+
 | Key | বাংলা | English |
 |---|---|---|
 | `asks` | Scriba জানতে চায় | Scriba asks |
@@ -613,26 +615,6 @@ Source: `proto/ask-data.js` (`T`) in the Claude Design project. Names, items, un
 | `say` | বলে দিন | Say it |
 | `swipe` | ডানে সরালেও ঠিক হয় | Or swipe right |
 | `other` | অন্য কিছু | Something else |
-| `q.date` | পাতায় কোনো তারিখ লেখা নেই। আজকের তারিখ ধরব? | There's no date on this page. Shall I use today's? |
-| `q.date.yes` | হ্যাঁ, আজ · {1} | Yes, today · {1} |
-| `q.date.other` | অন্য দিন | Another day |
-| `q.date.yday` | গতকাল · {1} | Yesterday · {1} |
-| `q.visit` | {1} কোম্পানির {2} এসেছিলেন। আগে দেনা ছিল {3}, আজ তাঁকে দিয়েছেন {4}। ঠিক বুঝেছি? | {2} came from {1}. You owed {3} before, and paid {2} {4} today. Did I get that right? |
-| `q.party` | ‘{1}’ কি আপনার খাতার ‘{2}’? | Is ‘{1}’ the ‘{2}’ in your khata? |
-| `q.party.why` | খাতায় তাদের কাছে শেষ দেনা ছিল {1}। এই পাতার ‘আগের’ লেখাও {1}। | Your khata last showed {1} owed to them. This page's ‘before’ is also {1}. |
-| `q.party.same` | হ্যাঁ, একই কোম্পানি | Yes, the same company |
-| `q.party.new` | না, নতুন মহাজন | No, a new supplier |
-| `q.price` | {1}টা মালের দাম লেখা নেই। দাম কত ছিল? | {1} goods have no price written. What did they cost? |
-| `q.price.why` | কোম্পানির মেমো থাকলে দেখে বলুন। Scriba দাম আন্দাজ করবে না। | Check the company's memo if you have it. Scriba won't guess a price. |
-| `q.price.save` | দাম রাখুন | Save the prices |
-| `q.price.later` | পরে দেব | Later |
-| `q.price.slot` | দাম দিন | Add price |
-| `q.egg` | ডিমের টাকা দুইভাবে পড়া যায়। কোনটা লেখা? | The eggs' amount reads two ways. Which is written? |
-| `q.egg.each` | {1}টা, {2} করে | {1} at {2} each |
-| `q.cash` | এই {1}টা বিক্রি কি সব নগদে? | Were these {1} sales all cash? |
-| `q.cash.why` | পাতায় নগদ বা বাকি লেখা নেই। | The page doesn't say cash or credit. |
-| `q.cash.yes` | হ্যাঁ, সব নগদ | Yes, all cash |
-| `q.cash.some` | কিছু বাকিতে | Some on credit |
 | `rest.title` | বাকি {1}টা লাইন দেখে নিন | Check the other {1} lines |
 | `rest.tap` | কোনোটা ভুল হলে সেটায় চাপুন | Tap any line that's wrong |
 | `rest.ok` | সব ঠিক আছে | All correct |
@@ -653,3 +635,116 @@ Source: `proto/ask-data.js` (`T`) in the Claude Design project. Names, items, un
 | `voice.never` | ‘রাখুন’ চাপলে তবেই বসবে। | Nothing is saved until you tap Keep. |
 | `keep` | রাখুন | Keep |
 | `del` | মুছুন | Delete |
+
+## Part 4: Scriba asks, as built (U2 + U2b)
+
+Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generated from the code in U2b. Change the strings there, not here. A question's sentence, its `why` line and each option's `detail` are rendered with `sentenceText`. `{1}` slots hold his words, money (৳, locale digits), counts or days.
+
+### Where D5's keys went
+
+| D5 (prototype) | Built as | Why it differs |
+|---|---|---|
+| `q.date`, `q.date.yes`, `q.date.yday`, `q.date.other` | `q.date` (`q.date.which` with no photo day), `q.date.photo`, `q.date.before`, `q.date.other` | Proposes the day the photo was taken, not today: a page may be photographed later. |
+| `q.visit` | `q.meaning.visit.rep.figures` with `q.visit.both` (or `q.visit.before`, `q.visit.paid`); without a rep `q.meaning.visit.figures`; with no figures `q.meaning.visit.rep`, `q.meaning.visit` | The figures are what is written, several payments summed by code. “এবার” (this time) instead of “আজ” (today), because the visit isn't always today. |
+| `q.party`, `q.party.same`, `q.party.new` | `q.same`, `q.same.yes.supplier`, `q.same.no.supplier` (and `.customer`) | The same question is asked for customers. Two or three possible matches: `q.same.which`, with the names as options. |
+| `q.party.why` | `q.same.match.supplier` (the page's “before” equals the khata's due: `why.verified`, show the tick) or `q.same.due.supplier` (the due only); `.customer` too | Only with one match and a due above zero. |
+| `q.price` | `q.delivery` (two or more goods from one company: one total), `q.prices` (heading of the grouped per-item card), `q.price` (one item) | The engine asks for the delivery's total first; “I'll price each one” opens the per-item slots. |
+| `q.price.why`, `q.price.slot`, `q.price.save`, `q.price.later` | same keys | `q.price.why` is the `why` of `delivery` and `price` questions; `q.price.later` is their “later” option. |
+| `q.egg` | `q.doubt.amount` (and `q.doubt.*` per field) | The line is quoted rather than the item named, and there's no “two ways”, because the model may give three readings. |
+| `q.egg.each` | `q.per`, `q.per.unit` (an option's `detail`) | Worked out by code for each reading of an amount when the quantity reads as a number. |
+| `q.cash`, `q.cash.why`, `q.cash.yes`, `q.cash.some` | `q.sales`, `q.sales.why`, `q.sales.cash`, `q.sales.each` | “Some on credit” goes line by line, through the line-kind cards. |
+
+### All question strings
+
+| Key | বাংলা | English |
+|---|---|---|
+| `q.yes` | হ্যাঁ, ঠিক | Yes, that's right |
+| `q.later` | পরে বলব | Ask me later |
+| `q.value` | {1} | {1} |
+| `q.who.rep` | {1} ({2}) | {1} ({2}) |
+| `q.meaning.visit.rep` | {2} কোম্পানির {1} এসেছিলেন। ঠিক বুঝেছি? | {1} came from {2}, a company you buy from. Did I get that right? |
+| `q.meaning.visit` | {1} কোম্পানি থেকে লোক এসেছিল। ঠিক বুঝেছি? | Someone came from {1}, a company you buy from. Did I get that right? |
+| `q.meaning.visit.rep.figures` | {2} কোম্পানির {1} এসেছিলেন। {3} ঠিক বুঝেছি? | {1} came from {2}. {3} Did I get that right? |
+| `q.meaning.visit.figures` | {1} কোম্পানি থেকে লোক এসেছিল। {2} ঠিক বুঝেছি? | Someone came from {1}. {2} Did I get that right? |
+| `q.visit.both` | আগে দেনা ছিল {1}, এবার দিয়েছেন {2}। | You owed {1} before, and paid {2} this time. |
+| `q.visit.before` | আগে দেনা ছিল {1}। | You owed {1} before. |
+| `q.visit.paid` | এবার দিয়েছেন {1}। | You paid {1} this time. |
+| `q.meaning.supplier` | এটা মহাজন {1}-এর সাথে আপনার হিসাব। ঠিক বুঝেছি? | This is your account with {1}, a supplier. Did I get that right? |
+| `q.meaning.customer` | এটা {1}-এর বাকির হিসাব। ঠিক বুঝেছি? | This is {1}'s account, a customer who buys on credit. Did I get that right? |
+| `q.meaning.who` | পাতার এই অংশটা কার হিসাব? নামটা বলুন। | Whose account is this part of the page? Say the name. |
+| `q.meaning.other` | পাতার এই অংশটা কিসের হিসাব? | What is this part of the page? |
+| `q.kind.day_sales` | দিনের বিক্রি | The day's sales |
+| `q.kind.customer_account` | কাস্টমারের বাকির হিসাব | A customer's account |
+| `q.kind.supplier_visit` | কোম্পানির লোক এসেছিল | A company rep's visit |
+| `q.kind.supplier_account` | মহাজনের হিসাব | A supplier's account |
+| `q.kind.expenses` | দোকানের খরচ | Shop expenses |
+| `q.kind.other` | অন্য কিছু | Something else |
+| `q.same` | “{1}” কি আপনার খাতার “{2}”? | Is “{1}” the “{2}” in your khata? |
+| `q.same.which` | “{1}” কি খাতার আগের কেউ? | Is “{1}” someone already in your khata? |
+| `q.same.yes.supplier` | হ্যাঁ, একই কোম্পানি | Yes, the same company |
+| `q.same.yes.customer` | হ্যাঁ, একই লোক | Yes, the same person |
+| `q.same.no.supplier` | না, নতুন মহাজন | No, a new supplier |
+| `q.same.no.customer` | না, নতুন কাস্টমার | No, a new customer |
+| `q.same.due.supplier` | খাতায় তাদের কাছে শেষ দেনা ছিল {1}। | Your khata last showed {1} owed to them. |
+| `q.same.match.supplier` | খাতায় তাদের কাছে শেষ দেনা ছিল {1}। এই পাতার “আগের” লেখাও {1}। | Your khata last showed {1} owed to them. This page's “before” is also {1}. |
+| `q.same.due.customer` | খাতায় তাদের শেষ বাকি ছিল {1}। | Your khata last showed them owing you {1}. |
+| `q.same.match.customer` | খাতায় তাদের শেষ বাকি ছিল {1}। এই পাতার “আগের” লেখাও {1}। | Your khata last showed them owing you {1}. This page's “before” is also {1}. |
+| `q.sales` | এই {1}টা বিক্রি কি সব নগদে? | Were these {1} sales all cash? |
+| `q.sales.cash` | হ্যাঁ, সব নগদ | Yes, all cash |
+| `q.sales.credit` | সব বাকিতে | All on credit |
+| `q.sales.each` | কিছু বাকিতে | Some on credit |
+| `q.sales.why` | পাতায় নগদ বা বাকি লেখা নেই। | The page doesn't say cash or credit. |
+| `q.expenses` | এই {1}টা লাইন কি সব দোকানের খরচ? | Are these {1} lines all shop expenses? |
+| `q.expenses.yes` | হ্যাঁ, সব খরচ | Yes, all expenses |
+| `q.each` | একটা একটা করে দেখি | Let me go line by line |
+| `q.direction` | “{1}” — এই লাইনটা কী? | “{1}”: what is this line? |
+| `q.direction.check` | “{1}” — {2}, ঠিক? | “{1}”: {2}. Right? |
+| `q.say.opening.supplier` | আগে {1}-এর কাছে {2} দেনা ছিল | you owed {1} {2} before |
+| `q.say.closing.supplier` | এখন {1}-এর কাছে {2} দেনা | you now owe {1} {2} |
+| `q.say.opening.customer` | {1}-এর আগের বাকি {2} | {1} owed you {2} before |
+| `q.say.closing.customer` | {1}-এর এখন বাকি {2} | {1} now owes you {2} |
+| `q.say.supplier_payment` | {1}-কে {2} দিয়েছেন | you paid {1} {2} |
+| `q.say.credit_purchase` | {1}-এর কাছ থেকে {2}-এর মাল বাকিতে নিয়েছেন | you took goods worth {2} on credit from {1} |
+| `q.say.credit_sale` | {1} {2}-এর মাল বাকিতে নিয়েছেন | {1} took goods worth {2} on credit |
+| `q.say.repayment` | {1} {2} জমা দিয়েছেন | {1} paid back {2} |
+| `q.say.cash_sale` | {2} নগদ বিক্রি | a cash sale of {2} |
+| `q.say.purchase` | {2}-এর মাল নগদে কিনেছেন | stock bought for {2} in cash |
+| `q.say.expense` | {2} খরচ | a shop expense of {2} |
+| `q.doubt.amount` | “{1}” — টাকার অঙ্কটা কোনটা লেখা? | “{1}”: which amount is written? |
+| `q.doubt.balance` | “{1}” — বাকি কত লেখা? | “{1}”: which due is written? |
+| `q.doubt.qty` | “{1}” — পরিমাণ কত লেখা? | “{1}”: which quantity is written? |
+| `q.doubt.rate` | “{1}” — দর কত লেখা? | “{1}”: which rate is written? |
+| `q.doubt.customer` | “{1}” — নামটা কী লেখা? | “{1}”: which name is written? |
+| `q.doubt.item` | “{1}” — কোন জিনিস লেখা? | “{1}”: which item is written? |
+| `q.doubt.unit` | “{1}” — একক কী লেখা? | “{1}”: which unit is written? |
+| `q.check` | “{1}” — {2} পড়েছি, ঠিক? | “{1}”: I read {2}. Right? |
+| `q.unreadable` | “{1}” — {2} সংখ্যা হিসেবে পড়া যাচ্ছে না। কত লেখা? | “{1}”: the {2} can't be read as a number. What is written? |
+| `q.mixed` | “{1}” — {2}-এ বাংলা আর ইংরেজি অঙ্ক মেশানো: {3}। ঠিক পড়েছি? | “{1}”: the {2} mixes Bangla and English digits: {3}. Did I read it right? |
+| `q.field.amount` | টাকার অঙ্ক | amount |
+| `q.field.balance` | বাকি | due |
+| `q.field.qty` | পরিমাণ | quantity |
+| `q.field.rate` | দর | rate |
+| `q.per` | {1}টা, {2} করে | {1} at {2} each |
+| `q.per.unit` | {1} {2}, প্রতি {2} {3} | {1} {2} at {3} per {2} |
+| `q.price` | “{1}” — দাম লেখা নেই। কত ছিল? | “{1}”: no price is written. What did it cost? |
+| `q.prices` | {1}টা মালের দাম লেখা নেই। দাম কত ছিল? | {1} goods have no price written. What did they cost? |
+| `q.price.why` | কোম্পানির মেমো থাকলে দেখে বলুন। Scriba দাম আন্দাজ করবে না। | Check the company's memo if you have it. Scriba won't guess a price. |
+| `q.price.slot` | দাম দিন | Add price |
+| `q.price.save` | দাম রাখুন | Save the prices |
+| `q.price.later` | পরে দেব | Later |
+| `q.delivery` | {1} {2}টা মাল দিয়ে গেছেন, দাম লেখা নেই। সব মিলিয়ে কত ছিল? | {1} left {2} goods with no price written. What did they cost in all? |
+| `q.delivery.each` | আলাদা আলাদা দাম বলব | I'll price each one |
+| `q.opening.supplier` | এর আগে {1}-এর কাছে কোনো দেনা ছিল? | Did you owe {1} anything before this? |
+| `q.opening.customer` | এর আগে {1}-এর কোনো বাকি ছিল? | Did {1} owe you anything before this? |
+| `q.opening.none` | না, কিছু ছিল না | No, nothing |
+| `q.off.balance` | হিসাব মিলছে না: লাইনগুলো থেকে হয় {1}, কিন্তু লেখা আছে {2}। | It doesn't add up: the lines give {1}, but {2} is written. |
+| `q.off.total` | যোগ করলে হয় {1}, কিন্তু মোট লেখা {2}। | The lines add up to {1}, but the total says {2}. |
+| `q.off.qty` | গুণ করলে হয় {1}, কিন্তু লেখা আছে {2}। | Multiplied out it's {1}, but {2} is written. |
+| `q.off.use` | {1} ধরুন | Use {1} |
+| `q.off.keep` | লেখা এরকমই, রেখে দিন | It's written that way, keep it |
+| `q.off.look` | লাইনগুলো দেখি | Show me the lines |
+| `q.date` | পাতায় কোনো তারিখ লেখা নেই। ছবি তোলার দিনটাই ধরব? | There's no date on this page. Shall I use the day the photo was taken? |
+| `q.date.which` | পাতায় কোনো তারিখ লেখা নেই। এটা কোন দিনের পাতা? | There's no date on this page. Which day is it from? |
+| `q.date.photo` | হ্যাঁ, ছবির দিন · {1} | Yes, the photo's day · {1} |
+| `q.date.before` | আগের দিন · {1} | The day before · {1} |
+| `q.date.other` | অন্য দিন | Another day |
