@@ -48,22 +48,31 @@ function useLines(recordIds: readonly string[] | null) {
   };
 }
 
+/** A confirmed line's handwriting cut from its photo, or why there is none (sample page, no box). */
+export function DetailStrip({ line, height = 64, tag }: { line: LineDetail | undefined; height?: number; tag?: boolean }) {
+  const { t } = useI18n();
+  return (
+    <LineStrip
+      src={line?.strip?.src ?? null}
+      box={line?.strip?.box ?? null}
+      photoWidth={line?.strip?.width ?? 0}
+      photoHeight={line?.strip?.height ?? 0}
+      turns={line?.strip?.turns ?? 0}
+      height={line?.strip ? height : 44}
+      tag={tag}
+      reading={line?.sourceText}
+      none={!line || line.samplePage ? undefined : t("strip.noBox")}
+    />
+  );
+}
+
 /** One confirmed line: its handwriting cut from the photo, then the typed reading and amount. */
 export function RecordRow({ line }: { line: LineDetail }) {
   const i18n = useI18n();
   const { t } = i18n;
   return (
     <div className="dr-item">
-      <LineStrip
-        src={line.strip?.src ?? null}
-        box={line.strip?.box ?? null}
-        photoWidth={line.strip?.width ?? 0}
-        photoHeight={line.strip?.height ?? 0}
-        turns={line.strip?.turns ?? 0}
-        height={line.strip ? 64 : 44}
-        reading={line.sourceText}
-        none={line.samplePage ? undefined : t("strip.noBox")}
-      />
+      <DetailStrip line={line} />
       <div className="dr-meta">
         <span className="dr-what">{lineWhat(line, i18n)}</span>
         <span className="dr-amt">{i18n.money(line.amountPoisha)}</span>

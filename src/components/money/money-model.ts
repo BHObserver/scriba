@@ -103,13 +103,17 @@ export function closeMode(day: DaySummary, counted: number | null): CloseMode {
   return day.close ? "closed" : "review";
 }
 
-/** A drill-down line's reading in one row: "করিম · চাল · ২ কেজি × ৬০". Names stay as written. */
-export function lineWhat(
-  line: { name: string | null; item: string | null; quantityText: string | null; unit: string | null; rateText: string | null; type: RecordType },
-  i18n: I18n,
-): string {
+type LineReading = { name: string | null; item: string | null; quantityText: string | null; unit: string | null; rateText: string | null; type: RecordType };
+
+/** The parts of a line's reading that were written: name, item, "২ কেজি × ৬০". */
+export function readingParts(line: LineReading, i18n: I18n): string[] {
   const qty = line.quantityText ? i18n.digits(line.unit ? `${line.quantityText} ${line.unit}` : line.quantityText) : null;
   const rate = line.rateText ? i18n.digits(line.rateText) : null;
-  const parts = [line.name, line.item, qty && rate ? `${qty} × ${rate}` : qty].filter((p): p is string => Boolean(p && p.trim()));
+  return [line.name, line.item, qty && rate ? `${qty} × ${rate}` : qty].filter((p): p is string => Boolean(p && p.trim()));
+}
+
+/** A drill-down line's reading in one row: "করিম · চাল · ২ কেজি × ৬০". Names stay as written. */
+export function lineWhat(line: LineReading, i18n: I18n): string {
+  const parts = readingParts(line, i18n);
   return parts.length > 0 ? parts.join(" · ") : i18n.t(`type.${line.type}`);
 }
