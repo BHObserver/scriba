@@ -13,10 +13,15 @@
 import OpenAI from "openai";
 import type { MetaConfig } from "@/lib/config";
 import type { TokenUsage } from "@/lib/pricing";
-import { EXTRACTION_USER_TEXT, getExtractionProfile } from "@/lib/extraction/prompt";
+import { EXTRACTION_USER_TEXT, PERSONAL_PAGE_TEXT, getExtractionProfile, getPersonalProfile } from "@/lib/extraction/prompt";
 import type { ModelResponseSummary } from "@/lib/extraction/parse";
 
-export type ModelCallInput = { imageBytes: Uint8Array; mimeType: string };
+export type ModelCallInput = {
+  imageBytes: Uint8Array;
+  mimeType: string;
+  /** Prompt 5 (P3): the writer's notes and, when his lines can be cut from photos, their reference image. */
+  personal?: { text: string; reference: { imageBytes: Uint8Array; mimeType: string } | null };
+};
 
 export type MetaErrorCategory =
   | "not_configured"
@@ -63,19 +68,24 @@ export function toDataUrl(bytes: Uint8Array, mimeType: string): string {
 
 /** The exact request body sent to POST /v1/responses (minus the image bytes in tests). */
 export function buildExtractionRequest(config: Pick<MetaConfig, "modelId" | "reasoningEffort" | "maxOutputTokens">, input: ModelCallInput) {
-  const profile = getExtractionProfile();
+  const personal = input.personal ? getPersonalProfile() : null;
+  const profile = personal ?? getExtractionProfile();
+  const page = { type: "input_image" as const, image_url: toDataUrl(input.imageBytes, input.mimeType) };
+  const content =
+    personal && input.personal
+      ? [
+          { type: "input_text" as const, text: input.personal.text },
+          ...(input.personal.reference
+            ? [{ type: "input_image" as const, image_url: toDataUrl(input.personal.reference.imageBytes, input.personal.reference.mimeType) }]
+            : []),
+          { type: "input_text" as const, text: PERSONAL_PAGE_TEXT },
+          page,
+        ]
+      : [{ type: "input_text" as const, text: EXTRACTION_USER_TEXT }, page];
   return {
     model: config.modelId,
     instructions: profile.instructions,
-    input: [
-      {
-        role: "user" as const,
-        content: [
-          { type: "input_text" as const, text: EXTRACTION_USER_TEXT },
-          { type: "input_image" as const, image_url: toDataUrl(input.imageBytes, input.mimeType) },
-        ],
-      },
-    ],
+    input: [{ role: "user" as const, content }],
     text: {
       format: {
         type: "json_schema" as const,

@@ -17,7 +17,15 @@ import { toBanglaDigits } from "@/lib/numerals";
 
 export const DEMO_PROFILE = { shopName: "মায়ের দোয়া স্টোর", language: "bn" as const, openingCashPoisha: 150_000 };
 
-export type DemoPage = { key: string; date: string; capturedAt: string; page: PageValues; lines: EntryValues[] };
+export type DemoPage = {
+  key: string;
+  date: string;
+  capturedAt: string;
+  page: PageValues;
+  lines: EntryValues[];
+  /** What the reading said on lines he then corrected, by line index (P3's learning panel). */
+  readAs?: Record<number, EntryValues>;
+};
 export type DemoClose = { date: string; gapPoisha: number };
 export type DemoShop = { today: string; pages: DemoPage[]; closes: DemoClose[] };
 
@@ -169,6 +177,33 @@ function capturedAt(date: string, hhmm: string, latest: Date, n: number): string
   return new Date(Math.max(Math.min(planned, latest.getTime() - (4 - n) * 10 * 60_000), dayStart + n * 1000)).toISOString();
 }
 
+/**
+ * Sample misreads, so the learning panel (P3) has something to show on the sample shop:
+ * [the digit he wrote, the digit the reading said, how many lines]. One line every few cash
+ * pages, newest first, so some fall on the last 20 pages.
+ */
+const MISREADS: Array<[string, string, number]> = [["৮", "৪", 4], ["৬", "৩", 2], ["১", "৯", 1]];
+const MISREAD_EVERY = 4;
+
+function addMisreads(pages: DemoPage[]): void {
+  const left = MISREADS.map(([written, read, n]) => ({ written, read, n }));
+  let seen = 0;
+  for (const p of [...pages].reverse()) {
+    if (!p.key.endsWith("-cash") || seen++ % MISREAD_EVERY !== 0) continue;
+    for (const [i, l] of p.lines.entries()) {
+      const m = left.find((x) => x.n > 0 && l.amountText?.includes(x.written));
+      if (!m || !l.amountText) continue;
+      const misread = l.amountText.replace(m.written, m.read);
+      const at = l.sourceText.lastIndexOf(l.amountText);
+      const sourceText = at < 0 ? l.sourceText : l.sourceText.slice(0, at) + misread + l.sourceText.slice(at + l.amountText.length);
+      p.readAs = { [i]: { ...l, amountText: misread, sourceText } };
+      m.n--;
+      break;
+    }
+    if (left.every((x) => x.n === 0)) return;
+  }
+}
+
 export function demoShop(now: Date): DemoShop {
   const today = dhakaDate(now);
   const pages: DemoPage[] = [];
@@ -184,6 +219,7 @@ export function demoShop(now: Date): DemoShop {
     if (accounts.length > 0) page(`d${ago}-accounts`, date, at("20:40"), accounts);
   }
   TODAY.forEach((specs, i) => page(`today-${i + 1}`, today, capturedAt(today, ["10:00", "12:00", "15:00"][i]!, now, i + 1), specs));
+  addMisreads(pages);
 
   return { today, pages, closes: CLOSES.map(([ago, gapPoisha]) => ({ date: addDays(today, -ago), gapPoisha })) };
 }
@@ -234,7 +270,7 @@ export function demoBookInput(now: Date): BookInput {
         partyId,
         itemName: l.item,
         amountPoisha: Number(l.amountText!.replace(/[০-৯]/g, (d) => String("০১২৩৪৫৬৭৮৯".indexOf(d)))) * 100,
-        wasCorrected: false,
+        wasCorrected: !!p.readAs?.[i],
         confirmedAt: p.capturedAt,
       });
     });

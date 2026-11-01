@@ -9,6 +9,7 @@ import { getI18n, getLocale } from "@/lib/i18n/server";
 import { openingCash } from "@/lib/insights/day";
 import { dhakaDate } from "@/lib/ledger/dates";
 import { requireUser } from "@/lib/server/auth";
+import { loadLearningPanel } from "@/lib/server/learning-data";
 import { loadShop } from "@/lib/server/shop-data";
 import { VALIDATOR_VERSION } from "@/lib/validation/engine";
 
@@ -20,7 +21,7 @@ export const metadata = { title: "More" };
  */
 export default async function SettingsPage() {
   const { supabase } = await requireUser("/settings");
-  const shop = await loadShop(supabase);
+  const [shop, learning] = await Promise.all([loadShop(supabase), loadLearningPanel(supabase)]);
   if (!shop.profile) redirect("/welcome");
   const [{ t }, locale] = await Promise.all([getI18n(), getLocale()]);
   const asOf = dhakaDate(new Date());
@@ -42,6 +43,7 @@ export default async function SettingsPage() {
         usualCashPoisha={shop.profile.openingCashPoisha}
         opening={openingCash(shop.book, asOf)}
         language={locale}
+        learning={{ learnedFrom: learning.learnedFrom, top: learning.confusions[0] ?? null }}
       />
       <div className="details-page space-y-6">
       <h2 className="pt-6 text-xl font-semibold">{t("more.system")}</h2>

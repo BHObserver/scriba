@@ -86,7 +86,8 @@ const owner = user!.id;
 must(await db.from("shop_profiles").insert({ owner_id: owner, shop_name: DEMO_PROFILE.shopName, language: DEMO_PROFILE.language, opening_cash_poisha: DEMO_PROFILE.openingCashPoisha, is_sample: true }), "shop profile");
 
 // 2. A page: document → reading (scriba_complete_extraction) → optionally confirm every line.
-type Entry = { values: EntryValues; candidateId: string; line: number; bbox: unknown; reviewFields: string[]; uncertaintyReason: string | null };
+// `read`: what the reading said when he corrected the line (sample misreads for P3); else it read `values`.
+type Entry = { values: EntryValues; read?: EntryValues; candidateId: string; line: number; bbox: unknown; reviewFields: string[]; uncertaintyReason: string | null };
 async function addPage(p: {
   document: Record<string, unknown>;
   run: { model: string; promptVersion: string; schemaVersion: string; result: unknown; startedAt: string };
@@ -107,7 +108,7 @@ async function addPage(p: {
     "reading",
   );
   const asRows = (ids: Array<{ id: string; version: number }>): ReviewRow[] =>
-    p.entries.map((e, i) => ({ id: ids[i]!.id, extractedEntryId: null, lineOrder: e.line, values: e.values, reviewFields: [], status: "draft", version: ids[i]!.version, candidate: { candidateId: e.candidateId, values: e.values, bbox: null, reviewFields: [], uncertaintyReason: null } }));
+    p.entries.map((e, i) => ({ id: ids[i]!.id, extractedEntryId: null, lineOrder: e.line, values: e.values, reviewFields: [], status: "draft", version: ids[i]!.version, candidate: { candidateId: e.candidateId, values: e.read ?? e.values, bbox: null, reviewFields: [], uncertaintyReason: null } }));
   const draft = asRows(p.entries.map(() => ({ id: randomUUID(), version: 1 })));
   const findings = validateLedger(toValidationInput({ page: { values: p.page, version: 1, reviewStartedAt: null }, rows: draft }));
   const ok = (n: { ok: true; value: number } | { ok: false } | null) => (n && n.ok ? n.value : null);
@@ -117,12 +118,13 @@ async function addPage(p: {
       p_run_id: run.id,
       p_run: { elapsed_ms: 0, estimated_cost_usd: 0, result: p.run.result, validator_version: VALIDATOR_VERSION },
       p_entries: p.entries.map((e) => {
-        const n = deriveNumbers(e.values);
+        const r = e.read ?? e.values;
+        const n = deriveNumbers(r);
         return {
-          candidate_id: e.candidateId, line_order: e.line, source_text: e.values.sourceText, transaction_type: e.values.type, customer_alias: e.values.customer,
-          item_name: e.values.item, quantity_text: e.values.quantityText, quantity_milli: ok(n.quantity), unit: e.values.unit, unit_rate_text: e.values.rateText,
-          unit_rate_poisha: ok(n.rate), amount_text: e.values.amountText, amount_poisha: ok(n.amount), balance_text: e.values.balanceText,
-          balance_poisha: ok(n.balance), crossed_out: e.values.crossedOut, bbox: e.bbox, review_fields: e.reviewFields,
+          candidate_id: e.candidateId, line_order: e.line, source_text: r.sourceText, transaction_type: r.type, customer_alias: r.customer,
+          item_name: r.item, quantity_text: r.quantityText, quantity_milli: ok(n.quantity), unit: r.unit, unit_rate_text: r.rateText,
+          unit_rate_poisha: ok(n.rate), amount_text: r.amountText, amount_poisha: ok(n.amount), balance_text: r.balanceText,
+          balance_poisha: ok(n.balance), crossed_out: r.crossedOut, bbox: e.bbox, review_fields: e.reviewFields,
           uncertainty_reason: e.uncertaintyReason, entry_values: e.values,
         };
       }),
@@ -160,7 +162,7 @@ for (const p of shop.pages) {
     },
     run: { model: "sample", promptVersion: "sample", schemaVersion: "sample", result: { sample: true, page: p.page }, startedAt: p.capturedAt },
     page: p.page,
-    entries: p.lines.map((values, i) => ({ values, candidateId: `L${i + 1}`, line: i + 1, bbox: null, reviewFields: [], uncertaintyReason: null })),
+    entries: p.lines.map((values, i) => ({ values, read: p.readAs?.[i], candidateId: `L${i + 1}`, line: i + 1, bbox: null, reviewFields: [], uncertaintyReason: null })),
     confirm: true,
   });
   if (++done % 10 === 0) console.log(`  ${done}/${shop.pages.length} pages`);

@@ -189,6 +189,55 @@ describe("credit control", () => {
     expect(store.runs[0]!.cacheKey).not.toBe(store.runs[1]!.cacheKey);
   });
 
+  test("a personal reading (prompt 5) sends his notes, is recorded as such and never shares a cache entry", async () => {
+    const inputs: Parameters<ModelCaller>[0][] = [];
+    const callModel: ModelCaller = async (input) => (inputs.push(input), success());
+    const reference = { imageBytes: makePng(8, 8), mimeType: "image/png" };
+    const asked: string[] = [];
+    const personalize = async (doc: { id: string }) => (asked.push(doc.id), { key: "k1", text: "notes", reference });
+    const plain = { repo: store.repoFor("user-a"), callModel, now: () => new Date() };
+
+    await analyzeDocument(plain, settings, req("r1"));
+    const out = await analyzeDocument({ ...plain, personalize }, settings, req("r2"));
+    expect(out.kind).toBe("completed");
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]!.personal).toBeUndefined();
+    expect(inputs[1]!.personal).toEqual({ text: "notes", reference });
+    expect(asked).toEqual([docId]);
+    expect(store.runs.map((r) => r.promptVersion)).toEqual(["scriba-prompt-4", "scriba-prompt-5"]);
+    expect(store.runs[0]!.cacheKey).not.toBe(store.runs[1]!.cacheKey);
+
+    // The same notes again: the personal result is reused; changed notes mean a new key.
+    expect((await analyzeDocument({ ...plain, personalize }, settings, req("r3"))).kind).toBe("cached");
+    const changed = async () => ({ key: "k2", text: "more notes", reference: null });
+    expect((await analyzeDocument({ ...plain, personalize: changed }, settings, req("r4"))).kind).toBe("completed");
+    expect(inputs).toHaveLength(3);
+  });
+
+  test("notes that can't be built, or a base prompt other than 4, mean a plain reading", async () => {
+    const inputs: Parameters<ModelCaller>[0][] = [];
+    const callModel: ModelCaller = async (input) => (inputs.push(input), success());
+    const broken = async () => {
+      throw new Error("db down");
+    };
+    const out = await analyzeDocument({ repo: store.repoFor("user-a"), callModel, now: () => new Date(), personalize: broken }, settings, req("r1"));
+    expect(out.kind).toBe("completed");
+    expect(inputs[0]!.personal).toBeUndefined();
+    expect(store.runs[0]!.promptVersion).toBe("scriba-prompt-4");
+
+    process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-3";
+    try {
+      let asked = 0;
+      const personalize = async () => (asked++, { key: "k", text: "notes", reference: null });
+      await analyzeDocument({ repo: store.repoFor("user-a"), callModel, now: () => new Date(), personalize }, settings, req("r2", "fresh"));
+      expect(asked).toBe(0);
+      expect(inputs[1]!.personal).toBeUndefined();
+      expect(store.runs[1]!.promptVersion).toBe("scriba-prompt-3");
+    } finally {
+      delete process.env.SCRIBA_PROMPT_VERSION;
+    }
+  });
+
   test("a photo that cannot be turned stops the request before any call", async () => {
     const m = countingModel([success()]);
     const out = await analyzeDocument(

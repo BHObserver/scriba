@@ -31,6 +31,8 @@ Voice (P1), only when the user presses **বলে দিন / Say it** and then
 
 Ask Scriba (P2), only when the user sends a typed or spoken question: the question (at most 200 characters) and the shop's own vocabulary, meaning the names of the customers and suppliers with confirmed lines (up to 200) and the item names on sale, purchase and cost lines (up to 150). No amount, date or record is sent, and the strict schema lets the model return only a query shape (intent, a name or item from that list, a period key). `store: false`. Code computes the answer from the user's confirmed records. The server logs the shape's intent, token usage and cost, never the question. Tapping a suggested question sends nothing to Meta: its shape is fixed in code.
 
+Learning your handwriting (P3), only when the user has switched it on in More → "Scriba is learning your handwriting" (off by default, and `SCRIBA_LEARNING=off` disables it for a deployment). The page is then read with prompt 5, and the same request also carries two things. The first is up to 4 of the user's own confirmed lines, cut from their own photos into one JPEG and read through their own client (RLS). The second is those lines' confirmed fields (item, qty, rate, amount) plus counts of digits misread before ("৮ read as ৪, 3 times"). It never includes names of parties, dates or other pages, or anything from the page being read, and nothing from another user. `store: false` as for every reading. The switch is stored in the user's auth metadata (`scriba_learning`). The learning panel itself is computed in code and sends nothing.
+
 For any real shop data later: get consent from the shopkeeper, minimize names in the photo, and re-check Meta's data policies first.
 
 ## Known limitations

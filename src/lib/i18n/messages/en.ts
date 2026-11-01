@@ -85,6 +85,7 @@ export const en = {
   "learn.stats": "You corrected {1} numbers on the last {2} pages.",
   "learn.mix": "Digits it mixes up most",
   "learn.mixRow": "Read your {1} as {2} · {3} times",
+  "learn.mixRow1": "Read your {1} as {2} · once",
   "learn.refs": "Scriba uses these lines to recognise your writing",
   "learn.refs.b": "Chosen from lines you confirmed.",
   "learn.use": "Use this when reading new pages",

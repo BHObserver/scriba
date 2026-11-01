@@ -15,7 +15,7 @@
  */
 import { sha256Hex, extractionCacheKey, type ProcessingMode } from "./cache-key";
 import { parseModelResponse, type NormalizedExtraction, type ParseFailureKind } from "./parse";
-import { getExtractionProfile } from "./prompt";
+import { getExtractionProfile, getPersonalProfile } from "./prompt";
 import type { PreparedImage } from "@/lib/images/rotate";
 import type { MetaErrorCategory, ModelCaller } from "@/lib/meta/transport";
 import { estimateCostUsd, type TokenUsage } from "@/lib/pricing";
@@ -124,6 +124,14 @@ export type AnalyzeOutcome =
   | { kind: "unusable_output"; runId: string; category: ParseFailureKind; message: string }
   | { kind: "persistence_error"; runId: string; message: string };
 
+/**
+ * Prompt 5 (P3): what this writer's earlier pages taught, ready to send. `key` changes
+ * whenever the notes or the reference image change, and is part of the cache key.
+ */
+export type Personalization = { key: string; text: string; reference: PreparedImage | null };
+/** Null when he hasn't switched it on, or there's nothing to send yet. Never sees the page itself. */
+export type Personalizer = (doc: DocumentForExtraction) => Promise<Personalization | null>;
+
 export type ImagePreparer = (imageBytes: Uint8Array, mimeType: string, mode: ProcessingMode) => Promise<PreparedImage>;
 
 const originalOnly: ImagePreparer = async (imageBytes, mimeType, mode) => {
@@ -132,16 +140,19 @@ const originalOnly: ImagePreparer = async (imageBytes, mimeType, mode) => {
 };
 
 export async function analyzeDocument(
-  deps: { repo: ExtractionRepo; callModel: ModelCaller; now: () => Date; prepareImage?: ImagePreparer },
+  deps: { repo: ExtractionRepo; callModel: ModelCaller; now: () => Date; prepareImage?: ImagePreparer; personalize?: Personalizer },
   settings: AnalyzeSettings,
   request: AnalyzeRequest,
 ): Promise<AnalyzeOutcome> {
   const { repo, callModel, now, prepareImage = originalOnly } = deps;
   const processingMode = request.processingMode ?? "baseline_original";
-  const { promptVersion, schemaVersion } = getExtractionProfile();
-
   const doc = await repo.getDocument(request.documentId);
   if (!doc) return { kind: "not_found" };
+
+  // Personal notes only ride on prompt 4; a failure to build them means a plain reading.
+  const personalProfile = deps.personalize ? getPersonalProfile() : null;
+  const personal = personalProfile ? await deps.personalize!(doc).catch(() => null) : null;
+  const { promptVersion, schemaVersion } = personal ? personalProfile! : getExtractionProfile();
 
   const cacheKey = extractionCacheKey({
     ownerId: doc.ownerId,
@@ -150,6 +161,7 @@ export async function analyzeDocument(
     promptVersion,
     schemaVersion,
     processingMode,
+    personalKey: personal?.key ?? null,
   });
 
   const replay = await repo.findRunByRequestId(request.requestId);
@@ -232,7 +244,7 @@ export async function analyzeDocument(
     return { kind: "integrity_error", runId, message };
   }
 
-  const result = await callModel(prepared);
+  const result = await callModel(personal ? { ...prepared, personal: { text: personal.text, reference: personal.reference } } : prepared);
 
   if (!result.ok) {
     await repo.failRun(runId, {

@@ -38,6 +38,14 @@ export function getMetaConfig(): MetaConfig {
   };
 }
 
+/**
+ * P3, adaptive handwriting. SCRIBA_LEARNING=off hides the learning switch and reads every
+ * page with the plain prompt, whatever a shopkeeper chose (a kill switch for the deployment).
+ */
+export function learningEnabled(): boolean {
+  return (process.env.SCRIBA_LEARNING ?? "on").trim().toLowerCase() !== "off";
+}
+
 export type VoiceConfig = {
   /** SCRIBA_VOICE=off refuses every transcription (a kill switch). */
   enabled: boolean;

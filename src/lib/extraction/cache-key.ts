@@ -10,6 +10,8 @@ export type CacheKeyParts = {
   promptVersion: string;
   schemaVersion: string;
   processingMode: ProcessingMode;
+  /** Prompt 5 (P3): the writer's notes and reference lines. Absent for a plain reading, so older keys still match. */
+  personalKey?: string | null;
 };
 
 /**
@@ -26,6 +28,7 @@ export function extractionCacheKey(parts: CacheKeyParts): string {
     parts.promptVersion,
     parts.schemaVersion,
     parts.processingMode,
+    ...(parts.personalKey ? [parts.personalKey] : []),
   ]);
   return createHash("sha256").update(canonical).digest("hex");
 }

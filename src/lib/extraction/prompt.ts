@@ -5,6 +5,8 @@
  * Kept short on purpose: one request per image, no reasoning narrative, and only
  * the fields Scriba uses.
  */
+import { BANGLA_DIGITS } from "@/lib/numerals";
+import type { PersonalHints } from "@/lib/learning/profile";
 import {
   EXTRACTION_JSON_SCHEMA,
   EXTRACTION_JSON_SCHEMA_V1,
@@ -94,6 +96,45 @@ warnings: short notes on anything that affects reading (cut-off edge, overwritin
 
 export const EXTRACTION_USER_TEXT = "Transcribe this ledger image.";
 
+/**
+ * Prompt 5 (1 Nov, P3): prompt 4 plus what Scriba learned about this writer. The fixed part
+ * is here; the writer's own notes and reference lines travel in the user message
+ * (`personalUserText`), so the instructions stay the same for everyone.
+ */
+export const PERSONAL_PROMPT_VERSION = "scriba-prompt-5";
+
+const PROMPT_5 = `${PROMPT_4}
+
+Notes about this writer:
+- The request may also carry notes about this writer's digits, learned from earlier pages the shopkeeper checked, and an image of reference lines cut from those pages. Use them only to recognise how this writer forms each digit.
+- Never transcribe a reference line as an entry and never copy a number from it. The page to transcribe is the last image.
+- The notes are hints, not rules. Still read every digit from the ink of the page; when a digit could be read either way, give your best reading and list that field in review.`;
+
+const DIGIT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+const digitName = (d: number) => `${BANGLA_DIGITS[d]} (${DIGIT_WORDS[d]})`;
+
+/** The writer's notes, as sent before the reference image (when there is one) and the page. */
+export function personalUserText(hints: PersonalHints, opts: { withImage: boolean }): string {
+  const lines: string[] = [];
+  if (opts.withImage && hints.references.length > 0) {
+    lines.push(
+      `Reference only, do not transcribe. The next image shows ${hints.references.length} line${hints.references.length === 1 ? "" : "s"} by this writer from earlier pages, top to bottom. The shopkeeper confirmed what each one says:`,
+      ...hints.references.map((r, i) => `${i + 1}. ${r.text}`),
+    );
+  }
+  if (hints.confusions.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push(
+      "Digits of this writer that were misread before (the shopkeeper corrected them):",
+      ...hints.confusions.map((c) => `- this writer's ${digitName(c.written)} was read as ${digitName(c.read)}, ${c.count} times`),
+    );
+  }
+  return lines.join("\n");
+}
+
+/** The text placed just before the page image when notes come first. */
+export const PERSONAL_PAGE_TEXT = "Now transcribe this ledger image. Only this image is the page.";
+
 export type ExtractionProfile = {
   promptVersion: string;
   instructions: string;
@@ -120,6 +161,16 @@ const PROFILES: Record<string, ExtractionProfile> = {
 };
 
 export const PROMPT_VERSIONS = Object.keys(PROFILES);
+
+/**
+ * Prompt 5 builds on prompt 4 and its schema. Null when another base prompt is selected, so
+ * a comparison run on prompt 3 is never mixed with personal notes.
+ */
+export function getPersonalProfile(): ExtractionProfile | null {
+  const base = getExtractionProfile();
+  if (base.promptVersion !== "scriba-prompt-4") return null;
+  return { ...base, promptVersion: PERSONAL_PROMPT_VERSION, instructions: PROMPT_5 };
+}
 
 /**
  * The prompt and schema used for new extractions: prompt 4 unless

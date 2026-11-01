@@ -8,6 +8,7 @@ import { Button, Keypad, type KeypadKey, SampleBadge, Sheet, applyKey, groupType
 import { LanguageSwitch } from "@/components/shell/language-switch";
 import { useI18n } from "@/lib/i18n/client";
 import type { OpeningCash } from "@/lib/insights/day";
+import { glyph } from "./learning-screen";
 import { openingSub } from "./more-model";
 
 export type MoreView = {
@@ -19,6 +20,8 @@ export type MoreView = {
   /** What today actually starts from, and where that came from. */
   opening: OpeningCash;
   language: "bn" | "en";
+  /** P3: how many corrections taught a digit, and the mix-up seen most (null before the first). */
+  learning: { learnedFrom: number; top: { written: number; read: number } | null };
 };
 
 const DETAILS = [
@@ -29,8 +32,8 @@ const DETAILS = [
 
 /**
  * আরও: the shop (name, morning cash), the language, the details pages that keep the full
- * record for an audit, and signing out. Learning (P3) and the printable khata (P4) join here
- * when they exist; nothing on screen leads to a feature that isn't built.
+ * record for an audit, and signing out. The learning card (P3) opens the learning panel; the
+ * printable khata (P4) joins when it exists, since nothing on screen leads to a feature that isn't built.
  */
 export function MoreScreen(view: MoreView) {
   const i18n = useI18n();
@@ -77,6 +80,22 @@ export function MoreScreen(view: MoreView) {
             <LanguageSwitch />
           </div>
         </section>
+        <Link href="/settings/learning" className="card set-learn">
+          <span className="set-l">
+            <b>{t("more.learn.t")}</b>
+            <span className="t-small">{view.learning.top ? t("more.learn.b", view.learning.learnedFrom) : t("learn.empty")}</span>
+          </span>
+          {view.learning.top ? (
+            <span className="lr-mini" aria-hidden="true">
+              <span className="lr-hand">{glyph(view.learning.top.written)}</span>
+              <span className="lr-arrow">→</span>
+              <span className="lr-read">{glyph(view.learning.top.read)}</span>
+            </span>
+          ) : (
+            <span />
+          )}
+          <ChevronRight size={18} aria-hidden="true" />
+        </Link>
         <section className="card set-group" aria-labelledby="more-details">
           <h2 id="more-details" className="t-label set-h">
             {t("more.details")}
