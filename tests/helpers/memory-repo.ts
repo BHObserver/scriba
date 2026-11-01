@@ -54,6 +54,9 @@ export class MemoryStore {
       async findPendingRun(cacheKey) {
         return store.runs.find((r) => own(r) && r.cacheKey === cacheKey && r.status === "pending") ?? null;
       },
+      async latestPromptVersion(documentId) {
+        return [...store.runs].reverse().find((r) => own(r) && r.documentId === documentId)?.promptVersion ?? null;
+      },
       async countPaidRunsSince(since) {
         return store.runs.filter((r) => own(r) && r.startedAt >= since).length;
       },

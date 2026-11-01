@@ -13,7 +13,14 @@
 import OpenAI from "openai";
 import type { MetaConfig } from "@/lib/config";
 import type { TokenUsage } from "@/lib/pricing";
-import { EXTRACTION_USER_TEXT, PERSONAL_PAGE_TEXT, getExtractionProfile, getPersonalProfile } from "@/lib/extraction/prompt";
+import {
+  EXTRACTION_USER_TEXT,
+  PERSONAL_PAGE_TEXT,
+  type PageLayout,
+  getExtractionProfile,
+  getPersonalProfile,
+  withLayout,
+} from "@/lib/extraction/prompt";
 import type { ModelResponseSummary } from "@/lib/extraction/parse";
 
 export type ModelCallInput = {
@@ -21,6 +28,8 @@ export type ModelCallInput = {
   mimeType: string;
   /** Prompt 5 (P3): the writer's notes and, when his lines can be cut from photos, their reference image. */
   personal?: { text: string; reference: { imageBytes: Uint8Array; mimeType: string } | null };
+  /** P4: a printed Scriba khata page adds its column layout to the instructions. */
+  layout?: PageLayout;
 };
 
 export type MetaErrorCategory =
@@ -69,7 +78,7 @@ export function toDataUrl(bytes: Uint8Array, mimeType: string): string {
 /** The exact request body sent to POST /v1/responses (minus the image bytes in tests). */
 export function buildExtractionRequest(config: Pick<MetaConfig, "modelId" | "reasoningEffort" | "maxOutputTokens">, input: ModelCallInput) {
   const personal = input.personal ? getPersonalProfile() : null;
-  const profile = personal ?? getExtractionProfile();
+  const profile = withLayout(personal ?? getExtractionProfile(), input.layout ?? "free");
   const page = { type: "input_image" as const, image_url: toDataUrl(input.imageBytes, input.mimeType) };
   const content =
     personal && input.personal

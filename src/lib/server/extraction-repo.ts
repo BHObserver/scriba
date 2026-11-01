@@ -90,6 +90,19 @@ export function createSupabaseExtractionRepo(opts: {
       return data ? toRecord(data as RunRow) : null;
     },
 
+    async latestPromptVersion(documentId) {
+      const data = must(
+        await db
+          .from("extraction_runs")
+          .select("prompt_version")
+          .eq("document_id", documentId)
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      );
+      return data?.prompt_version ?? null;
+    },
+
     async countPaidRunsSince(since) {
       const { count, error } = await db
         .from("extraction_runs")

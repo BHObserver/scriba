@@ -1,10 +1,12 @@
 "use client";
 
 import { createContext, use, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import type { PageLayout } from "@/lib/extraction/prompt";
 import { processingModeForTurns, type QuarterTurns } from "@/lib/images/orientation";
 import { type Reading, readingFromAnalyze, readingFromNetworkError } from "./problems";
 
-export type PageToRead = { documentId: string; turns: QuarterTurns };
+/** `layout` is left out by "check again", so the server keeps the one the page was read with. */
+export type PageToRead = { documentId: string; turns: QuarterTurns; layout?: PageLayout };
 /** A reading plus the orientation the page was sent in, so the screen shows the photo that way. */
 export type QueuedReading = Reading & { turns: QuarterTurns };
 
@@ -29,7 +31,7 @@ async function analyzeOnce(page: PageToRead): Promise<Reading> {
     const res = await fetch(`/api/documents/${page.documentId}/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requestId, mode: "use_cache", processingMode: processingModeForTurns(page.turns) }),
+      body: JSON.stringify({ requestId, mode: "use_cache", processingMode: processingModeForTurns(page.turns), layout: page.layout }),
     });
     return readingFromAnalyze(res.status, await res.json().catch(() => ({})));
   } catch {

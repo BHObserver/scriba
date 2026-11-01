@@ -238,6 +238,36 @@ describe("credit control", () => {
     }
   });
 
+  test("a khata page is read with its layout, recorded as such, never shares a cache entry, and a re-read keeps it", async () => {
+    const inputs: Parameters<ModelCaller>[0][] = [];
+    const callModel: ModelCaller = async (input) => (inputs.push(input), success());
+    const deps = { repo: store.repoFor("user-a"), callModel, now: () => new Date() };
+
+    expect((await analyzeDocument(deps, settings, { ...req("r1"), layout: "scriba_khata" })).kind).toBe("completed");
+    expect(inputs[0]!.layout).toBe("scriba_khata");
+    expect(store.runs[0]!.promptVersion).toBe("scriba-prompt-4+khata-1");
+    expect(store.runs[0]!.success!.extraction.promptVersion).toBe("scriba-prompt-4+khata-1");
+
+    // No layout given ("check again", the details page): the page keeps the layout it was read with.
+    expect((await analyzeDocument(deps, settings, req("r2"))).kind).toBe("cached");
+
+    // He says it isn't a khata page: a plain reading under its own key.
+    expect((await analyzeDocument(deps, settings, { ...req("r3"), layout: "free" })).kind).toBe("completed");
+    expect(inputs[1]!.layout).toBeUndefined();
+    expect(store.runs[1]!.promptVersion).toBe("scriba-prompt-4");
+    expect(store.runs[1]!.cacheKey).not.toBe(store.runs[0]!.cacheKey);
+
+    // A fresh re-read follows the latest run, which is plain now.
+    await analyzeDocument(deps, settings, req("r4", "fresh"));
+    expect(store.runs[2]!.promptVersion).toBe("scriba-prompt-4");
+
+    // With his notes switched on, both ride together.
+    const personalize = async () => ({ key: "k1", text: "notes", reference: null });
+    await analyzeDocument({ ...deps, personalize }, settings, { ...req("r5"), layout: "scriba_khata" });
+    expect(store.runs[3]!.promptVersion).toBe("scriba-prompt-5+khata-1");
+    expect(inputs[3]).toMatchObject({ layout: "scriba_khata", personal: { text: "notes", reference: null } });
+  });
+
   test("a photo that cannot be turned stops the request before any call", async () => {
     const m = countingModel([success()]);
     const out = await analyzeDocument(

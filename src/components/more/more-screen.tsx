@@ -30,10 +30,15 @@ const DETAILS = [
   ["/evaluation", "more.eval"],
 ] as const;
 
+const PRINTS = [
+  ["/khata.pdf", "more.print.a5", "more.print.a5.b"],
+  ["/khata-a4.pdf", "more.print.a4", "more.print.a4.b"],
+] as const;
+
 /**
  * আরও: the shop (name, morning cash), the language, the details pages that keep the full
- * record for an audit, and signing out. The learning card (P3) opens the learning panel; the
- * printable khata (P4) joins when it exists, since nothing on screen leads to a feature that isn't built.
+ * record for an audit, and signing out. The learning card (P3) opens the learning panel; the print
+ * card (P4) opens the khata PDFs made by `bun run khata:pdf`.
  */
 export function MoreScreen(view: MoreView) {
   const i18n = useI18n();
@@ -96,6 +101,23 @@ export function MoreScreen(view: MoreView) {
           )}
           <ChevronRight size={18} aria-hidden="true" />
         </Link>
+        <section className="card set-group" aria-labelledby="more-print">
+          <h2 id="more-print" className="t-label set-h">
+            {t("more.print.t")}
+          </h2>
+          <p className="t-small set-p">{t("more.print.b")}</p>
+          {PRINTS.map(([href, label, sub]) => (
+            <a key={href} href={href} target="_blank" rel="noopener" type="application/pdf" className="set-row">
+              <span className="set-l">
+                <b>{t(label)}</b>
+                <span className="t-small">{t(sub)}</span>
+              </span>
+              <span className="set-v">PDF</span>
+              <ChevronRight size={18} aria-hidden="true" />
+            </a>
+          ))}
+          <p className="t-small set-p set-print-how">{t("more.print.how")}</p>
+        </section>
         <section className="card set-group" aria-labelledby="more-details">
           <h2 id="more-details" className="t-label set-h">
             {t("more.details")}

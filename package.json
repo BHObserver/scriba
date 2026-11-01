@@ -15,6 +15,7 @@
     "live:voice": "bun scripts/live-voice.ts",
     "live:ask": "bun scripts/live-ask.ts",
     "shot": "bun scripts/shot.ts",
+    "khata:pdf": "bun scripts/khata-pdf.ts",
     "seed:demo": "bun scripts/seed-demo.ts",
     "db:push": "supabase db push",
     "secrets:scan": "bun scripts/check-staged.ts"

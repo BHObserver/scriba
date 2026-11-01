@@ -1,6 +1,6 @@
 "use client";
 
-import { RotateCw, X } from "lucide-react";
+import { Check, RotateCw, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -12,6 +12,7 @@ import { useI18n } from "@/lib/i18n/client";
 import { type SupportedMimeType, inspectImage } from "@/lib/images/inspect";
 import type { QuarterTurns } from "@/lib/images/orientation";
 import { type ProblemKind, RETRYABLE } from "./problems";
+import { useKhataPages } from "./khata-pref";
 import { useReadingQueue } from "./reading-queue";
 import { UploadError, problemForRejection, sha256Hex, uploadPage } from "./upload";
 
@@ -70,6 +71,7 @@ export function CaptureScreen({ userId, maxUploadBytes }: { userId: string; maxU
   const { t, count, locale } = useI18n();
   const router = useRouter();
   const { read } = useReadingQueue();
+  const [khata, setKhata] = useKhataPages();
 
   const [pages, setPages] = useState<TrayPage[]>([]);
   const pagesRef = useRef<TrayPage[]>([]);
@@ -207,7 +209,7 @@ export function CaptureScreen({ userId, maxUploadBytes }: { userId: string; maxU
         return;
       }
     }
-    read(list.map((p, i) => ({ documentId: ids[i]!, turns: p.turns })));
+    read(list.map((p, i) => ({ documentId: ids[i]!, turns: p.turns, layout: khata ? "scriba_khata" : "free" })));
     router.push(`/check/${ids[0]}?pages=${ids.join(",")}`);
   }
 
@@ -298,7 +300,7 @@ export function CaptureScreen({ userId, maxUploadBytes }: { userId: string; maxU
           <Link href="/" className="back light" aria-label={t("close")}>
             <X size={26} strokeWidth={2.25} aria-hidden="true" />
           </Link>
-          <span className="cap-tip">{t("cap.tip")}</span>
+          <span className="cap-tip">{t(khata ? "cap.khata.tip" : "cap.tip")}</span>
         </div>
 
         <div className="cap-view">
@@ -328,6 +330,12 @@ export function CaptureScreen({ userId, maxUploadBytes }: { userId: string; maxU
           )}
         </div>
 
+        <button type="button" className="cap-kh" aria-pressed={khata} onClick={() => setKhata(!khata)}>
+          <span className="cap-kh-box" aria-hidden="true">
+            {khata ? <Check size={16} strokeWidth={3} /> : null}
+          </span>
+          {t("cap.khata")}
+        </button>
         {pages.some((p) => p.hasGps) ? <p className="cap-note">{t("cap.gps")}</p> : null}
         {full ? <p className="cap-note">{t("cap.full", MAX_PAGES)}</p> : null}
 

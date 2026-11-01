@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="bn">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scriba খাতার পাতা</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anek+Bangla:wdth,wght@75..125,400..700&amp;family=Noto+Serif+Bengali:wght@700&amp;display=swap" />
+    <style>
+      /* The printable Scriba khata page (D4 `Khata Page.html`), printed to public/khata.pdf and
+         public/khata-a4.pdf by scripts/khata-pdf.ts. Four corner markers let the reader find the page
+         edges; fixed columns let position decide qty vs rate vs amount. The column order is also in
+         the prompt (KHATA_LAYOUT in src/lib/extraction/prompt.ts): change both together.
+         Markers sit 5 mm in (D4 had 3 mm) so printers that can't print to the edge keep them whole. */
+      @page { size: A5 portrait; margin: 0; }
+      :root { --ink: oklch(0.25 0.015 60); --soft: oklch(0.45 0.015 60); --rule: oklch(0.7 0.05 240); --red: oklch(0.47 0.15 27); }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: "Anek Bangla", system-ui, sans-serif; color: var(--ink); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .sheet { width: 148mm; height: 210mm; background: #fff; position: relative; padding: 9mm 8mm 8mm; display: flex; flex-direction: column; overflow: hidden; }
+      .cm { position: absolute; width: 6mm; height: 6mm; background: var(--ink); }
+      .cm::after { content: ""; position: absolute; inset: 1.6mm; background: #fff; }
+      .cm.tl { left: 5mm; top: 5mm; } .cm.tr { right: 5mm; top: 5mm; } .cm.bl { left: 5mm; bottom: 5mm; } .cm.br { right: 5mm; bottom: 5mm; }
+      .head { display: grid; grid-template-columns: auto 1fr auto; align-items: end; gap: 4mm; padding: 0 8mm 3mm; }
+      .brand { font: 700 13pt/1 "Noto Serif Bengali", serif; color: var(--red); }
+      .brand small { display: block; font: 500 7.5pt "Anek Bangla"; color: var(--soft); margin-top: 1mm; }
+      .fill { display: flex; align-items: end; gap: 2mm; font: 600 9pt "Anek Bangla"; white-space: nowrap; }
+      .fill i { flex: 1; min-width: 14mm; border-bottom: 0.3mm solid var(--ink); height: 5mm; }
+      .pgno { display: flex; align-items: end; gap: 2mm; font: 600 9pt "Anek Bangla"; }
+      .pgno i { width: 13mm; height: 8mm; border: 0.35mm solid var(--ink); border-radius: 1mm; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; flex: 1; }
+      th { font: 600 8.5pt/1.1 "Anek Bangla"; text-align: center; padding: 1.2mm 0.5mm; border-top: 0.4mm solid var(--red); border-bottom: 0.4mm solid var(--red); }
+      td { border-bottom: 0.2mm solid var(--rule); height: 7.4mm; }
+      td + td, th + th { border-left: 0.2mm solid var(--rule); }
+      td:nth-child(2), th:nth-child(2) { border-left: 0.4mm solid var(--red); }
+      tr.carry td, tr.total td { height: 8mm; font: 600 8pt "Anek Bangla"; color: var(--soft); padding-left: 1.5mm; }
+      tr.total td { border-top: 0.4mm solid var(--red); border-bottom: 0.4mm solid var(--red); }
+      td.bj { font: 500 7.5pt "Anek Bangla"; color: oklch(0.72 0.01 60); text-align: center; letter-spacing: 1.2mm; }
+      .foot { padding: 2.5mm 8mm 0; font: 500 7.5pt/1.4 "Anek Bangla"; color: var(--soft); }
+      /* Two A5 pages on one A4 landscape sheet, with a dashed line to cut along. */
+      body.two-up { display: flex; width: 297mm; height: 210mm; position: relative; }
+      body.two-up::after { content: ""; position: absolute; left: 148.5mm; top: 0; bottom: 0; border-left: 0.2mm dashed oklch(0.75 0 0); }
+    </style>
+  </head>
+  <body>
+    <div class="sheet">
+      <i class="cm tl"></i><i class="cm tr"></i><i class="cm bl"></i><i class="cm br"></i>
+      <div class="head">
+        <span class="brand">Scriba খাতা<small>ছবি তুললে হিসাব মেলাবে</small></span>
+        <span class="fill">দোকান<i></i></span>
+        <span class="pgno">পাতা নং<i></i></span>
+      </div>
+      <table>
+        <colgroup><col style="width:13%" /><col style="width:22%" /><col style="width:19%" /><col style="width:11%" /><col style="width:10%" /><col style="width:15%" /><col style="width:10%" /></colgroup>
+        <thead><tr><th>তারিখ</th><th>নাম</th><th>জিনিস</th><th>পরিমাণ</th><th>দর</th><th>টাকা</th><th>বাকি/জমা</th></tr></thead>
+        <tbody id="rows">
+          <tr class="carry"><td colspan="5">আগের পাতা থেকে জের</td><td></td><td></td></tr>
+        </tbody>
+      </table>
+      <p class="foot">এক লাইনে একটা জিনিস। টাকার ঘরে শুধু সংখ্যা। বাকিতে দিলে ‘বা’, জমা নিলে ‘জ’ গোল করুন। ছবি তোলার সময় চার কোণার কালো দাগ ফ্রেমে রাখুন।</p>
+    </div>
+    <script>
+      // 17 writing rows between the carried balance and the total.
+      const body = document.getElementById("rows");
+      for (let i = 0; i < 17; i++) body.insertAdjacentHTML("beforeend", '<tr><td></td><td></td><td></td><td></td><td></td><td></td><td class="bj">বা জ</td></tr>');
+      body.insertAdjacentHTML("beforeend", '<tr class="total"><td colspan="5">মোট · পরের পাতায় জের</td><td></td><td></td></tr>');
+    </script>
+  </body>
+</html>

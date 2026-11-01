@@ -15,7 +15,7 @@
  */
 import { sha256Hex, extractionCacheKey, type ProcessingMode } from "./cache-key";
 import { parseModelResponse, type NormalizedExtraction, type ParseFailureKind } from "./parse";
-import { getExtractionProfile, getPersonalProfile } from "./prompt";
+import { type PageLayout, getExtractionProfile, getPersonalProfile, layoutOfPromptVersion, withLayout } from "./prompt";
 import type { PreparedImage } from "@/lib/images/rotate";
 import type { MetaErrorCategory, ModelCaller } from "@/lib/meta/transport";
 import { estimateCostUsd, type TokenUsage } from "@/lib/pricing";
@@ -84,6 +84,8 @@ export interface ExtractionRepo {
   findRunByRequestId(requestId: string): Promise<RunRecord | null>;
   findLatestSucceededRun(cacheKey: string): Promise<RunRecord | null>;
   findPendingRun(cacheKey: string): Promise<RunRecord | null>;
+  /** The prompt version of this document's latest run of any status, or null if it was never sent. */
+  latestPromptVersion(documentId: string): Promise<string | null>;
   countPaidRunsSince(since: Date): Promise<number>;
   /** Must be atomic: fails on a duplicate request id or an existing pending run. */
   insertPendingRun(run: NewRun): Promise<{ ok: true; run: RunRecord } | { ok: false; conflict: "request_id" | "pending" }>;
@@ -102,6 +104,8 @@ export type AnalyzeRequest = {
   mode: "use_cache" | "fresh";
   /** How the photo is turned before it is sent. Defaults to the untouched original. */
   processingMode?: ProcessingMode;
+  /** P4: a printed Scriba khata page. Absent means the layout of the page's latest run, so a re-read keeps it. */
+  layout?: PageLayout;
 };
 
 export type AnalyzeSettings = {
@@ -152,7 +156,8 @@ export async function analyzeDocument(
   // Personal notes only ride on prompt 4; a failure to build them means a plain reading.
   const personalProfile = deps.personalize ? getPersonalProfile() : null;
   const personal = personalProfile ? await deps.personalize!(doc).catch(() => null) : null;
-  const { promptVersion, schemaVersion } = personal ? personalProfile! : getExtractionProfile();
+  const layout = request.layout ?? layoutOfPromptVersion(await repo.latestPromptVersion(doc.id));
+  const { promptVersion, schemaVersion } = withLayout(personal ? personalProfile! : getExtractionProfile(), layout);
 
   const cacheKey = extractionCacheKey({
     ownerId: doc.ownerId,
@@ -244,7 +249,11 @@ export async function analyzeDocument(
     return { kind: "integrity_error", runId, message };
   }
 
-  const result = await callModel(personal ? { ...prepared, personal: { text: personal.text, reference: personal.reference } } : prepared);
+  const result = await callModel({
+    ...prepared,
+    ...(personal ? { personal: { text: personal.text, reference: personal.reference } } : {}),
+    ...(layout === "free" ? {} : { layout }),
+  });
 
   if (!result.ok) {
     await repo.failRun(runId, {
@@ -297,7 +306,8 @@ export async function analyzeDocument(
       estimatedCostUsd: cost,
       elapsedMs: result.elapsedMs,
       rawOutputText: result.summary.outputText ?? "",
-      extraction: parsed.extraction,
+      // The version actually sent (prompt 5, a khata layout), not only the configured base.
+      extraction: { ...parsed.extraction, promptVersion },
       findings,
       validatorVersion: VALIDATOR_VERSION,
     });

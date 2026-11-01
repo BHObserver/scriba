@@ -135,6 +135,41 @@ export function personalUserText(hints: PersonalHints, opts: { withImage: boolea
 /** The text placed just before the page image when notes come first. */
 export const PERSONAL_PAGE_TEXT = "Now transcribe this ledger image. Only this image is the page.";
 
+/**
+ * P4: the printed Scriba khata page (`scripts/khata/page.html`). When he says a page is one, the
+ * prompt learns the column order, so the column a number sits in decides qty, rate or amount.
+ */
+export const PAGE_LAYOUTS = ["free", "scriba_khata"] as const;
+export type PageLayout = (typeof PAGE_LAYOUTS)[number];
+
+/** Bump with any change to KHATA_LAYOUT or to the printed page's columns. */
+export const KHATA_LAYOUT_VERSION = "khata-1";
+const KHATA_SUFFIX = `+${KHATA_LAYOUT_VERSION}`;
+
+const KHATA_LAYOUT = `Page layout: the shopkeeper says this is a printed Scriba khata page. If the photo shows no such printed page, ignore this section.
+- Printed, never transcribed: the four black corner squares, the title "Scriba খাতা" and the line under it, দোকান (his own shop's name: never use it as customer or account_name), পাতা নং, the column headings, the printed row labels and the tips at the bottom. Each row's last cell has a faint printed "বা জ".
+- Columns, left to right: তারিখ (date) | নাম (name) | জিনিস (item) | পরিমাণ (quantity) | দর (rate) | টাকা (amount) | বাকি/জমা.
+- The column decides the field. A number in পরিমাণ is qty (a unit written with it goes in unit), in দর it is rate, in টাকা it is amount. Never move a number to another field because of its size or of arithmetic. A number that crosses a column line belongs to the column holding most of it; list that field in review.
+- নাম is the customer or supplier. A name written once and left blank on the rows below is not repeated: use null for the blank rows.
+- বাকি/জমা: a circled বা means বাকি and a circled জ means জমা; decide the type with the বাকি and জমা rules above. Neither circled: decide from the words as usual. The printed letters alone mean nothing.
+- The first row, "আগের পাতা থেকে জের", is the balance carried from the previous page: a figure written there is an opening_balance entry. The last row, "মোট · পরের পাতায় জের", is the page total carried to the next page: a figure written there is a closing_balance entry.
+- One entry per row that carries an amount. text: the handwritten cells of the row, left to right, separated by spaces, with বা or জ at the end only when one is circled. box: the whole row.
+- date_text: the first date written in the তারিখ column, exactly as written. A date applies to its row and the rows below it until the next date.`;
+
+/** The layout rides on prompts 4 and 5 only; another base prompt is read as written. */
+const LAYOUT_BASES = new Set([PROMPT_VERSION, PERSONAL_PROMPT_VERSION]);
+
+/** The profile for a reading of a page with this layout. Its version records the layout. */
+export function withLayout(profile: ExtractionProfile, layout: PageLayout): ExtractionProfile {
+  if (layout !== "scriba_khata" || !LAYOUT_BASES.has(profile.promptVersion)) return profile;
+  return { ...profile, promptVersion: `${profile.promptVersion}${KHATA_SUFFIX}`, instructions: `${profile.instructions}\n\n${KHATA_LAYOUT}` };
+}
+
+/** The layout a recorded run was read with, so a re-read of the same page keeps it. */
+export function layoutOfPromptVersion(promptVersion: string | null): PageLayout {
+  return promptVersion?.endsWith(KHATA_SUFFIX) ? "scriba_khata" : "free";
+}
+
 export type ExtractionProfile = {
   promptVersion: string;
   instructions: string;

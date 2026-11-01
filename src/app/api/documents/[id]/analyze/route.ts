@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getLimitsConfig } from "@/lib/config";
+import { PAGE_LAYOUTS } from "@/lib/extraction/prompt";
 import { PROCESSING_MODES } from "@/lib/images/orientation";
 import { runAnalyze } from "@/lib/server/analyze";
 import { UUID_RE, apiUser, jsonError } from "@/lib/server/auth";
@@ -12,6 +13,8 @@ const bodySchema = z.object({
   requestId: z.string().regex(UUID_RE),
   mode: z.enum(["use_cache", "fresh"]).default("use_cache"),
   processingMode: z.enum(PROCESSING_MODES).default("baseline_original"),
+  /** Absent: the layout the page was last read with. */
+  layout: z.enum(PAGE_LAYOUTS).optional(),
 });
 
 /** The explicit "Analyze handwriting" action: the only route that can spend Meta credits. */

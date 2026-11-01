@@ -33,6 +33,8 @@ Ask Scriba (P2), only when the user sends a typed or spoken question: the questi
 
 Learning your handwriting (P3), only when the user has switched it on in More → "Scriba is learning your handwriting" (off by default, and `SCRIBA_LEARNING=off` disables it for a deployment). The page is then read with prompt 5, and the same request also carries two things. The first is up to 4 of the user's own confirmed lines, cut from their own photos into one JPEG and read through their own client (RLS). The second is those lines' confirmed fields (item, qty, rate, amount) plus counts of digits misread before ("৮ read as ৪, 3 times"). It never includes names of parties, dates or other pages, or anything from the page being read, and nothing from another user. `store: false` as for every reading. The switch is stored in the user's auth metadata (`scriba_learning`). The learning panel itself is computed in code and sends nothing.
 
+Printed Scriba khata pages (P4): when the user ticks "Scriba খাতার ছাপা পাতা / Printed Scriba khata page" on the camera screen, the instructions gain a fixed description of the printed columns. Nothing about the user is added. The blank khata PDFs (`/khata.pdf`, `/khata-a4.pdf`) are static files served without sign-in; the proxy skips `.pdf` as it does images.
+
 For any real shop data later: get consent from the shopkeeper, minimize names in the photo, and re-check Meta's data policies first.
 
 ## Known limitations

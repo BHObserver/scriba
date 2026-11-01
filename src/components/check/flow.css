@@ -24,6 +24,10 @@
 .cap-msg .t-sec { color: var(--cream); }
 .cap-msg .t-body { color: oklch(0.88 0.02 80); }
 .cap-msg .btn-line { box-shadow: inset 0 0 0 1.5px var(--cream); color: var(--cream); }
+/* P4: "printed Scriba khata page", a check box for every page in this send. */
+.cap-kh { align-self: center; min-height: 44px; margin-top: 10px; display: flex; align-items: center; gap: 10px; padding: 0 16px 0 10px; border-radius: 999px; font: 600 16px/1.2 var(--font-ui); color: var(--cream); background: oklch(0.3 0.01 60 / 0.8); }
+.cap-kh-box { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 6px; box-shadow: inset 0 0 0 2px var(--cream); }
+.cap-kh[aria-pressed="true"] .cap-kh-box { background: var(--cream); color: oklch(0.2 0.012 60); }
 .cap-note { margin: 8px 20px 0; font: 500 14px/1.4 var(--font-ui); color: oklch(0.88 0.02 80); text-wrap: pretty; }
 .cap-tray { height: 104px; flex: none; display: flex; align-items: center; gap: 22px; padding: 0 20px; overflow-x: auto; }
 .cap-empty { font: 500 14px var(--font-ui); color: oklch(0.8 0.02 80); }

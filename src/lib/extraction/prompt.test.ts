@@ -1,7 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { MONEY_OUT_TYPES } from "@/lib/ledger/types";
 import { buildExtractionRequest } from "@/lib/meta/transport";
-import { PERSONAL_PAGE_TEXT, PROMPT_VERSION, getExtractionProfile, getPersonalProfile, personalUserText } from "./prompt";
+import {
+  PERSONAL_PAGE_TEXT,
+  PROMPT_VERSION,
+  getExtractionProfile,
+  getPersonalProfile,
+  layoutOfPromptVersion,
+  personalUserText,
+  withLayout,
+} from "./prompt";
 
 const typeEnum = (schema: Record<string, unknown>) =>
   (schema as { properties: { entries: { items: { properties: { type: { enum: string[] } } } } } }).properties.entries.items.properties.type.enum;
@@ -74,6 +84,48 @@ describe("extraction profiles", () => {
   test("prompt 5 needs prompt 4 underneath", () => {
     process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-3";
     expect(getPersonalProfile()).toBeNull();
+  });
+
+  test("a Scriba khata page adds its column layout to prompts 4 and 5, and its version says so", () => {
+    const p4 = getExtractionProfile();
+    const k4 = withLayout(p4, "scriba_khata");
+    expect(k4.promptVersion).toBe("scriba-prompt-4+khata-1");
+    expect(k4.instructions.startsWith(p4.instructions)).toBe(true);
+    expect(k4.instructions).toContain("The column decides the field");
+    expect(k4.schemaVersion).toBe(p4.schemaVersion);
+    expect(withLayout(getPersonalProfile()!, "scriba_khata").promptVersion).toBe("scriba-prompt-5+khata-1");
+    expect(withLayout(p4, "free")).toBe(p4);
+
+    expect(layoutOfPromptVersion(k4.promptVersion)).toBe("scriba_khata");
+    expect(layoutOfPromptVersion("scriba-prompt-5+khata-1")).toBe("scriba_khata");
+    expect(layoutOfPromptVersion("scriba-prompt-4")).toBe("free");
+    expect(layoutOfPromptVersion(null)).toBe("free");
+
+    // The request carries the layout in the instructions; the user message is unchanged.
+    const request = buildExtractionRequest(
+      { modelId: "m", reasoningEffort: "low", maxOutputTokens: 100 },
+      { imageBytes: new Uint8Array([1]), mimeType: "image/png", layout: "scriba_khata" },
+    );
+    expect(request.instructions).toBe(k4.instructions);
+    expect(request.input[0]!.content).toHaveLength(2);
+  });
+
+  test("the prompt's columns and row labels are the printed page's, in order", () => {
+    const html = readFileSync(join(import.meta.dir, "..", "..", "..", "scripts", "khata", "page.html"), "utf8");
+    const headings = [...html.matchAll(/<th>([^<]+)<\/th>/g)].map((m) => m[1]!);
+    expect(headings).toHaveLength(7);
+    const columns = withLayout(getExtractionProfile(), "scriba_khata").instructions.match(/^- Columns, left to right: (.+)\.$/m)![1]!;
+    expect(columns.split(" | ").map((c) => c.replace(/ \(.+\)$/, ""))).toEqual(headings);
+    for (const label of ["আগের পাতা থেকে জের", "মোট · পরের পাতায় জের", "বা জ", "Scriba খাতা", "দোকান", "পাতা নং"]) {
+      expect(html).toContain(label);
+      expect(withLayout(getExtractionProfile(), "scriba_khata").instructions).toContain(label);
+    }
+  });
+
+  test("the khata layout needs prompt 4 or 5 underneath", () => {
+    process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-3";
+    const p3 = getExtractionProfile();
+    expect(withLayout(p3, "scriba_khata")).toBe(p3);
   });
 
   test("an unknown prompt version fails loudly", () => {
