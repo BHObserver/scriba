@@ -38,6 +38,30 @@ export function getMetaConfig(): MetaConfig {
   };
 }
 
+export type VoiceConfig = {
+  /** SCRIBA_VOICE=off refuses every transcription (a kill switch). */
+  enabled: boolean;
+  modelId: string;
+  timeoutMs: number;
+  /** Clip length limits; the browser stops recording at maxMs too. */
+  minMs: number;
+  maxMs: number;
+  perHour: number;
+  perDay: number;
+};
+
+export function getVoiceConfig(): VoiceConfig {
+  return {
+    enabled: (process.env.SCRIBA_VOICE ?? "on").trim().toLowerCase() !== "off",
+    modelId: process.env.META_VOICE_MODEL_ID?.trim() || "muse-voice-transcribe-1.0",
+    timeoutMs: intFromEnv("META_VOICE_TIMEOUT_MS", 30_000, { min: 5_000, max: 120_000 }),
+    minMs: 300,
+    maxMs: 15_000,
+    perHour: intFromEnv("SCRIBA_VOICE_PER_HOUR", 60),
+    perDay: intFromEnv("SCRIBA_VOICE_PER_DAY", 300),
+  };
+}
+
 export type LimitsConfig = {
   maxUploadBytes: number;
   extractionsPerHour: number;

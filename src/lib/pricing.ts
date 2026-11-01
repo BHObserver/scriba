@@ -45,6 +45,14 @@ export function estimateCostUsd(modelId: string, usage: TokenUsage | null): numb
   return Math.round(usd * 1e8) / 1e8;
 }
 
+/** Muse Voice Transcribe bills audio time, rounded down to whole seconds (same source). */
+export const VOICE_USD_PER_AUDIO_HOUR = 0.18;
+
+export function estimateVoiceCostUsd(audioDurationMs: number): number {
+  const seconds = Math.max(0, Math.floor(audioDurationMs / 1000));
+  return Math.round(((seconds * VOICE_USD_PER_AUDIO_HOUR) / 3600) * 1e8) / 1e8;
+}
+
 export function isContributorModel(modelId: string): boolean {
   return modelId.endsWith("-contributor");
 }

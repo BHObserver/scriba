@@ -116,6 +116,20 @@
 @keyframes fxBlink { 50% { opacity: 0; } }
 .fx-old { font: 500 14px var(--font-ui); color: var(--ink-soft); white-space: nowrap; }
 .fx-msg { min-height: 44px; display: flex; align-items: center; margin: 0; font: 500 15px/1.4 var(--font-ui); color: var(--ink); text-wrap: pretty; }
+/* P1 voice: the field turns turmeric while it holds a heard (unsaved) number */
+.fx-field.heard { background: var(--turmeric-soft); }
+.fx-acts { display: grid; grid-template-columns: 1fr 1.35fr; gap: 10px; margin-top: 12px; }
+.fx-picks { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.fx-picks .btn { min-height: 48px; padding: 0 18px; font-size: 22px; font-variant-numeric: tabular-nums; }
+.fx-listen { display: grid; justify-items: center; align-content: center; gap: 14px; min-height: 240px; padding: 12px 0 6px; text-align: center; }
+.fx-bars { display: flex; gap: 6px; height: 44px; align-items: center; }
+.fx-bars i { width: 6px; height: 10px; border-radius: 3px; background: var(--red); animation: fxBar 900ms ease-in-out infinite; }
+.fx-bars i:nth-child(2) { animation-delay: 120ms; }
+.fx-bars i:nth-child(3) { animation-delay: 240ms; }
+.fx-bars i:nth-child(4) { animation-delay: 360ms; }
+.fx-bars i:nth-child(5) { animation-delay: 480ms; }
+.fx-bars.still i { animation: none; height: 24px; opacity: 0.4; }
+@keyframes fxBar { 0%, 100% { height: 10px; } 50% { height: 40px; } }
 .ty-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .ty-list .btn { padding: 0 10px; font-size: 16px; }
 
@@ -162,4 +176,5 @@
   .cap-thumb { animation: rvFade 200ms both !important; }
   .cap-flash { animation-duration: 120ms; }
   .fx-caret { animation: none; }
+  .fx-bars i { animation: none; height: 24px; }
 }

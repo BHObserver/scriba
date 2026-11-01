@@ -12,6 +12,7 @@
     "check": "bun run typecheck && bun run lint && bun run test",
     "live:extract": "bun scripts/live-extract.ts",
     "live:smoke": "bun scripts/live-smoke.ts",
+    "live:voice": "bun scripts/live-voice.ts",
     "shot": "bun scripts/shot.ts",
     "seed:demo": "bun scripts/seed-demo.ts",
     "db:push": "supabase db push",

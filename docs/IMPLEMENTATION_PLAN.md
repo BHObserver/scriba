@@ -23,7 +23,7 @@ that were actually run are marked done.
 | Output budget | `SCRIBA_MAX_OUTPUT_TOKENS=8000` (was 1,800). | Live, 29 Oct: at `effort: low` the first call spent 1,798 of 1,800 tokens on reasoning and returned nothing (`incomplete`). Snippets then used 1,255–2,752 output tokens, 675–1,898 of them reasoning. Reasoning can't be switched off on `muse-spark-1.3` (`none` returns 400), and only tokens used are billed, so a high ceiling costs nothing extra. Worst case ≈ $0.04 per image. |
 | Prompt `scriba-prompt-2` | Header lines (date, customer, "Sample-0X" labels) are page fields, not entries. Opening and closing balance figures go in `amount`. `মোট বাকিতে` / `আজকের বাকি` are subtotals. | Prompt 1 made the header lines `unknown` entries and put the balance figures under `balance`, so the opening → closing check couldn't run. The parser also moves a balance-only figure into `amount` on opening and closing lines, as a deterministic safety net. |
 | Orientation | The user can turn the photo before analysis. Modes `rotate_90/180/270` send a server-rotated copy (sharp, after the checksum check); the stored original never changes. The review shows the photo in the same orientation, so the line boxes line up. | Live, 29 Oct: sideways S03 came back with line 2 misread and the total misread to match it, so **every check passed on wrong data**. The same photo upright was read perfectly, with a third of the reasoning tokens. Asking the model to detect orientation would cost a call; a manual turn is deterministic. |
-| Voice correction (Muse Voice Transcribe) | **Not in the core build.** Decide on **Mon 2 Nov** once the core and the 20-snippet evaluation are done. See the section below. | It helps the "use of Meta tooling" score, but it isn't needed for the core claim, and the core must be solid first. |
+| Voice correction (Muse Voice Transcribe) | **Built in P1 (1 Nov)**, as master plan session P1: "বলে দিন" in the fix sheet → 24 kHz mono PCM16 WAV → `/api/voice` → `/v1/asr/transcribe` (push-to-talk, `languageBias: ["Bengali"]`, plus English on the English screen) → deterministic Bangla number-word reader → number placed in the field, never saved until "keep". See `docs/sessions/P1.md`. | Track A had finished early, and F1 is blocked on production credentials. Voice is cheap (≈ $0.0005 a clip), and the parser carries the risk, so it's fully tested. |
 
 ## Phase status
 
@@ -68,7 +68,7 @@ that were actually run are marked done.
 - [ ] Deploy to Vercel (`maxDuration` 300 s on the analyze route). Set the env vars and add `<vercel-url>/auth/confirm` to the auth redirect allow-list. Then run `SCRIBA_APP_URL=<vercel-url> bun run live:smoke` before setting the email allow-list.
 - [ ] Evaluate the 20 snippets; write up actual numbers in `docs/EVALUATION.md`.
 - [ ] Demo script rehearsal and a backup video recording (`docs/DEMO_SCRIPT.md`).
-- [ ] Optional stretch, decided on 2 Nov: voice correction (below).
+- [x] Voice correction (below), built in P1 on 1 Nov. Testing Bangla speech on a real phone is part of F2.
 
 ## Suggested timeline
 
@@ -90,11 +90,11 @@ that were actually run are marked done.
   - `held_out` if someone else wrote them and you won't look at their results until the final evaluation. Don't change the prompt after looking at held-out results.
 - Name photos `S01.jpg … S20.jpg` in `private-test-data/ledger-snippets/` and give each document the matching sample label. S01–S04 are already there (copied from `1.jpeg`, `4.jpeg`, `2.jpeg`, `3.jpeg`). S03 was photographed sideways: turn it upright in the app (or `--turn=270` in the script).
 
-## Voice correction: recommendation
+## Voice correction (built in P1; this was the plan)
 
 Muse Voice Transcribe supports Bengali, and file transcription costs $0.18 per audio hour, so cost is not the issue. The work is:
 
-1. Record in the browser and convert to 16 kHz mono 16-bit WAV (the endpoint accepts only WAV).
+1. Record in the browser and convert to mono 16-bit WAV (the endpoint accepts only WAV). Built at 24 kHz, the model's native rate per Meta's guide.
 2. Add a server route that forwards the audio to `POST /v1/asr/transcribe` with `languageBias: ["Bengali"]`.
 3. Put the transcript **into the field as text** for the user to save. It's never auto-applied and never sent to another model.
 4. **The hard part:** people say numbers as words ("একশো আশি"). The deterministic number parser would need a Bangla number-word reader. It's testable, but it's new logic.

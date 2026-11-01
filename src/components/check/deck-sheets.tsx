@@ -1,14 +1,17 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Mic, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button, ButtonLink, Keypad, LineStrip, Sheet, applyKey, groupTyped, type KeypadKey } from "@/components/kit";
+import { cx } from "@/components/ui";
 import { useI18n } from "@/lib/i18n/client";
+import type { I18n } from "@/lib/i18n/format";
 import type { TransactionType } from "@/lib/ledger/types";
 import type { ReviewRow } from "@/lib/review/state";
 import { FIELD_TO_VALUE_KEY } from "@/lib/review/values";
 import type { Photo } from "./reading-view";
 import { fieldLabel } from "./sentences";
+import { type VoiceError, type VoiceState, useVoice } from "./use-voice";
 
 export type FixField = "qty" | "rate" | "amount" | "balance";
 
@@ -44,8 +47,8 @@ export function RowStrip({ row, photo }: { row: ReviewRow; photo: Photo }) {
 
 /**
  * Fix one number (DESIGN_SPEC D2 "Fix sheet"): the handwriting, the old reading struck through,
- * the Bangla keypad (a laptop keyboard works too) and "keep". Nothing is saved until "keep".
- * Voice joins in P1.
+ * the Bangla keypad (a laptop keyboard works too), "say it" and "keep". A spoken number is
+ * placed in the field like a typed one (P1); nothing is saved until "keep".
  */
 export function FixSheet({ target, photo, hint, busy, onSave, onClose }: { target: { row: ReviewRow; field: FixField } | null; photo: Photo; hint: string | null; busy: boolean; onSave: (typed: string) => void; onClose: () => void }) {
   const { t } = useI18n();
@@ -63,7 +66,20 @@ function FixBody({ row, field, photo, hint, busy, onSave, onClose }: { row: Revi
   const old = row.values[FIELD_TO_VALUE_KEY[field]] as string | null;
   // Quantities and rates can be fractions (১.৫ কেজি); amounts and dues are whole taka.
   const decimal = field === "qty" || field === "rate";
-  const press = (k: KeypadKey) => setDraft((d) => applyKey(d, k));
+  const fits = (value: string) => value.length <= 9 && (decimal || !value.includes("."));
+  const voice = useVoice(i18n.locale, (n) => {
+    if (n.kind === "one" && fits(n.value)) setDraft(n.value);
+  });
+  const { reset: resetVoice } = voice;
+  const listening = voice.state.s === "listening";
+  const sending = voice.state.s === "sending";
+  const picks = voice.state.s === "heard" && voice.state.number.kind === "many" ? voice.state.number.values.filter(fits) : [];
+  // Turmeric only while the field holds what this clip said, never a number left from before.
+  const heardInField = voice.state.s === "heard" && (voice.state.number.kind === "one" ? voice.state.number.value === draft : picks.includes(draft));
+  const press = (k: KeypadKey) => {
+    resetVoice();
+    setDraft((d) => applyKey(d, k));
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -73,10 +89,11 @@ function FixBody({ row, field, photo, hint, busy, onSave, onClose }: { row: Revi
       else if (e.key === "Backspace") setDraft((d) => applyKey(d, "del"));
       else return;
       e.preventDefault();
+      resetVoice();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [decimal]);
+  }, [decimal, resetVoice]);
 
   return (
     <div className="grid gap-1">
@@ -89,20 +106,79 @@ function FixBody({ row, field, photo, hint, busy, onSave, onClose }: { row: Revi
         </button>
       </div>
       <RowStrip row={row} photo={photo} />
-      <div className="fx-field" aria-live="polite">
+      <div className={cx("fx-field", heardInField && "heard")} aria-live="polite">
         <span className="fx-val">
           {draft ? digits(groupTyped(draft)) : ""}
           <i className="fx-caret" aria-hidden="true" />
         </span>
         <span className="fx-old">{t("fx.old", old ? digits(old) : "—")}</span>
       </div>
-      <p className="fx-msg">{hint ?? t("fx.msg")}</p>
-      <Keypad onKey={press} decimal={decimal} />
-      <Button variant="red" wide className="mt-3" disabled={!draft.replace(/\.$/, "") || busy} onClick={() => onSave(draft)}>
-        {t("fx.save")}
-      </Button>
+      <p className="fx-msg" aria-live="polite">
+        {voiceMessage(i18n, voice.state, fits, decimal) ?? hint ?? t("fx.msg")}
+      </p>
+      {picks.length > 0 ? (
+        <div className="fx-picks">
+          {picks.map((v) => (
+            <Button key={v} variant={draft === v ? "red" : "line"} aria-pressed={draft === v} onClick={() => setDraft(v)}>
+              {digits(groupTyped(v))}
+            </Button>
+          ))}
+        </div>
+      ) : null}
+      {listening || sending ? (
+        <div className="fx-listen">
+          <div className={cx("fx-bars", sending && "still")} aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+            <i />
+          </div>
+          {listening ? (
+            <>
+              <span className="t-body">{t("fx.listening")}</span>
+              <Button onClick={() => void voice.stop()}>{t("fx.stop")}</Button>
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <Keypad onKey={press} decimal={decimal} />
+      )}
+      <div className={voice.supported ? "fx-acts" : "mt-3"}>
+        {voice.supported ? (
+          <Button disabled={busy || listening || sending} onClick={() => void voice.start()}>
+            <Mic size={20} aria-hidden="true" />
+            {t("fx.voice")}
+          </Button>
+        ) : null}
+        <Button variant="red" wide={!voice.supported} disabled={!draft.replace(/\.$/, "") || busy || listening || sending} onClick={() => onSave(draft)}>
+          {t("fx.save")}
+        </Button>
+      </div>
     </div>
   );
+}
+
+const VOICE_ERROR_KEY = {
+  denied: "fx.micDenied",
+  too_short: "fx.tooShort",
+  busy: "fx.voiceBusy",
+  failed: "fx.voiceFailed",
+  off: "fx.voiceOff",
+} as const satisfies Record<VoiceError, string>;
+
+/** What the fix sheet says about the microphone, or null to keep its usual line. */
+function voiceMessage({ t, digits }: I18n, state: VoiceState, fits: (v: string) => boolean, decimal: boolean): string | null {
+  if (state.s === "sending") return t("fx.sending");
+  if (state.s === "error") return t(VOICE_ERROR_KEY[state.error]);
+  if (state.s !== "heard") return null;
+  const said = digits(state.transcript);
+  const n = state.number;
+  if (!said) return t("fx.heardNothing");
+  if (n.kind === "none") return t("fx.heardNone", said);
+  if (n.kind === "many") return n.values.some(fits) ? t("fx.heardMany", said) : t("fx.heardNone", said);
+  if (fits(n.value)) return t("fx.heard", said);
+  return t(!decimal && n.value.includes(".") ? "fx.heardWhole" : "fx.heardNone", said);
 }
 
 /** Pick what a line is (sale, payment, spending…): the only fix for "kind not clear". */

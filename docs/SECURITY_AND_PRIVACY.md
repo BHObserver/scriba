@@ -27,11 +27,14 @@
 
 Only when the user clicks **Analyze handwriting**: the original photo bytes (base64 data URL) and the fixed prompt. `store: false` is set so the response is not stored by the API. Standard-mode model only, so content is not used for training. By default the original is sent **unchanged**, including EXIF metadata, and the app warns when GPS metadata is present. If the user turns a sideways photo upright first, the server sends a rotated copy instead: it is re-encoded from the checksum-verified original and carries no metadata. The stored original is never changed.
 
+Voice (P1), only when the user presses **বলে দিন / Say it** and then stops: one WAV clip of at most 15 s, mono, no metadata, sent to Muse Voice Transcribe in push-to-talk mode. The audio isn't stored by Scriba. The transcript goes back to the user's screen only: the server doesn't log it or save it, and no other model reads it. The server logs only the clip's length and estimated cost. The page allows the microphone for its own origin only (`Permissions-Policy: microphone=(self)`).
+
 For any real shop data later: get consent from the shopkeeper, minimize names in the photo, and re-check Meta's data policies first.
 
 ## Known limitations
 
 - Rate limiting is per user, counted from `extraction_runs` (rolling hour and day). There is no global limit across all users beyond the allow-list.
+- Voice limits (60 clips an hour, 300 a day per user) live in server memory, so each serverless instance counts separately. A clip costs about $0.0005, the server refuses clips over 15 s, and `SCRIBA_VOICE=off` is a kill switch.
 - Signed image URLs live for 10 minutes. Anyone holding the URL during that window can view the image.
 - The audit trail records values, not IP addresses or devices.
 - Deleting a document removes the database rows first, then the stored file. If the file removal fails, the response says so, and the orphaned private object needs manual cleanup.

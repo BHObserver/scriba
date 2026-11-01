@@ -252,6 +252,9 @@ describe("structural guarantee: only explicit paths can reach Meta", () => {
     "src/lib/extraction/pipeline.ts", // type-only import of ModelCaller
     "src/lib/server/analyze.ts",
     "scripts/live-extract.ts",
+    // P1: one clip per press of "stop" in the fix sheet; never retried, never chained to a model.
+    "src/app/api/voice/route.ts",
+    "scripts/live-voice.ts",
   ]);
 
   function files(dir: string): string[] {
