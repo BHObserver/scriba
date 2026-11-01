@@ -1,0 +1,203 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+import { ButtonLink, Cover, EmptyState, Money, Seal, StatusMark } from "@/components/kit";
+import { cx } from "@/components/ui";
+import { useI18n } from "@/lib/i18n/client";
+import type { DaySummary } from "@/lib/insights/day";
+import type { NoteSentence } from "@/lib/insights/note";
+import { noteText } from "@/lib/insights/text";
+import type { DaySales } from "@/lib/insights/trends";
+import { type Drill, DrillSheet } from "./drill-sheet";
+import { Split, WeekBars } from "./money-kit";
+import { type DayPageView, drawerEquation, outParts, plainMoney, waitingPages, weekLine } from "./money-model";
+
+export type TodayView = {
+  asOf: string;
+  shopName: string | null;
+  sample: boolean;
+  /** Nothing confirmed yet: only the morning cash and the way to the camera. */
+  isNewShop: boolean;
+  day: DaySummary;
+  week: { days: DaySales[]; averagePoisha: number; totalPoisha: number; diffPoisha: number | null };
+  dues: { totalPoisha: number; people: number; flagged: number };
+  note: NoteSentence[];
+  pages: DayPageView[];
+  duesHref: string;
+};
+
+/**
+ * আজ: the red cover with what should be in the drawer, the day's sales and money out, Scriba's
+ * note, closing the day, seven days of sales and the dues. Every figure was computed by code
+ * from confirmed lines, and every number opens the lines behind it.
+ */
+export function TodayScreen(view: TodayView) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const { day } = view;
+  const [drill, setDrill] = useState<Drill | null>(null);
+  const [open, setOpen] = useState(false);
+  const show = (next: Drill) => {
+    setDrill(next);
+    setOpen(true);
+  };
+  const title = t("today.title", `${i18n.weekday(view.asOf)}, ${i18n.dayMonth(view.asOf)}`);
+  const waiting = waitingPages(view.pages);
+
+  if (view.isNewShop) {
+    const pending = view.note.filter((s) => s.kind === "pending_pages");
+    return (
+      <div className={cx("today", waiting.ids.length === 0 && "today-new")}>
+        <div className="today-l">
+          <Cover
+            shopName={view.shopName}
+            sample={view.sample}
+            title={title}
+            label={t("today.drawer")}
+            hero={i18n.money(day.opening.poisha)}
+            sub={t("today.onlyMorning")}
+          />
+        </div>
+        <div className="pad money-body today-r">
+          {waiting.href ? (
+            <section className="card note">
+              <span className="note-label">{t("td.note")}</span>
+              {pending.map((s, i) => (
+                <p key={i} className="t-body">
+                  {noteText(s, i18n)}
+                </p>
+              ))}
+              <ButtonLink href={waiting.href} variant="red" wide>
+                {t("td.waiting")}
+              </ButtonLink>
+            </section>
+          ) : (
+            <>
+              <section className="card">
+                <EmptyState title={t("empty.today.t")} body={t("empty.today.b")} />
+              </section>
+              <span className="em-arrow" aria-hidden="true" />
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const equation = drawerEquation(day, i18n);
+  return (
+    <div className="today">
+      <div className="today-l">
+        <Cover
+          shopName={view.shopName}
+          sample={view.sample}
+          title={title}
+          label={t("today.drawer")}
+          hero={i18n.money(day.expectedCash.poisha)}
+          heroLabel={t("td.heroLabel", t("today.drawer"), i18n.money(day.expectedCash.poisha))}
+          onHero={() => show({ key: "expected", fromReceipt: false })}
+          sub={equation}
+        />
+        <div className="pad money-body">
+          <div className="tiles">
+            <button type="button" className="card tile" onClick={() => show({ key: "sales", fromReceipt: false })}>
+              <span className="t-label">{t("td.sales")}</span>
+              <Money poisha={day.sales.poisha} size="tile" />
+              <Split
+                parts={[
+                  { label: t("td.cash"), poisha: day.cashSales.poisha, tone: "a" },
+                  { label: t("td.credit"), poisha: day.creditSales.poisha, tone: "b" },
+                ]}
+              />
+            </button>
+            <button type="button" className="card tile" onClick={() => show({ key: "out", fromReceipt: false })}>
+              <span className="t-label">{t("td.out")}</span>
+              <Money poisha={day.moneyOut.poisha} size="tile" />
+              <span className="legend plain">
+                {outParts(day).map((p) => (
+                  <span key={p.label} className="lg">
+                    <span>{`${t(p.label)} ${plainMoney(p.figure.poisha, i18n)}`}</span>
+                  </span>
+                ))}
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="pad money-body today-r">
+        {view.note.length > 0 ? (
+          <section className="card note">
+            <span className="note-label">{t("td.note")}</span>
+            {view.note.map((s, i) => (
+              <p key={i} className="t-body">
+                {noteText(s, i18n)}
+              </p>
+            ))}
+            {waiting.href ? (
+              <ButtonLink href={waiting.href} variant="line" wide style={{ marginTop: 6 }}>
+                {t("td.waiting")}
+              </ButtonLink>
+            ) : null}
+          </section>
+        ) : null}
+
+        {day.close ? <ClosedRow day={day} /> : (
+          <ButtonLink href="/close" variant="red" wide>
+            {t("td.close")}
+          </ButtonLink>
+        )}
+
+        <section className="card wk">
+          <div className="wk-head">
+            <h2 className="t-sec">{t("td.week")}</h2>
+            <span className="t-small">{weekLine(view.week.totalPoisha, view.week.diffPoisha, i18n)}</span>
+          </div>
+          <WeekBars days={view.week.days} averagePoisha={view.week.averagePoisha} />
+        </section>
+
+        {view.dues.people > 0 ? (
+          <Link href={view.duesHref} className="card du-link">
+            <span className="t-label">{t("td.dues")}</span>
+            <Money poisha={view.dues.totalPoisha} size="tile" />
+            {view.dues.flagged > 0 ? (
+              <span className="why-look">{t("td.dues.flagged", view.dues.flagged)}</span>
+            ) : (
+              <span className="t-small">{t("td.dues.people", view.dues.people)}</span>
+            )}
+            <span className="chev" aria-hidden="true">
+              ›
+            </span>
+          </Link>
+        ) : null}
+        <p className="t-small money-hint">{t("td.hint")}</p>
+      </div>
+
+      <DrillSheet day={day} asOf={view.asOf} drill={drill} open={open} onDrill={show} onClose={() => setOpen(false)} />
+    </div>
+  );
+}
+
+/** The day, once closed: the seal on a match, otherwise the gap in words. Opens the close screen. */
+function ClosedRow({ day }: { day: DaySummary }) {
+  const i18n = useI18n();
+  const { t } = i18n;
+  const close = day.close!;
+  const gap = close.gapPoisha;
+  const counted = i18n.money(close.countedPoisha);
+  const body =
+    gap === 0
+      ? t("td.closed.matchB", counted)
+      : t(gap < 0 ? "td.closed.short" : "td.closed.over", counted, i18n.money(Math.abs(gap)));
+  return (
+    <Link href="/close" className="card closed">
+      {gap === 0 && !close.changedSinceClose ? <Seal size={64} /> : <StatusMark kind="look" />}
+      <span className="closed-t">
+        <b>{gap === 0 ? t("td.closed.match") : t("td.closed.done")}</b>
+        <span className="t-small">{body}</span>
+        {close.changedSinceClose ? <span className="why-look">{t("td.closed.changed")}</span> : null}
+      </span>
+    </Link>
+  );
+}

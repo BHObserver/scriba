@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
   const code = url.searchParams.get("code");
   const tokenHash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type") as EmailOtpType | null;
-  const nextParam = url.searchParams.get("next") ?? "/documents";
-  const next = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/documents";
+  const nextParam = url.searchParams.get("next") ?? "/";
+  const next = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/";
 
   const supabase = await createUserSupabase();
   if (code) {

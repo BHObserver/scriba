@@ -6,7 +6,7 @@ import { createUserSupabase } from "@/lib/supabase/server";
 export type SessionUser = { id: string; email: string | null };
 
 /** For pages: returns the verified user or redirects to sign-in. */
-export async function requireUser(nextPath = "/documents") {
+export async function requireUser(nextPath = "/") {
   const supabase = await createUserSupabase();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) redirect(`/login?next=${encodeURIComponent(nextPath)}`);

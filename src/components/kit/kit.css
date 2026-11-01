@@ -132,7 +132,7 @@ button.eq-cell:active { background: oklch(0.95 0.012 80); }
 .tab[aria-current="page"] .tab-mark { background: var(--red); }
 .cam { width: 66px; height: 66px; border-radius: 50%; background: var(--red); margin: -26px auto 0; display: grid; place-items: center; box-shadow: 0 8px 18px oklch(0.47 0.15 27 / 0.35), 0 0 0 5px var(--paper-card); }
 .cam-lens { width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--cream); }
-.cam.pulse { animation: camPulse 1800ms var(--ease) infinite; }
+.cam.pulse, body:has(.today-new) .cam { animation: camPulse 1800ms var(--ease) infinite; }
 @keyframes camPulse {
   0%, 100% { box-shadow: 0 8px 18px oklch(0.47 0.15 27 / 0.35), 0 0 0 5px var(--paper-card), 0 0 0 5px oklch(0.47 0.15 27 / 0.5); }
   60% { box-shadow: 0 8px 18px oklch(0.47 0.15 27 / 0.35), 0 0 0 5px var(--paper-card), 0 0 0 16px oklch(0.47 0.15 27 / 0); }
@@ -176,7 +176,7 @@ button.eq-cell:active { background: oklch(0.95 0.012 80); }
 @media (prefers-reduced-motion: reduce) {
   .btn, .key, .sw i, .sw i::after { transition: none; }
   .spin { animation: none; }
-  .cam.pulse { animation: none; box-shadow: 0 8px 18px oklch(0.47 0.15 27 / 0.35), 0 0 0 5px var(--paper-card), 0 0 0 8px oklch(0.47 0.15 27 / 0.45); }
+  .cam.pulse, body:has(.today-new) .cam { animation: none; box-shadow: 0 8px 18px oklch(0.47 0.15 27 / 0.35), 0 0 0 5px var(--paper-card), 0 0 0 8px oklch(0.47 0.15 27 / 0.45); }
 }
 
 /* ---- welcome cover and language choice (sign-in now, /welcome in B6) ---- */

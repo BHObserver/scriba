@@ -10,6 +10,11 @@ const WEEKDAYS: Record<Locale, readonly string[]> = {
   bn: ["রবিবার", "সোমবার", "মঙ্গলবার", "বুধবার", "বৃহস্পতিবার", "শুক্রবার", "শনিবার"],
   en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
 };
+/** Under a bar or in a tight row: রবি, সোম… / Su, Mo… */
+const WEEKDAYS_SHORT: Record<Locale, readonly string[]> = {
+  bn: ["রবি", "সোম", "মঙ্গল", "বুধ", "বৃহঃ", "শুক্র", "শনি"],
+  en: ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"],
+};
 
 /**
  * Digits in the locale's script: Bangla in bn, Latin in English. Other text is untouched. In
@@ -44,10 +49,10 @@ export function formatDayMonth(iso: string, locale: Locale): string {
   return `${localDigits(String(p.d), locale)} ${MONTHS[locale][p.m - 1] ?? ""}`.trim();
 }
 
-export function formatWeekday(iso: string, locale: Locale): string {
+export function formatWeekday(iso: string, locale: Locale, short = false): string {
   const p = parseIsoDate(iso);
   if (!p) return "";
-  return WEEKDAYS[locale][new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay()] ?? "";
+  return (short ? WEEKDAYS_SHORT : WEEKDAYS)[locale][new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay()] ?? "";
 }
 
 export type MessageArg = string | number;
@@ -71,6 +76,7 @@ export type I18n = {
   digits: (text: string) => string;
   dayMonth: (iso: string) => string;
   weekday: (iso: string) => string;
+  weekdayShort: (iso: string) => string;
 };
 
 export function makeI18n(locale: Locale): I18n {
@@ -82,5 +88,6 @@ export function makeI18n(locale: Locale): I18n {
     digits: (text) => localDigits(text, locale),
     dayMonth: (iso) => formatDayMonth(iso, locale),
     weekday: (iso) => formatWeekday(iso, locale),
+    weekdayShort: (iso) => formatWeekday(iso, locale, true),
   };
 }

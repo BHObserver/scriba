@@ -5,7 +5,7 @@ export type TabId = "today" | "khata" | "dues" | "more";
 /**
  * Bottom-bar destinations. Routes that don't exist yet point at the closest working page, so
  * every tab leads somewhere real; each build session switches its tab when its page lands:
- * B4 today → "/", B6 khata → "/history", B5 dues → "/parties". The camera is "/capture" (B2).
+ * B4 today → "/" (done), B6 khata → "/history", B5 dues → "/parties". The camera is "/capture" (B2).
  */
 export const TABS: ReadonlyArray<{ id: TabId; label: MessageKey; href: string; match: readonly string[] }> = [
   { id: "today", label: "tab.today", href: "/", match: ["/"] },
@@ -16,8 +16,8 @@ export const TABS: ReadonlyArray<{ id: TabId; label: MessageKey; href: string; m
 
 export const CAMERA_HREF = "/capture";
 
-/** Flow screens (camera, reading and checking a page) take the whole screen: no tab bar. */
-const FLOW_PREFIXES = ["/capture", "/check"] as const;
+/** Flow screens (camera, checking a page, closing the day) take the whole screen: no tab bar. */
+const FLOW_PREFIXES = ["/capture", "/check", "/close"] as const;
 
 export function isFlowRoute(pathname: string): boolean {
   return FLOW_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));

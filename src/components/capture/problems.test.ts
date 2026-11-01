@@ -71,6 +71,8 @@ describe("isFlowRoute", () => {
     expect(isFlowRoute("/check/7d1c0d1e-0000-4000-8000-000000000000")).toBe(true);
     expect(isFlowRoute("/")).toBe(false);
     expect(isFlowRoute("/checkout")).toBe(false);
+    expect(isFlowRoute("/close")).toBe(true);
+    expect(isFlowRoute("/closet")).toBe(false);
     expect(isFlowRoute("/documents")).toBe(false);
   });
 });
