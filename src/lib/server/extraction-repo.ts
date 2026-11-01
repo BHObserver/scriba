@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { STORAGE_BUCKET } from "@/lib/config";
 import { pageValuesOf } from "@/lib/extraction/parse";
 import type { ExtractionRepo, RunFailure, RunRecord, RunStatus, RunSuccess } from "@/lib/extraction/pipeline";
+import { callsOfRun } from "@/lib/extraction/two-pass";
 
 type RunRow = {
   id: string;
@@ -104,13 +105,15 @@ export function createSupabaseExtractionRepo(opts: {
       return data?.prompt_version ?? null;
     },
 
-    async countPaidRunsSince(since) {
-      const { count, error } = await db
-        .from("extraction_runs")
-        .select("id", { count: "exact", head: true })
-        .gte("started_at", since.toISOString());
-      if (error) throw new Error(error.message);
-      return count ?? 0;
+    async countModelCallsSince(since) {
+      // A two-pass run stores its call count in its result; one without a result counts as the most it may have made.
+      const data = must(
+        await db
+          .from("extraction_runs")
+          .select("prompt_version, calls:result->reading->calls")
+          .gte("started_at", since.toISOString()),
+      ) as Array<{ prompt_version: string; calls: unknown }>;
+      return data.reduce((n, r) => n + callsOfRun(r.prompt_version, typeof r.calls === "number" ? r.calls : null), 0);
     },
 
     async insertPendingRun(run) {

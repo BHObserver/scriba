@@ -7,8 +7,10 @@
  * The output is a fresh JPEG: no metadata (and so no GPS location) is carried over.
  */
 import sharp from "sharp";
+import type { BlockCrop } from "@/lib/extraction/two-pass";
 import type { BoundingBox } from "@/lib/ledger/types";
 import type { QuarterTurns } from "./orientation";
+import { MODEL_TARGET_PIXELS, type PreparedImage } from "./rotate";
 
 export type PixelRect = { left: number; top: number; width: number; height: number };
 
@@ -70,6 +72,38 @@ export async function stackLineCrops(lines: readonly LineCrop[]): Promise<Buffer
     .composite(composite)
     .jpeg({ quality: 82 })
     .toBuffer();
+}
+
+/** U3: a block's crop is upscaled toward MODEL_TARGET_PIXELS like a small photo, but at most this much per side. */
+const MAX_CROP_UPSCALE = 3;
+
+/**
+ * U3: blocks cut from the page for a two-pass reading, from the image as the model saw it (EXIF
+ * orientation applied; a prepared copy is already upright). Each crop is a fresh JPEG, upscaled
+ * like a small photo. The rect returned is the one actually cut, after rounding to whole pixels,
+ * so the crop's boxes map back to the page exactly.
+ */
+export async function cropBlocksForReading(page: PreparedImage, rects: BoundingBox[]): Promise<BlockCrop[]> {
+  const { data, info } = await sharp(page.imageBytes, { failOn: "error" }).rotate().raw().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = info;
+  const grid = (px: number, size: number) => Math.round((px / size) * 100_000) / 100;
+  return Promise.all(
+    rects.map(async (r) => {
+      const left = Math.min(width - 1, Math.max(0, Math.floor((r.x_min / 1000) * width)));
+      const top = Math.min(height - 1, Math.max(0, Math.floor((r.y_min / 1000) * height)));
+      const right = Math.min(width, Math.max(left + 1, Math.ceil((r.x_max / 1000) * width)));
+      const bottom = Math.min(height, Math.max(top + 1, Math.ceil((r.y_max / 1000) * height)));
+      const [w, h] = [right - left, bottom - top];
+      const scale = w * h < MODEL_TARGET_PIXELS ? Math.min(MAX_CROP_UPSCALE, Math.sqrt(MODEL_TARGET_PIXELS / (w * h))) : 1;
+      let image = sharp(data, { raw: { width, height, channels } }).extract({ left, top, width: w, height: h });
+      if (scale > 1) image = image.resize({ width: Math.round(w * scale), height: Math.round(h * scale), kernel: "lanczos3" });
+      const bytes = await image.jpeg({ quality: 92, chromaSubsampling: "4:4:4" }).toBuffer();
+      return {
+        image: { imageBytes: new Uint8Array(bytes), mimeType: "image/jpeg" },
+        rect: { x_min: grid(left, width), y_min: grid(top, height), x_max: grid(right, width), y_max: grid(bottom, height) },
+      };
+    }),
+  );
 }
 
 /** History thumbnails come in two widths: the day list's small page and the day view's card. */

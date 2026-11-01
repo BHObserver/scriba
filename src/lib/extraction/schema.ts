@@ -266,3 +266,29 @@ export const modelOutputSchemaV3 = z.object({
 
 export type ModelOutputV3 = z.infer<typeof modelOutputSchemaV3>;
 export type ModelBlock = z.infer<typeof modelBlockSchema>;
+
+/**
+ * U3, pass 1 of a two-pass reading: the page's layout only, with schema 3's page and block
+ * fields and no lines. Each block is then cut from the page and read with schema 3.
+ */
+export const LAYOUT_SCHEMA_VERSION = "scriba-layout-1";
+export const LAYOUT_SCHEMA_NAME = "scriba_ledger_layout_v1";
+
+export const LAYOUT_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["page", "blocks", "warnings"],
+  properties: {
+    page: EXTRACTION_JSON_SCHEMA_V3.properties.page,
+    blocks: EXTRACTION_JSON_SCHEMA_V3.properties.blocks,
+    warnings: EXTRACTION_JSON_SCHEMA_V3.properties.warnings,
+  },
+} as const;
+
+export const modelLayoutSchema = z.object({
+  page: modelOutputSchemaV3.shape.page,
+  blocks: modelOutputSchemaV3.shape.blocks,
+  warnings: modelOutputSchemaV3.shape.warnings,
+});
+
+export type ModelLayout = z.infer<typeof modelLayoutSchema>;

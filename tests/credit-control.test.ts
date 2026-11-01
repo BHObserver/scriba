@@ -3,11 +3,13 @@
  * mock, and the repository is the in-memory double that mirrors the database
  * constraints.
  */
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { type AnalyzeSettings, analyzeDocument } from "@/lib/extraction/pipeline";
-import type { ModelCallResult, ModelCallSuccess, ModelCaller } from "@/lib/meta/transport";
+import type { BlockCropper } from "@/lib/extraction/two-pass";
+import type { BoundingBox } from "@/lib/ledger/types";
+import type { ModelCallInput, ModelCallResult, ModelCallSuccess, ModelCaller } from "@/lib/meta/transport";
 import { MemoryStore } from "./helpers/memory-repo";
 import { makePng } from "./helpers/image-fixtures";
 
@@ -322,6 +324,205 @@ describe("credit control", () => {
   });
 });
 
+describe("two-pass reading (U3): one run is at most 1 + 6 calls, each logged and counted", () => {
+  const box = (x_min: number, y_min: number, x_max: number, y_max: number): BoundingBox => ({ x_min, y_min, x_max, y_max });
+  const page = { date_text: null, ledger_type: "mixed", legibility: "clear" };
+  const layout = (boxes: Array<BoundingBox | null>) =>
+    JSON.stringify({
+      page,
+      blocks: boxes.map((b, i) => ({
+        id: `b${i + 1}`,
+        kind: i === 0 ? "day_sales" : "supplier_visit",
+        title: null,
+        party: i === 0 ? null : "Praan",
+        person: null,
+        date_text: null,
+        box: b,
+      })),
+      warnings: [],
+    });
+  const entry = (id: string, text: string, type: string, amount: string, block = "b1") => ({
+    id, line: Number(id.slice(1)), text, type, customer: null, item: null, qty: null, unit: null, rate: null, amount, balance: null,
+    crossed_out: false, review: [], note: null, box: box(50, 100, 950, 300), block,
+  });
+  const blockReading = (kind: string, entries: unknown[]) =>
+    JSON.stringify({
+      page,
+      blocks: [{ id: "b1", kind, title: null, party: kind === "supplier_visit" ? "Praan" : null, person: null, date_text: null, box: null }],
+      entries,
+      doubts: [],
+      warnings: [],
+    });
+  const salesBlock = blockReading("day_sales", [entry("e1", "চাল ১৪০", "cash_sale", "১৪০")]);
+  const visitBlock = blockReading("supplier_visit", [entry("e1", "Before - 2800", "opening_balance", "2800"), entry("e2", "Given - 1500", "supplier_payment", "1500")]);
+  const wholePage = salesBlock;
+  const twoBlocks = layout([box(0, 0, 500, 400), box(0, 500, 1000, 900)]);
+
+  /** Answers by the step it is asked for; `blockAnswers` in call order, then readings of the two blocks above. */
+  function twoPassModel(layoutText: string, blockAnswers: ModelCallResult[] = []) {
+    const inputs: ModelCallInput[] = [];
+    let blocks = 0;
+    const caller: ModelCaller = async (input) => {
+      inputs.push(input);
+      if (input.pass?.kind === "layout") return success(layoutText);
+      if (input.pass?.kind === "block") return blockAnswers.shift() ?? success(blocks++ === 0 ? salesBlock : visitBlock);
+      return success(wholePage);
+    };
+    return { caller, inputs };
+  }
+
+  const cropped: BoundingBox[][] = [];
+  const cropBytes = makePng(8, 8);
+  const cropBlocks: BlockCropper = async (_page, rects) => (cropped.push(rects), rects.map((rect) => ({ image: { imageBytes: cropBytes, mimeType: "image/png" }, rect })));
+  const depsFor = (caller: ModelCaller) => ({ repo: store.repoFor("user-a"), callModel: caller, now: () => new Date(), cropBlocks });
+
+  beforeEach(() => {
+    process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-6";
+    process.env.SCRIBA_TWO_PASS = "1";
+    cropped.length = 0;
+  });
+  afterEach(() => {
+    delete process.env.SCRIBA_PROMPT_VERSION;
+    delete process.env.SCRIBA_TWO_PASS;
+  });
+
+  test("one layout call, then one call per block; usage and cost are the sum and every call is kept", async () => {
+    const m = twoPassModel(twoBlocks);
+    const out = await analyzeDocument(depsFor(m.caller), settings, req("r1"));
+    expect(out.kind).toBe("completed");
+    expect(m.inputs.map((i) => i.pass?.kind)).toEqual(["layout", "block", "block"]);
+    // Each block call sends its crop, with what the first look found as a hint.
+    expect(m.inputs[1]!.imageBytes).toBe(cropBytes);
+    expect(m.inputs[2]!.pass).toMatchObject({ kind: "block", hint: expect.stringContaining("supplier_visit") });
+    expect(cropped).toHaveLength(1);
+
+    const run = store.runs[0]!;
+    expect(run.promptVersion).toBe("scriba-prompt-6+2pass-1");
+    expect(run.schemaVersion).toBe("scriba-extraction-3");
+    expect(run.success!.usage!.inputTokens).toBe(3 * 1500);
+    expect(run.success!.estimatedCostUsd).toBeCloseTo((3 * (1500 * 1.25 + 600 * 4.25)) / 1e6, 10);
+    expect(run.success!.extraction.reading).toMatchObject({ passes: 2, calls: 3, fallback: null });
+    expect(run.success!.extraction.blocks!.map((b) => b.kind)).toEqual(["day_sales", "supplier_visit"]);
+    expect(run.success!.extraction.entries.map((e) => [e.candidateId, e.values.block])).toEqual([["e1", "b1"], ["e2", "b2"], ["e3", "b2"]]);
+    const raw = JSON.parse(run.success!.rawOutputText) as { calls: Array<{ pass: string; outputText: string | null }> };
+    expect(raw.calls.map((c) => c.pass)).toEqual(["layout", "block", "block"]);
+    expect(raw.calls[2]!.outputText).toBe(visitBlock);
+  });
+
+  test.each([
+    ["more than six blocks", layout(Array.from({ length: 7 }, (_, i) => box(0, i * 140, 1000, i * 140 + 120))), "too_many_blocks"],
+    ["a block without a box", layout([box(0, 0, 500, 400), null]), "box_missing"],
+    ["no blocks", layout([]), "no_blocks"],
+  ])("%s: the page is read in one whole-page call instead (2 calls)", async (_name, layoutText, fallback) => {
+    const m = twoPassModel(layoutText);
+    expect((await analyzeDocument(depsFor(m.caller), settings, req("r1"))).kind).toBe("completed");
+    expect(m.inputs.map((i) => i.pass?.kind)).toEqual(["layout", undefined]);
+    expect(cropped).toHaveLength(0);
+    const run = store.runs[0]!;
+    expect(run.success!.extraction.reading).toMatchObject({ calls: 2, fallback });
+    expect(run.success!.usage!.inputTokens).toBe(2 * 1500);
+  });
+
+  test("a failed block call fails the run; nothing is retried and every spent call is recorded", async () => {
+    const busy: ModelCallResult = { ok: false, category: "server_error", httpStatus: 503, message: "busy", uncertain: false, elapsedMs: 10 };
+    const m = twoPassModel(twoBlocks, [success(salesBlock), busy]);
+    const deps = depsFor(m.caller);
+    const out = await analyzeDocument(deps, settings, req("r1"));
+    expect(out).toMatchObject({ kind: "model_failed", category: "server_error", uncertain: false });
+    expect(m.inputs).toHaveLength(3);
+    const run = store.runs[0]!;
+    expect(run.status).toBe("failed");
+    expect(run.failure!.usage!.inputTokens).toBe(2 * 1500);
+    expect(run.failure!.estimatedCostUsd).toBeCloseTo((2 * (1500 * 1.25 + 600 * 4.25)) / 1e6, 10);
+    const raw = JSON.parse(run.failure!.rawOutputText!) as { calls: Array<{ pass: string; error?: string }> };
+    expect(raw.calls.map((c) => [c.pass, c.error ?? null])).toEqual([["layout", null], ["block", null], ["block", "server_error"]]);
+
+    expect((await analyzeDocument(deps, settings, req("r1"))).kind).toBe("duplicate_request");
+    expect(m.inputs).toHaveLength(3);
+  });
+
+  test("a block call that may have been processed makes the run uncertain", async () => {
+    const slow: ModelCallResult = { ok: false, category: "timeout", httpStatus: null, message: "slow", uncertain: true, elapsedMs: 240000 };
+    const m = twoPassModel(twoBlocks, [slow]);
+    expect(await analyzeDocument(depsFor(m.caller), settings, req("r1"))).toMatchObject({ kind: "model_failed", uncertain: true });
+    expect(store.runs[0]!.status).toBe("uncertain");
+  });
+
+  test("an unusable block reading fails the run as invalid output", async () => {
+    const m = twoPassModel(twoBlocks, [success(salesBlock), success("{not json")]);
+    expect((await analyzeDocument(depsFor(m.caller), settings, req("r1"))).kind).toBe("unusable_output");
+    expect(store.runs[0]!.status).toBe("invalid_output");
+    expect(store.runs[0]!.failure!.usage!.inputTokens).toBe(3 * 1500);
+  });
+
+  test("a failed or unusable layout stops before any block is cut or read", async () => {
+    const down = twoPassModel(twoBlocks);
+    const failing: ModelCaller = async (input) => (down.inputs.push(input), { ok: false, category: "rate_limited", httpStatus: 429, message: "slow down", uncertain: false, elapsedMs: 5 });
+    expect((await analyzeDocument(depsFor(failing), settings, req("r1"))).kind).toBe("model_failed");
+    expect(down.inputs).toHaveLength(1);
+
+    const garbled = twoPassModel("{\"page\":");
+    expect((await analyzeDocument(depsFor(garbled.caller), settings, req("r2"))).kind).toBe("unusable_output");
+    expect(garbled.inputs).toHaveLength(1);
+    expect(store.runs[1]!.status).toBe("invalid_output");
+    expect(cropped).toHaveLength(0);
+  });
+
+  test("a crop that fails stops the run after the layout call, which is recorded", async () => {
+    const m = twoPassModel(twoBlocks);
+    const broken: BlockCropper = async () => {
+      throw new Error("bad image");
+    };
+    const out = await analyzeDocument({ ...depsFor(m.caller), cropBlocks: broken }, settings, req("r1"));
+    expect(out.kind).toBe("integrity_error");
+    expect(m.inputs).toHaveLength(1);
+    expect(store.runs[0]!.failure).toMatchObject({ errorCategory: "preparation", usage: { inputTokens: 1500 } });
+  });
+
+  test("without a way to cut blocks, nothing is sent", async () => {
+    const m = twoPassModel(twoBlocks);
+    const out = await analyzeDocument({ repo: store.repoFor("user-a"), callModel: m.caller, now: () => new Date() }, settings, req("r1"));
+    expect(out.kind).toBe("integrity_error");
+    expect(m.inputs).toHaveLength(0);
+    expect(store.runs[0]!.failure?.errorCategory).toBe("preparation");
+  });
+
+  test("rate limits count model calls, and a two-pass run needs room for all 7 it may make", async () => {
+    const m = twoPassModel(twoBlocks);
+    const deps = depsFor(m.caller);
+    expect((await analyzeDocument(deps, { ...settings, extractionsPerHour: 6 }, req("r0"))).kind).toBe("rate_limited");
+    expect(m.inputs).toHaveLength(0);
+
+    const ten = { ...settings, extractionsPerHour: 10 };
+    expect((await analyzeDocument(deps, ten, req("r1"))).kind).toBe("completed"); // 3 calls
+    expect((await analyzeDocument(deps, ten, req("r2", "fresh"))).kind).toBe("completed"); // 3 + 7 ≤ 10
+    expect((await analyzeDocument(deps, ten, req("r3", "fresh"))).kind).toBe("rate_limited"); // 6 + 7 > 10
+    expect(m.inputs).toHaveLength(6);
+  });
+
+  test("a two-pass result is reused with zero calls and never shares a cache entry with a single-pass one", async () => {
+    const m = twoPassModel(twoBlocks);
+    const deps = depsFor(m.caller);
+    await analyzeDocument(deps, settings, req("r1"));
+    expect((await analyzeDocument(deps, settings, req("r2"))).kind).toBe("cached");
+    expect(m.inputs).toHaveLength(3);
+
+    delete process.env.SCRIBA_TWO_PASS;
+    expect((await analyzeDocument(deps, settings, req("r3"))).kind).toBe("completed");
+    expect(m.inputs.map((i) => i.pass?.kind)).toEqual(["layout", "block", "block", undefined]);
+    expect(store.runs[1]!.promptVersion).toBe("scriba-prompt-6");
+    expect(store.runs[1]!.cacheKey).not.toBe(store.runs[0]!.cacheKey);
+  });
+
+  test("the switch only applies to prompt 6", async () => {
+    process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-4";
+    const m = countingModel([success()]);
+    expect((await analyzeDocument(depsFor(m.caller), settings, req("r1"))).kind).toBe("completed");
+    expect(m.calls).toHaveLength(1);
+    expect(store.runs[0]!.promptVersion).toBe("scriba-prompt-4");
+  });
+});
+
 describe("structural guarantee: only explicit paths can reach Meta", () => {
   // Editing, revalidating, reopening a document or changing a filter must never
   // be able to trigger a paid call. Enforced by the import graph: only these
@@ -329,6 +530,7 @@ describe("structural guarantee: only explicit paths can reach Meta", () => {
   const ALLOWED = new Set([
     "src/lib/meta/transport.ts",
     "src/lib/extraction/pipeline.ts", // type-only import of ModelCaller
+    "src/lib/extraction/two-pass.ts", // U3: type-only; it calls the caller the pipeline was given
     "src/lib/server/analyze.ts",
     "scripts/live-extract.ts",
     // P1: one clip per press of "stop" in the fix sheet; never retried, never chained to a model.
@@ -356,8 +558,9 @@ describe("structural guarantee: only explicit paths can reach Meta", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("the pipeline imports the transport for types only", () => {
-    const src = readFileSync(join(import.meta.dir, "..", "src/lib/extraction/pipeline.ts"), "utf8");
+  test.each(["src/lib/extraction/pipeline.ts", "src/lib/extraction/two-pass.ts"])("%s imports the transport for types only", (path) => {
+    const src = readFileSync(join(import.meta.dir, "..", path), "utf8");
     expect(src).toMatch(/import type \{[^}]*\} from "@\/lib\/meta\/transport"/);
+    expect(src).not.toMatch(/^import \{[^}]*\} from "@\/lib\/meta\/transport"/m);
   });
 });

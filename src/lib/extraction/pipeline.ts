@@ -6,8 +6,10 @@
  *    explicitly requested.
  *  - A repeated request id returns the earlier run (double-click safe).
  *  - Only one in-flight run per cache key; the database enforces it as well.
- *  - Per-user rate limits apply before any paid call.
- *  - Exactly one model call per run, never retried automatically.
+ *  - Per-user rate limits apply before any paid call. They count model calls, and a run
+ *    only starts when every call it may make still fits.
+ *  - One model call per run, or (U3, two-pass) at most 1 + 6, each logged and counted in the
+ *    run's usage and cost. Never retried automatically.
  *  - A stale in-flight run is marked uncertain and requires a deliberate retry.
  *
  * Storage, image preparation and the model are injected, so tests can count model
@@ -15,7 +17,16 @@
  */
 import { sha256Hex, extractionCacheKey, type ProcessingMode } from "./cache-key";
 import { pageValuesOf, parseModelResponse, type NormalizedExtraction, type ParseFailureKind } from "./parse";
-import { type PageLayout, getExtractionProfile, getPersonalProfile, layoutOfPromptVersion, withLayout } from "./prompt";
+import {
+  type PageLayout,
+  getExtractionProfile,
+  getPersonalProfile,
+  isTwoPassVersion,
+  layoutOfPromptVersion,
+  withLayout,
+  withTwoPass,
+} from "./prompt";
+import { type BlockCropper, MAX_RUN_CALLS, type Spent, readTwoPass } from "./two-pass";
 import type { PreparedImage } from "@/lib/images/rotate";
 import type { MetaErrorCategory, ModelCaller } from "@/lib/meta/transport";
 import { estimateCostUsd, type TokenUsage } from "@/lib/pricing";
@@ -86,7 +97,8 @@ export interface ExtractionRepo {
   findPendingRun(cacheKey: string): Promise<RunRecord | null>;
   /** The prompt version of this document's latest run of any status, or null if it was never sent. */
   latestPromptVersion(documentId: string): Promise<string | null>;
-  countPaidRunsSince(since: Date): Promise<number>;
+  /** Model calls of the user's runs started since then (`callsOfRun` per run). */
+  countModelCallsSince(since: Date): Promise<number>;
   /** Must be atomic: fails on a duplicate request id or an existing pending run. */
   insertPendingRun(run: NewRun): Promise<{ ok: true; run: RunRecord } | { ok: false; conflict: "request_id" | "pending" }>;
   downloadOriginal(doc: DocumentForExtraction): Promise<Uint8Array>;
@@ -144,7 +156,15 @@ const originalOnly: ImagePreparer = async (imageBytes, mimeType, mode) => {
 };
 
 export async function analyzeDocument(
-  deps: { repo: ExtractionRepo; callModel: ModelCaller; now: () => Date; prepareImage?: ImagePreparer; personalize?: Personalizer },
+  deps: {
+    repo: ExtractionRepo;
+    callModel: ModelCaller;
+    now: () => Date;
+    prepareImage?: ImagePreparer;
+    personalize?: Personalizer;
+    /** U3: cuts blocks from the page for a two-pass reading. Without it, a two-pass run sends nothing. */
+    cropBlocks?: BlockCropper;
+  },
   settings: AnalyzeSettings,
   request: AnalyzeRequest,
 ): Promise<AnalyzeOutcome> {
@@ -157,7 +177,9 @@ export async function analyzeDocument(
   const personalProfile = deps.personalize ? getPersonalProfile() : null;
   const personal = personalProfile ? await deps.personalize!(doc).catch(() => null) : null;
   const layout = request.layout ?? layoutOfPromptVersion(await repo.latestPromptVersion(doc.id));
-  const { promptVersion, schemaVersion } = withLayout(personal ? personalProfile! : getExtractionProfile(), layout);
+  // Two-pass rides on prompt 6 only; the khata layout and the writer's notes on prompt 4 only.
+  const { promptVersion, schemaVersion } = withTwoPass(withLayout(personal ? personalProfile! : getExtractionProfile(), layout));
+  const twoPass = isTwoPassVersion(promptVersion);
 
   const cacheKey = extractionCacheKey({
     ownerId: doc.ownerId,
@@ -193,13 +215,14 @@ export async function analyzeDocument(
 
   const nowMs = now().getTime();
   const [lastHour, lastDay] = await Promise.all([
-    repo.countPaidRunsSince(new Date(nowMs - 60 * 60 * 1000)),
-    repo.countPaidRunsSince(new Date(nowMs - 24 * 60 * 60 * 1000)),
+    repo.countModelCallsSince(new Date(nowMs - 60 * 60 * 1000)),
+    repo.countModelCallsSince(new Date(nowMs - 24 * 60 * 60 * 1000)),
   ]);
-  if (lastHour >= settings.extractionsPerHour || lastDay >= settings.extractionsPerDay) {
+  const mayMake = twoPass ? MAX_RUN_CALLS : 1;
+  if (lastHour + mayMake > settings.extractionsPerHour || lastDay + mayMake > settings.extractionsPerDay) {
     return {
       kind: "rate_limited",
-      message: `Extraction limit reached (${settings.extractionsPerHour} per hour, ${settings.extractionsPerDay} per day).`,
+      message: `Extraction limit reached (${settings.extractionsPerHour} model calls per hour, ${settings.extractionsPerDay} per day).`,
     };
   }
 
@@ -249,42 +272,94 @@ export async function analyzeDocument(
     return { kind: "integrity_error", runId, message };
   }
 
-  const result = await callModel({
-    ...prepared,
-    ...(personal ? { personal: { text: personal.text, reference: personal.reference } } : {}),
-    ...(layout === "free" ? {} : { layout }),
-  });
-
-  if (!result.ok) {
-    await repo.failRun(runId, {
-      status: result.uncertain ? "uncertain" : "failed",
-      errorCategory: result.category,
-      errorMessage: result.message,
-      httpStatus: result.httpStatus,
-      elapsedMs: result.elapsedMs,
+  // What was read, and what every call of it spent.
+  let read: { extraction: NormalizedExtraction } & Omit<Spent, "rawOutputText"> & { rawOutputText: string | null };
+  if (twoPass) {
+    if (!deps.cropBlocks) {
+      const message = "The photograph could not be prepared for a two-pass reading. No request was sent to Meta.";
+      await repo.failRun(runId, { status: "failed", errorCategory: "preparation", errorMessage: message });
+      return { kind: "integrity_error", runId, message };
+    }
+    const reading = await readTwoPass({ callModel, cropBlocks: deps.cropBlocks, modelId: settings.modelId }, prepared);
+    if (!reading.ok) {
+      const { spent } = reading;
+      const recorded = {
+        providerResponseId: spent.providerResponseId,
+        usage: spent.usage,
+        estimatedCostUsd: spent.estimatedCostUsd,
+        elapsedMs: spent.elapsedMs,
+        rawOutputText: spent.rawOutputText,
+      };
+      if (reading.kind === "model_failed") {
+        await repo.failRun(runId, {
+          status: reading.uncertain ? "uncertain" : "failed",
+          errorCategory: reading.category,
+          errorMessage: reading.message,
+          httpStatus: reading.httpStatus,
+          ...recorded,
+        });
+        return { kind: "model_failed", runId, category: reading.category, message: reading.message, uncertain: reading.uncertain };
+      }
+      if (reading.kind === "unusable_output") {
+        await repo.failRun(runId, {
+          status: reading.category === "incomplete" ? "incomplete" : "invalid_output",
+          errorCategory: reading.category,
+          errorMessage: reading.message,
+          ...recorded,
+        });
+        return { kind: "unusable_output", runId, category: reading.category, message: reading.message };
+      }
+      await repo.failRun(runId, { status: "failed", errorCategory: "preparation", errorMessage: reading.message, ...recorded });
+      return { kind: "integrity_error", runId, message: reading.message };
+    }
+    read = reading;
+  } else {
+    const result = await callModel({
+      ...prepared,
+      ...(personal ? { personal: { text: personal.text, reference: personal.reference } } : {}),
+      ...(layout === "free" ? {} : { layout }),
     });
-    return { kind: "model_failed", runId, category: result.category, message: result.message, uncertain: result.uncertain };
-  }
 
-  const cost = estimateCostUsd(settings.modelId, result.usage);
-  const parsed = parseModelResponse(result.summary, { promptVersion, schemaVersion });
-  if (!parsed.ok) {
-    await repo.failRun(runId, {
-      status: parsed.kind === "incomplete" ? "incomplete" : "invalid_output",
-      errorCategory: parsed.kind,
-      errorMessage: parsed.detail,
+    if (!result.ok) {
+      await repo.failRun(runId, {
+        status: result.uncertain ? "uncertain" : "failed",
+        errorCategory: result.category,
+        errorMessage: result.message,
+        httpStatus: result.httpStatus,
+        elapsedMs: result.elapsedMs,
+      });
+      return { kind: "model_failed", runId, category: result.category, message: result.message, uncertain: result.uncertain };
+    }
+
+    const cost = estimateCostUsd(settings.modelId, result.usage);
+    const parsed = parseModelResponse(result.summary, { promptVersion, schemaVersion });
+    if (!parsed.ok) {
+      await repo.failRun(runId, {
+        status: parsed.kind === "incomplete" ? "incomplete" : "invalid_output",
+        errorCategory: parsed.kind,
+        errorMessage: parsed.detail,
+        providerResponseId: result.providerResponseId,
+        usage: result.usage,
+        estimatedCostUsd: cost,
+        elapsedMs: result.elapsedMs,
+        rawOutputText: result.summary.outputText,
+      });
+      return { kind: "unusable_output", runId, category: parsed.kind, message: parsed.detail };
+    }
+    read = {
+      extraction: parsed.extraction,
       providerResponseId: result.providerResponseId,
+      reportedModel: result.reportedModel,
       usage: result.usage,
       estimatedCostUsd: cost,
       elapsedMs: result.elapsedMs,
       rawOutputText: result.summary.outputText,
-    });
-    return { kind: "unusable_output", runId, category: parsed.kind, message: parsed.detail };
+    };
   }
 
   const findings = validateLedger({
-    page: pageValuesOf(parsed.extraction),
-    entries: parsed.extraction.entries.map((e) => ({
+    page: pageValuesOf(read.extraction),
+    entries: read.extraction.entries.map((e) => ({
       id: e.candidateId,
       line: e.line,
       values: e.values,
@@ -296,14 +371,14 @@ export async function analyzeDocument(
 
   try {
     await repo.completeRun(runId, {
-      providerResponseId: result.providerResponseId,
-      reportedModel: result.reportedModel,
-      usage: result.usage,
-      estimatedCostUsd: cost,
-      elapsedMs: result.elapsedMs,
-      rawOutputText: result.summary.outputText ?? "",
-      // The version actually sent (prompt 5, a khata layout), not only the configured base.
-      extraction: { ...parsed.extraction, promptVersion },
+      providerResponseId: read.providerResponseId,
+      reportedModel: read.reportedModel,
+      usage: read.usage,
+      estimatedCostUsd: read.estimatedCostUsd,
+      elapsedMs: read.elapsedMs,
+      rawOutputText: read.rawOutputText ?? "",
+      // The version actually sent (prompt 5, a khata layout, two-pass), not only the configured base.
+      extraction: { ...read.extraction, promptVersion },
       findings,
       validatorVersion: VALIDATOR_VERSION,
     });
@@ -315,11 +390,11 @@ export async function analyzeDocument(
         status: "failed",
         errorCategory: "persistence",
         errorMessage: message,
-        providerResponseId: result.providerResponseId,
-        usage: result.usage,
-        estimatedCostUsd: cost,
-        elapsedMs: result.elapsedMs,
-        rawOutputText: result.summary.outputText,
+        providerResponseId: read.providerResponseId,
+        usage: read.usage,
+        estimatedCostUsd: read.estimatedCostUsd,
+        elapsedMs: read.elapsedMs,
+        rawOutputText: read.rawOutputText,
       });
     } catch {
       // The run stays pending and will be reported as uncertain later.

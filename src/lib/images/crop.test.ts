@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import sharp from "sharp";
-import { CROP_WIDTH, lineRect, stackLineCrops } from "./crop";
+import { CROP_WIDTH, cropBlocksForReading, lineRect, stackLineCrops } from "./crop";
 
 describe("lineRect", () => {
   test("maps the 0–1000 grid to pixels with padding, clamped to the photo", () => {
@@ -43,5 +43,45 @@ describe("stackLineCrops", () => {
     const photo = await sharp({ create: { width: 10, height: 10, channels: 3, background: "#fff" } }).png().toBuffer();
     expect(await stackLineCrops([{ photoKey: "p", bytes: photo, turns: 0, box: { x_min: 5, y_min: 5, x_max: 5, y_max: 9 } }])).toBeNull();
     expect(await stackLineCrops([])).toBeNull();
+  });
+});
+
+describe("cropBlocksForReading (U3)", () => {
+  const halves = (width: number, height: number) =>
+    sharp({ create: { width, height, channels: 3, background: "#fff" } }).composite([
+      { input: { create: { width: width / 2, height, channels: 3, background: "#000" } }, left: 0, top: 0 },
+    ]);
+  const centre = async (bytes: Uint8Array) => {
+    const { data, info } = await sharp(bytes).greyscale().raw().toBuffer({ resolveWithObject: true });
+    return data[Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2)]!;
+  };
+
+  test("cuts each rect, upscales a small block (at most 3× per side) and says what it cut, in whole pixels", async () => {
+    const page = { imageBytes: new Uint8Array(await halves(1000, 600).png().toBuffer()), mimeType: "image/png" };
+    const [left, right] = await cropBlocksForReading(page, [
+      { x_min: 0, y_min: 0, x_max: 500, y_max: 1000 },
+      { x_min: 500.4, y_min: 100, x_max: 1000, y_max: 900 },
+    ]);
+    expect(left!.rect).toEqual({ x_min: 0, y_min: 0, x_max: 500, y_max: 1000 });
+    expect(right!.rect).toEqual({ x_min: 500, y_min: 100, x_max: 1000, y_max: 900 });
+    expect(left!.image.mimeType).toBe("image/jpeg");
+    expect(await sharp(left!.image.imageBytes).metadata()).toMatchObject({ format: "jpeg", width: 1500, height: 1800 });
+    expect(await sharp(right!.image.imageBytes).metadata()).toMatchObject({ width: 1500, height: 1440 });
+    expect(await centre(left!.image.imageBytes)).toBeLessThan(40);
+    expect(await centre(right!.image.imageBytes)).toBeGreaterThan(215);
+  });
+
+  test("a block already as large as the model sees is not resized", async () => {
+    const page = { imageBytes: new Uint8Array(await halves(2000, 2000).jpeg().toBuffer()), mimeType: "image/jpeg" };
+    const [all] = await cropBlocksForReading(page, [{ x_min: 0, y_min: 0, x_max: 1000, y_max: 1000 }]);
+    expect(await sharp(all!.image.imageBytes).metadata()).toMatchObject({ width: 2000, height: 2000 });
+  });
+
+  test("cuts from the photo as displayed: EXIF orientation is applied first", async () => {
+    // 400×200 stored, left half black; orientation 6 shows it turned clockwise: 200×400, black on top.
+    const stored = await halves(400, 200).jpeg().withMetadata({ orientation: 6 }).toBuffer();
+    const [top] = await cropBlocksForReading({ imageBytes: new Uint8Array(stored), mimeType: "image/jpeg" }, [{ x_min: 0, y_min: 0, x_max: 1000, y_max: 500 }]);
+    expect(await sharp(top!.image.imageBytes).metadata()).toMatchObject({ width: 600, height: 600 });
+    expect(await centre(top!.image.imageBytes)).toBeLessThan(40);
   });
 });

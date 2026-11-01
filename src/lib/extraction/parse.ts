@@ -16,6 +16,7 @@ import {
   type ReviewableField,
   TRANSACTION_TYPES,
 } from "@/lib/ledger/types";
+import type { z } from "zod";
 import { normalizeDate, parseMoney, parseQuantity, parseRate } from "@/lib/numerals";
 import { FIELD_TO_VALUE_KEY } from "@/lib/review/values";
 import { type ExtractionProfile, getExtractionProfile } from "./prompt";
@@ -74,6 +75,18 @@ export type NormalizedExtraction = {
   doubts?: NormalizedDoubt[];
   /** Warnings from the model followed by warnings raised while normalizing. */
   warnings: string[];
+  /** U3: how a two-pass reading was made. Absent on a reading made in one call. */
+  reading?: ReadingInfo;
+};
+
+export type ReadingInfo = {
+  passes: 2;
+  /** Model calls this reading took: 1 + one per block, or 2 when it fell back to the whole page. */
+  calls: number;
+  /** Why the blocks weren't cut, when the page was read whole after the layout step. */
+  fallback: null | "no_blocks" | "box_missing" | "too_many_blocks";
+  /** Where each block was cut from, on the page's 0-1000 grid. */
+  crops: Array<{ block: string; rect: BoundingBox }>;
 };
 
 export type ParseFailureKind = "incomplete" | "refusal" | "empty" | "invalid_json" | "schema_mismatch";
@@ -92,7 +105,7 @@ export type ModelResponseSummary = {
 const BOX_MAX = 1000;
 const BOX_TOLERANCE = 5; // the docs note values slightly outside the grid, e.g. 1001
 
-function normalizeBox(box: ModelEntry["box"], warnings: string[], id: string): BoundingBox | null {
+export function normalizeBox(box: ModelEntry["box"], warnings: string[], id: string): BoundingBox | null {
   if (!box) return null;
   const vals = [box.x_min, box.y_min, box.x_max, box.y_max];
   if (vals.some((v) => !Number.isFinite(v) || v < -BOX_TOLERANCE || v > BOX_MAX + BOX_TOLERANCE)) {
@@ -328,6 +341,16 @@ export function parseModelResponse(
   response: ModelResponseSummary,
   profile: Pick<ExtractionProfile, "schemaVersion" | "promptVersion"> = getExtractionProfile(),
 ): ParseResult {
+  const parsed: ReturnType<typeof parseModelJson<AnyModelOutput>> =
+    profile.schemaVersion === SCHEMA_V3_VERSION ? parseModelJson(response, modelOutputSchemaV3) : parseModelJson(response, modelOutputSchema);
+  return parsed.ok ? { ok: true, extraction: normalizeModelOutput(parsed.data, profile) } : parsed;
+}
+
+/** The response's JSON, checked against `schema` but not normalized yet. */
+export function parseModelJson<T>(
+  response: ModelResponseSummary,
+  schema: z.ZodType<T>,
+): { ok: true; data: T } | { ok: false; kind: ParseFailureKind; detail: string } {
   if (response.refusal) return { ok: false, kind: "refusal", detail: response.refusal.slice(0, 300) };
   if (response.status === "incomplete") {
     return {
@@ -345,7 +368,7 @@ export function parseModelResponse(
   } catch {
     return { ok: false, kind: "invalid_json", detail: "The response was not valid JSON (it may be truncated)." };
   }
-  const parsed = (profile.schemaVersion === SCHEMA_V3_VERSION ? modelOutputSchemaV3 : modelOutputSchema).safeParse(json);
+  const parsed = schema.safeParse(json);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .slice(0, 5)
@@ -353,5 +376,5 @@ export function parseModelResponse(
       .join("; ");
     return { ok: false, kind: "schema_mismatch", detail: `The response did not match the schema: ${issues}` };
   }
-  return { ok: true, extraction: normalizeModelOutput(parsed.data, profile) };
+  return { ok: true, data: parsed.data };
 }

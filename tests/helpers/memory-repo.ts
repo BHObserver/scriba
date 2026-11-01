@@ -12,6 +12,7 @@ import type {
   RunRecord,
   RunSuccess,
 } from "@/lib/extraction/pipeline";
+import { callsOfRun } from "@/lib/extraction/two-pass";
 
 export type StoredRun = RunRecord & NewRun & { success?: RunSuccess; failure?: RunFailure };
 
@@ -57,8 +58,11 @@ export class MemoryStore {
       async latestPromptVersion(documentId) {
         return [...store.runs].reverse().find((r) => own(r) && r.documentId === documentId)?.promptVersion ?? null;
       },
-      async countPaidRunsSince(since) {
-        return store.runs.filter((r) => own(r) && r.startedAt >= since).length;
+      async countModelCallsSince(since) {
+        // Like the database: only a succeeded run's result says how many calls it made.
+        return store.runs
+          .filter((r) => own(r) && r.startedAt >= since)
+          .reduce((n, r) => n + callsOfRun(r.promptVersion, r.success?.extraction.reading?.calls ?? null), 0);
       },
       async insertPendingRun(run: NewRun) {
         // Synchronous check-and-insert: emulates the unique indexes atomically.

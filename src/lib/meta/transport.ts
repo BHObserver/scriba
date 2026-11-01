@@ -14,7 +14,10 @@ import OpenAI from "openai";
 import type { MetaConfig } from "@/lib/config";
 import type { TokenUsage } from "@/lib/pricing";
 import {
+  BLOCK_PROFILE,
   EXTRACTION_USER_TEXT,
+  LAYOUT_PROFILE,
+  LAYOUT_USER_TEXT,
   PERSONAL_PAGE_TEXT,
   type PageLayout,
   getExtractionProfile,
@@ -30,6 +33,11 @@ export type ModelCallInput = {
   personal?: { text: string; reference: { imageBytes: Uint8Array; mimeType: string } | null };
   /** P4: a printed Scriba khata page adds its column layout to the instructions. */
   layout?: PageLayout;
+  /**
+   * U3: a step of a two-pass reading. "layout" finds the blocks on the whole page; "block" reads
+   * one block's crop, with what the layout step found for it. Absent: the whole page in one call.
+   */
+  pass?: { kind: "layout" } | { kind: "block"; hint: string };
 };
 
 export type MetaErrorCategory =
@@ -77,11 +85,17 @@ export function toDataUrl(bytes: Uint8Array, mimeType: string): string {
 
 /** The exact request body sent to POST /v1/responses (minus the image bytes in tests). */
 export function buildExtractionRequest(config: Pick<MetaConfig, "modelId" | "reasoningEffort" | "maxOutputTokens">, input: ModelCallInput) {
-  const personal = input.personal ? getPersonalProfile() : null;
-  const profile = withLayout(personal ?? getExtractionProfile(), input.layout ?? "free");
+  const personal = input.personal && !input.pass ? getPersonalProfile() : null;
+  const profile =
+    input.pass?.kind === "layout"
+      ? LAYOUT_PROFILE
+      : input.pass?.kind === "block"
+        ? BLOCK_PROFILE
+        : withLayout(personal ?? getExtractionProfile(), input.layout ?? "free");
   const page = { type: "input_image" as const, image_url: toDataUrl(input.imageBytes, input.mimeType) };
-  const content =
-    personal && input.personal
+  const content = input.pass
+    ? [{ type: "input_text" as const, text: input.pass.kind === "layout" ? LAYOUT_USER_TEXT : input.pass.hint }, page]
+    : personal && input.personal
       ? [
           { type: "input_text" as const, text: input.personal.text },
           ...(input.personal.reference

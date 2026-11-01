@@ -11,6 +11,9 @@ import {
   EXTRACTION_JSON_SCHEMA,
   EXTRACTION_JSON_SCHEMA_V1,
   EXTRACTION_JSON_SCHEMA_V3,
+  LAYOUT_JSON_SCHEMA,
+  LAYOUT_SCHEMA_NAME,
+  LAYOUT_SCHEMA_VERSION,
   SCHEMA_NAME,
   SCHEMA_V1_NAME,
   SCHEMA_V1_VERSION,
@@ -170,6 +173,86 @@ Page:
 warnings: short notes on anything that affects reading (cut-off edge, overwriting, smudge, glare, writing too small to read). Empty if none.`;
 
 export const EXTRACTION_USER_TEXT = "Transcribe this ledger image.";
+
+/**
+ * U3: two-pass reading of a prompt 6 page. Pass 1 finds the blocks and their boxes without
+ * reading the lines; pass 2 reads each block cut from the page, up close, with prompt 6's rules.
+ * Bump TWO_PASS_VERSION with any change to these prompts, the hint, the crop or the merge.
+ */
+export const TWO_PASS_VERSION = "2pass-1";
+const TWO_PASS_SUFFIX = `+${TWO_PASS_VERSION}`;
+
+const BLOCK_RULES = PROMPT_6.slice(PROMPT_6.indexOf("Blocks:"), PROMPT_6.indexOf("\n\nEntries:"));
+const PAGE_RULES = PROMPT_6.slice(PROMPT_6.indexOf("Page:"));
+/** Prompt 6 from its rules on: everything but the opening paragraph, word for word. */
+const PROMPT_6_RULES = PROMPT_6.slice(PROMPT_6.indexOf("Transcribe only what is visibly written."));
+
+const LAYOUT_PROMPT = `You look at a photograph of a handwritten shop ledger (khata) page from Bangladesh and describe its layout as JSON that matches the given schema. Do not transcribe the lines: in a second step, each block is cut from the photo along its box and read up close. The writing may be scattered: groups of lines in different places on the page, side by side or at an angle, joined by arrows or brackets, with notes in the margin.
+
+Never calculate, infer or complete anything. title, party, person and date_text are copied as written, in the script they were written in.
+
+${BLOCK_RULES}
+
+Boxes:
+- The box decides what the second step can read, so it must hold the whole block: its heading or name, every line down to the last one, and any margin note, arrow or bracket that belongs to it. When unsure where a block ends, make the box larger rather than smaller.
+- Give every block a box. Use null only when you cannot see where the block is.
+
+${PAGE_RULES}`;
+
+const BLOCK_PROMPT = `You transcribe one block of a photographed handwritten shop ledger (khata) page from Bangladesh into JSON that matches the given schema. The image was cut from the photo of the page around one block: writing that belongs together by meaning, such as one company's visit or the day's sales.
+
+This image:
+- The message says what a first look at the whole page found for this block. It is a hint: when the writing says otherwise, follow the writing.
+- Return the block as "b1". The edges of the image may show parts of other blocks, often cut off: leave those lines out. Only if the image plainly holds two whole blocks, return both.
+- Every box is on this image's own 0-1000 grid.
+
+${PROMPT_6_RULES}`;
+
+export const LAYOUT_USER_TEXT = "Describe the layout of this ledger page.";
+const BLOCK_USER_TEXT = "Transcribe this block.";
+
+/** The text sent with a block's crop: what pass 1 found for it, as a hint. */
+export function blockUserText(block: { kind: string; title: string | null; party: string | null; person: string | null }): string {
+  const found = [
+    `kind ${block.kind}`,
+    ...(block.title ? [`heading "${block.title}"`] : []),
+    ...(block.party ? [`party "${block.party}"`] : []),
+    ...(block.person ? [`person "${block.person}"`] : []),
+  ];
+  return `${BLOCK_USER_TEXT} A first look at the whole page found: ${found.join(", ")}.`;
+}
+
+export const LAYOUT_PROFILE: ExtractionProfile = {
+  promptVersion: `scriba-layout-${TWO_PASS_VERSION}`,
+  instructions: LAYOUT_PROMPT,
+  schemaVersion: LAYOUT_SCHEMA_VERSION,
+  schemaName: LAYOUT_SCHEMA_NAME,
+  jsonSchema: LAYOUT_JSON_SCHEMA,
+};
+
+export const BLOCK_PROFILE: ExtractionProfile = {
+  promptVersion: `scriba-block-${TWO_PASS_VERSION}`,
+  instructions: BLOCK_PROMPT,
+  schemaVersion: SCHEMA_V3_VERSION,
+  schemaName: SCHEMA_V3_NAME,
+  jsonSchema: EXTRACTION_JSON_SCHEMA_V3,
+};
+
+/** SCRIBA_TWO_PASS=1 reads prompt 6 pages in two passes. Off by default until it measures better. */
+export function twoPassSwitchOn(): boolean {
+  return ["1", "true", "on"].includes(process.env.SCRIBA_TWO_PASS?.trim().toLowerCase() ?? "");
+}
+
+/** The profile a run records: prompt 6 with the two-pass suffix when the switch is on, else unchanged. */
+export function withTwoPass(profile: ExtractionProfile): ExtractionProfile {
+  if (!twoPassSwitchOn() || profile.promptVersion !== BLOCKS_PROMPT_VERSION) return profile;
+  return { ...profile, promptVersion: `${profile.promptVersion}${TWO_PASS_SUFFIX}` };
+}
+
+/** Any version of the two-pass reading, including earlier ones. */
+export function isTwoPassVersion(promptVersion: string): boolean {
+  return /\+2pass-\d+$/.test(promptVersion);
+}
 
 /**
  * Prompt 5 (1 Nov, P3): prompt 4 plus what Scriba learned about this writer. The fixed part
