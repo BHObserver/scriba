@@ -66,8 +66,10 @@ async function findUser() {
 const existing = await findUser();
 if (existing) {
   if (existing.user_metadata?.scriba_demo !== true) throw new Error(`${email} exists but is not the demo account. Nothing was changed.`);
-  const docs = must(await db.from("ledger_documents").select("storage_path, dataset_label").eq("owner_id", existing.id), "list pages");
-  const paths = (docs ?? []).filter((d) => d.dataset_label !== SAMPLE_PAGE_DATASET).map((d) => d.storage_path as string);
+  const docs = must(await db.from("ledger_documents").select("storage_path, camera_path, dataset_label").eq("owner_id", existing.id), "list pages");
+  const paths = (docs ?? [])
+    .filter((d) => d.dataset_label !== SAMPLE_PAGE_DATASET)
+    .flatMap((d) => [d.storage_path as string, ...(d.camera_path ? [d.camera_path as string] : [])]);
   if (paths.length > 0) must(await db.storage.from("scriba-originals").remove(paths), "remove photos");
   must(await db.auth.admin.deleteUser(existing.id), "delete demo user");
   console.log(`Deleted the old demo user and its ${docs?.length ?? 0} pages.`);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { UUID_RE, apiUser, jsonError } from "@/lib/server/auth";
+import { lineOrderAfter } from "@/lib/review/line-order";
 import { entryValuesSchema } from "@/lib/review/values";
 
 const bodySchema = z.object({
@@ -29,15 +30,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/runs/[id]/r
 
   const { data: rows } = await supabase.from("entry_reviews").select("id, line_order").eq("run_id", runId).order("line_order");
   const orders = (rows ?? []).map((r) => ({ id: r.id as string, order: Number(r.line_order) }));
-  let lineOrder: number;
-  if (parsed.data.afterId == null) {
-    lineOrder = (orders[0]?.order ?? 1) - 1;
-  } else {
-    const index = orders.findIndex((r) => r.id === parsed.data.afterId);
-    if (index < 0) return jsonError("Unknown position.", 400);
-    const next = orders[index + 1];
-    lineOrder = next ? (orders[index]!.order + next.order) / 2 : orders[index]!.order + 1;
-  }
+  const lineOrder = lineOrderAfter(orders, parsed.data.afterId);
+  if (lineOrder == null) return jsonError("Unknown position.", 400);
 
   const { data: inserted, error } = await supabase
     .from("entry_reviews")

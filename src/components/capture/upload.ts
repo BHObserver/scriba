@@ -94,3 +94,49 @@ export async function uploadPage(
   }
   return { documentId: body.documentId, duplicate: Boolean(body.duplicate) };
 }
+
+/** The camera's own photo behind a flattened page (C2), and where the page sat in it. */
+export type CameraOriginal = PageUpload & {
+  /** The page's corners as fractions of the photo's displayed width and height (TL, TR, BR, BL). */
+  corners: [number, number][];
+  cornersSource: "detected" | "khata" | "adjusted";
+};
+
+/** Store one camera photo and attach it to its page's document. */
+async function keepOriginal(documentId: string, camera: CameraOriginal, userId: string): Promise<void> {
+  const supabase = createBrowserSupabase();
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) throw new UploadError("sendFailed", "Your session expired.");
+  const storagePath = `${userId}/${crypto.randomUUID()}.${EXTENSION_FOR[camera.mimeType]}`;
+  await uploadWithProgress({
+    url: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/scriba-originals/${storagePath}`,
+    token: data.session.access_token,
+    apiKey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    body: new Blob([camera.bytes as BlobPart], { type: camera.mimeType }),
+    contentType: camera.mimeType,
+    onProgress: () => {},
+  });
+  const res = await fetch(`/api/documents/${documentId}/camera`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ storagePath, clientSha256: camera.sha256, corners: camera.corners, cornersSource: camera.cornersSource }),
+  });
+  if (!res.ok) throw new UploadError("sendFailed", `The camera photo could not be recorded (${res.status}).`);
+}
+
+/**
+ * Upload the camera photos behind the pages just sent, one at a time, after their readings
+ * have started (so he never waits for them). It keeps going while he checks the page; a
+ * failure loses only that evidence copy, never the page, so it is logged and skipped.
+ */
+export function keepOriginals(items: { documentId: string; camera: CameraOriginal }[], userId: string): Promise<void> {
+  return items.reduce<Promise<void>>(
+    (chain, item) =>
+      chain.then(() =>
+        keepOriginal(item.documentId, item.camera, userId).catch((e: unknown) => {
+          console.warn("Scriba: the camera photo wasn't kept.", e);
+        }),
+      ),
+    Promise.resolve(),
+  );
+}

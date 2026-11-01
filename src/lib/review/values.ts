@@ -33,6 +33,17 @@ export const blockValuesSchema = z.object({
   dateText: shortText,
 });
 
+/** At most this many answers are kept per page: the latest per question, oldest dropped first. */
+export const MAX_ANSWERS = 300;
+
+export const answerRecordSchema = z.object({
+  q: z.string().min(1).max(120),
+  fp: z.string().min(1).max(40),
+  a: z.string().min(1).max(60),
+  accepted: z.array(z.string().max(400)).max(10).optional(),
+  at: z.string().max(40),
+});
+
 export const pageValuesSchema = z.object({
   dateText: shortText,
   ledgerType: z.enum(LEDGER_TYPES),
@@ -42,6 +53,7 @@ export const pageValuesSchema = z.object({
     .max(30)
     .refine((blocks) => new Set(blocks.map((b) => b.id)).size === blocks.length, "Block ids must be unique.")
     .optional(),
+  answers: z.array(answerRecordSchema).max(MAX_ANSWERS).optional(),
 });
 
 /**
@@ -50,6 +62,10 @@ export const pageValuesSchema = z.object({
  */
 export function keepBlocks<T extends { blocks?: unknown }>(next: T, stored: { blocks?: unknown }): T {
   return next.blocks === undefined && stored.blocks !== undefined ? { ...next, blocks: stored.blocks } : next;
+}
+/** The same for answers to Scriba's questions: a page edit from an older client keeps them. */
+export function keepAnswers<T extends { answers?: unknown }>(next: T, stored: { answers?: unknown }): T {
+  return next.answers === undefined && stored.answers !== undefined ? { ...next, answers: stored.answers } : next;
 }
 export function keepBlock<T extends { block?: unknown }>(next: T, stored: { block?: unknown }): T {
   return next.block === undefined && stored.block !== undefined ? { ...next, block: stored.block } : next;

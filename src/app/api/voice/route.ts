@@ -3,6 +3,7 @@ import { getMetaConfig, getVoiceConfig } from "@/lib/config";
 import { createTranscriber, type VoiceLanguage } from "@/lib/meta/voice";
 import { estimateVoiceCostUsd } from "@/lib/pricing";
 import { apiUser, jsonError } from "@/lib/server/auth";
+import { readYesNo } from "@/lib/voice/answer-words";
 import { parseSpokenNumber } from "@/lib/voice/number-words";
 import { createWindowLimiter } from "@/lib/voice/rate-limit";
 import { readWavInfo, wavProblem } from "@/lib/voice/wav";
@@ -15,9 +16,9 @@ const MAX_BYTES = 1_000_000;
 let limiter: ReturnType<typeof createWindowLimiter> | null = null;
 
 /**
- * Hear one number (P1): the body is a WAV clip (`audio/wav`), `?lang=en` on the English screen.
- * Returns what Muse Voice Transcribe heard and the number(s) the code read from it. Nothing is
- * saved: the fix sheet places the number in its field and the person presses "keep".
+ * Hear one number (P1) or a yes or no (U2): the body is a WAV clip (`audio/wav`), `?lang=en` on
+ * the English screen. Returns what Muse Voice Transcribe heard and the number(s) and yes/no the
+ * code read from it. Nothing is saved: the screen places the answer and the person confirms it.
  */
 export async function POST(request: Request) {
   const auth = await apiUser();
@@ -43,5 +44,5 @@ export async function POST(request: Request) {
   }
   // Usage only; the transcript is the shopkeeper's words and is not logged.
   console.info("voice", { audioMs: result.audioDurationMs, usd: estimateVoiceCostUsd(result.audioDurationMs), elapsedMs: result.elapsedMs });
-  return NextResponse.json({ transcript: result.transcript, number: parseSpokenNumber(result.transcript) });
+  return NextResponse.json({ transcript: result.transcript, number: parseSpokenNumber(result.transcript), yesNo: readYesNo(result.transcript) });
 }
