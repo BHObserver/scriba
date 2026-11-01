@@ -1,0 +1,15 @@
+# The Vercel CLI uploads this folder as it is on disk, and it does not read .gitignore.
+# So this is an allow-list: only what `next build` needs leaves the machine. Private photos,
+# ground truth, raw model responses, .env files, docs, design and scripts are never uploaded.
+/*
+!/src
+!/public
+!/package.json
+!/bun.lock
+!/next.config.ts
+!/tsconfig.json
+!/vercel.json
+# Tests aren't build inputs, and some import helpers from /tests, which `next build` would then
+# fail to type-check.
+*.test.ts
+*.test.tsx

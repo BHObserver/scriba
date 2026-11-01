@@ -17,6 +17,7 @@
     "shot": "bun scripts/shot.ts",
     "khata:pdf": "bun scripts/khata-pdf.ts",
     "seed:demo": "bun scripts/seed-demo.ts",
+    "vercel:env": "bun scripts/vercel-env.ts",
     "db:push": "supabase db push",
     "secrets:scan": "bun scripts/check-staged.ts"
   },

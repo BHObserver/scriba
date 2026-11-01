@@ -1,6 +1,6 @@
 /**
  * Explicit live smoke test of the whole server path: hosted Supabase plus Meta.
- * Never run by tests or builds. Each run makes 2 paid Meta calls (about 2 cents).
+ * Never run by tests or builds. Each run makes 2 paid Meta calls (about 13 cents with muse-wonder-1.0, 1 Nov).
  *
  *   bun run dev                                   # in another terminal
  *   bun run live:smoke                            # against http://localhost:3000
@@ -55,6 +55,10 @@ async function makeUser(tag: string): Promise<TestUser> {
   const client = createClient(SUPABASE_URL, PUB, noPersist);
   const { data: signedIn, error: signInError } = await client.auth.signInWithPassword({ email, password });
   if (signInError || !signedIn.session) throw new Error(`signIn ${tag}: ${signInError?.message}`);
+  // Without a shop profile every app page redirects to /welcome. Created as the user (RLS),
+  // and removed with the user by the cascade.
+  const { error: profileError } = await client.from("shop_profiles").insert({ owner_id: data.user.id, shop_name: `Smoke ${tag}`, language: "en" });
+  if (profileError) throw new Error(`shop profile ${tag}: ${profileError.message}`);
   return { id: data.user.id, client, session: signedIn.session, cookie: cookieFor(signedIn.session) };
 }
 
