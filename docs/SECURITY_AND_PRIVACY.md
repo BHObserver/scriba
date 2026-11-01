@@ -35,6 +35,8 @@ Learning your handwriting (P3), only when the user has switched it on in More �
 
 Printed Scriba khata pages (P4): when the user ticks "Scriba খাতার ছাপা পাতা / Printed Scriba khata page" on the camera screen, the instructions gain a fixed description of the printed columns. Nothing about the user is added. The blank khata PDFs (`/khata.pdf`, `/khata-a4.pdf`) are static files served without sign-in; the proxy skips `.pdf` as it does images.
 
+Page finder (C2): the phone finds the page and flattens it before upload, all on the device (a web worker; nothing is sent anywhere to find the page). The flattened page is a new JPEG without EXIF, so it carries no GPS; it is what Meta reads. The camera's own photo is uploaded after it to the same private bucket, under the user's folder, as evidence (`ledger_documents.camera_path`, migration 20261102120000). It is kept as taken, so it may include GPS metadata (the camera screen warns, as before) and more of the surroundings than the page. The server checks its checksum and format like the page's; it is never sent to Meta, and deleting the page deletes it too.
+
 For any real shop data later: get consent from the shopkeeper, minimize names in the photo, and re-check Meta's data policies first.
 
 ## Known limitations

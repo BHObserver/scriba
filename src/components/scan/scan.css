@@ -1,0 +1,60 @@
+/* C2: the page finder. Ported from the D5 prototype's proto/scan.css (scanner, corners, flatten). */
+
+/* the live outline and the corner screen's outline */
+.sc-outline { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.sc-outline polygon { fill: oklch(0.89 0.12 92 / 0.1); stroke: var(--turmeric); stroke-width: 3; stroke-linejoin: round; }
+.sc-outline circle { fill: var(--turmeric); stroke: oklch(0.2 0.012 60); stroke-width: 2; }
+.sc-outline.lock polygon { stroke: oklch(0.8 0.16 150); fill: oklch(0.8 0.16 150 / 0.1); }
+.sc-outline.lock circle { fill: oklch(0.8 0.16 150); }
+.sc-outline.far polygon { stroke: var(--cream); stroke-dasharray: 8 8; fill: none; }
+.sc-outline polygon.bad { stroke: oklch(0.7 0.17 27); stroke-dasharray: 8 6; fill: none; }
+
+/* scanner: auto chip, status pill over the preview, the hold-still ring round the shutter */
+.sc-auto { margin-left: auto; min-height: 44px; padding: 0 16px; border-radius: 999px; background: oklch(1 0 0 / 0.1); color: var(--cream); font: 600 14px/1.2 var(--font-ui); display: flex; align-items: center; gap: 8px; }
+.sc-auto i { width: 8px; height: 8px; border-radius: 50%; background: oklch(1 0 0 / 0.4); }
+.sc-auto[aria-pressed="true"] i { background: var(--turmeric); box-shadow: 0 0 0 4px oklch(0.89 0.12 92 / 0.25); }
+.sc-msg { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 28px); min-height: 40px; padding: 8px 18px; border-radius: 999px; background: oklch(0.2 0.012 60 / 0.72); color: var(--cream); font: 600 16px/1.45 var(--font-ui); text-align: center; transition: background 240ms; pointer-events: none; }
+.sc-msg.far { background: var(--turmeric); color: var(--ink); }
+.sc-msg.lock { background: oklch(0.47 0.15 150 / 0.85); }
+.cap-shutter { position: relative; }
+.sc-hold { position: absolute; left: -10px; top: -10px; width: 92px; height: 92px; transform: rotate(-90deg); pointer-events: none; }
+.sc-hold circle { fill: none; stroke: var(--turmeric); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 264; stroke-dashoffset: 264; animation: scHold 1.6s linear forwards; }
+@keyframes scHold { to { stroke-dashoffset: 0; } }
+
+/* corners (dark) */
+.sc-dark { background: oklch(0.2 0.012 60); color: var(--cream); }
+.sc-top { min-height: 56px; flex: none; display: flex; align-items: center; padding: 0 20px; }
+.sc-title { font: 600 20px/1.3 var(--font-ui); }
+.sc-stage { flex: 1; min-height: 0; position: relative; overflow: hidden; margin: 0 12px; border-radius: 18px; background: oklch(0.14 0.01 60); touch-action: none; }
+.sc-photo { position: absolute; user-select: none; -webkit-user-drag: none; }
+.sc-stage .sc-outline { inset: auto; }
+.sc-handle { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; touch-action: none; cursor: grab; display: grid; place-items: center; }
+.sc-handle::before { content: ""; width: 40px; height: 40px; border-radius: 50%; background: oklch(1 0 0 / 0.22); box-shadow: inset 0 0 0 3px #fff, 0 2px 8px oklch(0 0 0 / 0.35); transition: transform 120ms var(--ease); }
+.sc-handle.on { cursor: grabbing; }
+.sc-handle.on::before { transform: scale(1.15); }
+.sc-handle:focus-visible { outline: 3px solid var(--turmeric); outline-offset: 2px; }
+.sc-loupe { position: absolute; top: 14px; left: 14px; width: 120px; height: 120px; border-radius: 50%; overflow: hidden; background-color: #222; background-repeat: no-repeat; box-shadow: 0 0 0 3px var(--cream), 0 14px 30px oklch(0 0 0 / 0.5); pointer-events: none; }
+.sc-loupe.right { left: auto; right: 14px; }
+.sc-loupe.low { top: auto; bottom: 14px; }
+.sc-loupe svg { position: absolute; inset: 0; overflow: visible; }
+.sc-loupe polygon { fill: none; stroke: var(--turmeric); stroke-width: 2; }
+.sc-loupe-x::before, .sc-loupe-x::after { content: ""; position: absolute; left: 50%; top: 50%; background: var(--cream); box-shadow: 0 0 2px oklch(0 0 0 / 0.6); }
+.sc-loupe-x::before { width: 22px; height: 2px; margin: -1px 0 0 -11px; }
+.sc-loupe-x::after { width: 2px; height: 22px; margin: -11px 0 0 -1px; }
+.sc-bottom { flex: none; display: flex; flex-direction: column; gap: 14px; padding: 16px 20px calc(16px + var(--safe-b)); }
+.sc-tip { margin: 0; font: 500 16px/1.45 var(--font-ui); text-align: center; text-wrap: pretty; }
+.sc-bottom .btn-line.light { box-shadow: inset 0 0 0 1.5px var(--cream); color: var(--cream); }
+.sc-busy { position: absolute; inset: 0; display: grid; place-items: center; background: oklch(0.2 0.012 60 / 0.6); font: 600 18px/1.4 var(--font-ui); color: var(--cream); }
+
+/* flatten */
+.sc-flat { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+.sc-flat-page { position: absolute; left: 0; top: 0; transform-origin: 0 0; box-shadow: 0 30px 50px -16px oklch(0.3 0.04 60 / 0.45); border-radius: 2px; }
+.sc-flat-page.done { transition: box-shadow 300ms; box-shadow: var(--depth, 0 10px 24px -6px oklch(0.4 0.03 60 / 0.2)); }
+.sc-flat-text { flex: none; display: grid; gap: 10px; padding-top: 6px; padding-bottom: calc(16px + var(--safe-b)); opacity: 0; transform: translateY(8px); transition: opacity 260ms var(--ease), transform 260ms var(--ease); }
+.sc-flat-text.in { opacity: 1; transform: none; }
+.sc-flat-more { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-flat-text { transition: none; transform: none; }
+  .sc-handle::before { transition: none; }
+}

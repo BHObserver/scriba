@@ -5,6 +5,7 @@
 @import "../components/history/history.css" layer(components);
 @import "../components/ask/ask.css" layer(components);
 @import "../components/details/details.css" layer(components);
+@import "../components/scan/scan.css" layer(components);
 
 /* Scriba: নতুন হালখাতা. Tokens from design/DIRECTION.md; meaning is fixed:
    red is the khata (identity, primary action, seal), never danger. Problems are turmeric. */
