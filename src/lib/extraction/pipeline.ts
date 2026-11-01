@@ -14,7 +14,7 @@
  * calls exactly.
  */
 import { sha256Hex, extractionCacheKey, type ProcessingMode } from "./cache-key";
-import { parseModelResponse, type NormalizedExtraction, type ParseFailureKind } from "./parse";
+import { pageValuesOf, parseModelResponse, type NormalizedExtraction, type ParseFailureKind } from "./parse";
 import { type PageLayout, getExtractionProfile, getPersonalProfile, layoutOfPromptVersion, withLayout } from "./prompt";
 import type { PreparedImage } from "@/lib/images/rotate";
 import type { MetaErrorCategory, ModelCaller } from "@/lib/meta/transport";
@@ -267,7 +267,7 @@ export async function analyzeDocument(
   }
 
   const cost = estimateCostUsd(settings.modelId, result.usage);
-  const parsed = parseModelResponse(result.summary);
+  const parsed = parseModelResponse(result.summary, { promptVersion, schemaVersion });
   if (!parsed.ok) {
     await repo.failRun(runId, {
       status: parsed.kind === "incomplete" ? "incomplete" : "invalid_output",
@@ -283,11 +283,7 @@ export async function analyzeDocument(
   }
 
   const findings = validateLedger({
-    page: {
-      dateText: parsed.extraction.page.dateText,
-      ledgerType: parsed.extraction.page.ledgerType,
-      accountName: parsed.extraction.page.accountName,
-    },
+    page: pageValuesOf(parsed.extraction),
     entries: parsed.extraction.entries.map((e) => ({
       id: e.candidateId,
       line: e.line,

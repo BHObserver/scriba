@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { UUID_RE, apiUser, jsonError } from "@/lib/server/auth";
-import { entryValuesSchema, remainingReviewFields, reviewableFieldSchema } from "@/lib/review/values";
+import { entryValuesSchema, keepBlock, remainingReviewFields, reviewableFieldSchema } from "@/lib/review/values";
 
 const bodySchema = z.object({
   expectedVersion: z.number().int().min(1),
@@ -41,7 +41,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/reviews/[i
   let reviewFields = current.review_fields ?? [];
   const patch: Record<string, unknown> = {};
   if (values) {
-    patch.entry_values = values;
+    patch.entry_values = keepBlock(values, before);
     reviewFields = remainingReviewFields(reviewFields, before, values);
   }
   if (markChecked) reviewFields = reviewFields.filter((f: string) => !markChecked.includes(f as never));

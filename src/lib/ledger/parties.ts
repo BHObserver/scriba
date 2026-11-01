@@ -7,7 +7,8 @@
  * Anything subtler is a merge the shopkeeper makes by hand.
  */
 import { toAsciiDigits } from "@/lib/numerals";
-import type { EntryValues, PageValues, TransactionType } from "./types";
+import { blockOf, blockPartyKind } from "./blocks";
+import type { BlockValues, EntryValues, PageValues, TransactionType } from "./types";
 
 export const PARTY_KINDS = ["customer", "supplier"] as const;
 export type PartyKind = (typeof PARTY_KINDS)[number];
@@ -72,6 +73,8 @@ export function partyDisplayName(name: string): string {
 /**
  * Which party a confirmed line belongs to, if any.
  *
+ * On a page read in blocks, the line's block decides (see `blockPartyLink`). Otherwise:
+ *
  * Sales and repayments belong to a customer; purchases and supplier payments to a
  * supplier. Opening and closing balances belong to the page's account: a supplier
  * when the page has supplier lines and no customer lines, else a customer.
@@ -82,6 +85,8 @@ export function partyDisplayName(name: string): string {
  * because those pages write the name once at the top.
  */
 export function partyLinkFor(values: EntryValues, page: PageValues, pageTypes: readonly TransactionType[]): PartyLink | null {
+  const block = blockOf(values, page);
+  if (block) return blockPartyLink(values, block);
   const hasSupplierLines = pageTypes.some((t) => SUPPLIER_TYPES.has(t));
   const hasCustomerLines = pageTypes.some((t) => CUSTOMER_TYPES.has(t));
 
@@ -93,6 +98,30 @@ export function partyLinkFor(values: EntryValues, page: PageValues, pageTypes: r
 
   const accountPage = page.ledgerType === "customer_credit" || (kind === "supplier" && !hasCustomerLines);
   const written = values.customer?.trim() || (accountPage ? page.accountName?.trim() : null) || null;
+  const key = normalizePartyName(written);
+  if (!written || !key) return null;
+  return { kind, key, name: partyDisplayName(written) };
+}
+
+/**
+ * A line's party on a page read in blocks. An account or a visit block deals with one party,
+ * its company or customer: "Praan (Selim)" links to Praan, and Selim stays a note on the block.
+ * Its opening and closing balances belong to that party too. In day sales, expenses and other
+ * blocks each line names its own party, and balance lines have none.
+ *
+ * A line whose type points the other way (a repayment in a company visit) gets no party: its
+ * direction is in doubt, and the block's balance check reports it.
+ */
+export function blockPartyLink(values: EntryValues, block: BlockValues): PartyLink | null {
+  const blockKind = blockPartyKind(block.kind);
+  let kind: PartyKind | null;
+  if (CUSTOMER_TYPES.has(values.type)) kind = "customer";
+  else if (SUPPLIER_TYPES.has(values.type)) kind = "supplier";
+  else if (BALANCE_TYPES.has(values.type)) kind = blockKind;
+  else kind = null;
+  if (!kind || (blockKind && kind !== blockKind)) return null;
+
+  const written = (blockKind ? block.party?.trim() || values.customer?.trim() : values.customer?.trim()) || null;
   const key = normalizePartyName(written);
   if (!written || !key) return null;
   return { kind, key, name: partyDisplayName(written) };

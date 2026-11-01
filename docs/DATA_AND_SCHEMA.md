@@ -47,9 +47,20 @@ Entry fields: `id`, `line`, `text` (as written), `type` (`credit_sale | cash_sal
 
 Derived in TypeScript (stored in `extraction_runs.result`): normalized poisha and thousandths values, ISO date (only for an unambiguous DD/MM/YYYY), page opening and closing balances (only from explicit balance lines), written totals and normalization warnings.
 
+## Extraction output `scriba-extraction-3` (prompt 6, U1, 2 Nov)
+
+A page is a list of **blocks**: writing that belongs together wherever it sits (a company visit, the day's sales, one customer's account, expenses, other).
+
+- `page`: `date_text`, `ledger_type`, `legibility` (no `account_name`: a block carries its party).
+- `blocks[]`: `id` ("b1", …), `kind` (`day_sales | customer_account | supplier_visit | supplier_account | expenses | other`), `title`, `party` (company or customer), `person` (rep or contact), `date_text`, `box`.
+- `entries[]`: the schema 2 fields plus `block`. A goods line may have no amount.
+- `doubts[]`: `entry`, `field` (any reviewable field but `text`), `options` (2–3 readings), `note`. The parser keeps only options that are valid values for the field, puts the entry's own reading first, keeps at most three and adds the field to the entry's `review`.
+
+Where blocks are stored (no migration): the reading (with boxes and doubts) in `extraction_runs.result`; the editable blocks in `page_reviews.page_values.blocks`; each line's block in `entry_reviews.entry_values.block`. Edits to both are audited by the existing triggers. A confirmed record gets its party from its block (`party_id`, so the kind too). The rep is reached through `entry_review_id` → `entry_values.block` → `page_values.blocks`.
+
 ## Versions recorded with every result
 
-`model_id`, `prompt_version` (`scriba-prompt-4`; `scriba-prompt-3` via `SCRIBA_PROMPT_VERSION`), `schema_version` (`scriba-extraction-2`; `-1` with prompt 3), `processing_mode` (`baseline_original`, or `rotate_90` / `rotate_180` / `rotate_270` when the user turned the photo upright before analysis), `validator_version` (`scriba-validator-2`), `metrics_version` (`scriba-metrics-1`), ground-truth version.
+`model_id`, `prompt_version` (`scriba-prompt-4`; `scriba-prompt-3` or `scriba-prompt-6` via `SCRIBA_PROMPT_VERSION`), `schema_version` (`scriba-extraction-2`; `-1` with prompt 3, `-3` with prompt 6), `processing_mode` (`baseline_original`, or `rotate_90` / `rotate_180` / `rotate_270` when the user turned the photo upright before analysis), `validator_version` (`scriba-validator-3`: balance, total and running-balance rules per block), `metrics_version` (`scriba-metrics-1`), ground-truth version.
 
 ## Data model v2: the shop (`20261031120000_scriba_shop_v2.sql`)
 

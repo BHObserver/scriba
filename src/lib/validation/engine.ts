@@ -6,7 +6,10 @@
  * check shows arithmetic consistency only; it does not prove the handwriting was
  * read correctly.
  */
+import { blockPartyKind, groupByBlock, isUnpricedGoods, pageBlocks } from "@/lib/ledger/blocks";
+import type { PartyKind } from "@/lib/ledger/parties";
 import {
+  type BlockValues,
   type EntryValues,
   type PageValues,
   type ReviewableField,
@@ -23,7 +26,8 @@ import {
   parseRate,
 } from "@/lib/numerals";
 
-export const VALIDATOR_VERSION = "scriba-validator-2";
+/** Version 3: on a page read in blocks, the balance, total and running-balance rules run per block. */
+export const VALIDATOR_VERSION = "scriba-validator-3";
 
 export const RULE_IDS = [
   "qty_x_rate",
@@ -71,7 +75,21 @@ export type Finding = {
   expected: number | null;
   observed: number | null;
   message: string;
+  /** The block the finding is about, on a page read in blocks. */
+  block?: string;
+  /** Why a check could not run, for the questions Scriba asks (U2). */
+  reason?: UnverifiableReason;
 };
+
+export type UnverifiableReason =
+  | "unknown_convention"
+  | "no_opening"
+  | "several_openings"
+  | "several_closings"
+  | "unreadable_amount"
+  | "undefined_effect"
+  | "unpriced_goods"
+  | "no_closing";
 
 export type ValidationEntry = {
   id: string;
@@ -115,7 +133,7 @@ function valueOf(p: ParsedNumber | null): number | null {
 
 type Derived = ValidationEntry & { numbers: EntryNumbers };
 
-function finding(f: Omit<Finding, "ruleVersion" | "key"> & { keySuffix?: string }): Finding {
+function finding(f: Omit<Finding, "ruleVersion" | "key" | "block"> & { keySuffix?: string }): Finding {
   const { keySuffix, ...rest } = f;
   const key = `${f.ruleId}:${f.entryIds.join(",")}${keySuffix ? `:${keySuffix}` : ""}`;
   return { ...rest, key, ruleVersion: RULE_VERSION };
@@ -128,11 +146,40 @@ function itemizedFamily(type: TransactionType): "sale" | "money_out" | null {
   return null;
 }
 
-/** Sign of a transaction in a conventional customer-credit account, or null if unknown. */
-function creditAccountSign(type: TransactionType): 1 | -1 | null {
-  if (type === "credit_sale") return 1;
-  if (type === "repayment") return -1;
+/**
+ * Sign of a transaction in an account, or null if its effect is not defined. A customer's due
+ * grows with credit sales and shrinks with repayments; what the shop owes a supplier grows
+ * with goods taken on credit and shrinks with payments.
+ */
+export function accountSign(convention: PartyKind | null, type: TransactionType): 1 | -1 | null {
+  if (convention === "customer") return type === "credit_sale" ? 1 : type === "repayment" ? -1 : null;
+  if (convention === "supplier") return type === "credit_purchase" ? 1 : type === "supplier_payment" ? -1 : null;
   return null;
+}
+
+const ACCOUNT_WORDS: Record<PartyKind, { added: string; paid: string }> = {
+  customer: { added: "sales", paid: "repayments" },
+  supplier: { added: "goods taken", paid: "payments" },
+};
+
+/**
+ * The lines the balance rules read together: the whole page, or one block. The convention is
+ * whose account it is (null: not an account, or unknown); `isAccount` says the balance
+ * equation runs even when no balance is written.
+ */
+type Group = { block: BlockValues | null; convention: PartyKind | null; isAccount: boolean; entries: Derived[] };
+
+function groupsOf(page: PageValues, active: Derived[]): Group[] {
+  const inBlocks = pageBlocks(page).length > 0;
+  return groupByBlock(page, active).map(({ block, entries }) => {
+    if (block) {
+      const convention = blockPartyKind(block.kind);
+      return { block, convention, isAccount: convention != null, entries };
+    }
+    if (inBlocks) return { block: null, convention: null, isAccount: false, entries };
+    const customer = page.ledgerType === "customer_credit";
+    return { block: null, convention: customer ? "customer" : null, isAccount: customer, entries };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -397,13 +444,17 @@ function ruleWrittenTotals(active: Derived[]): Finding[] {
 // Rule B: opening balance + signed transactions = closing balance
 // ---------------------------------------------------------------------------
 
-function ruleBalanceEquation(page: PageValues, active: Derived[]): Finding | null {
+function ruleBalanceEquation(g: Group): Finding | null {
+  const active = g.entries;
+  if (active.length === 0) return null;
   const openings = active.filter((e) => e.values.type === "opening_balance");
   const closings = active.filter((e) => e.values.type === "closing_balance");
-  if (page.ledgerType !== "customer_credit" && openings.length === 0 && closings.length === 0) return null;
+  if (!g.isAccount && openings.length === 0 && closings.length === 0) return null;
 
-  const base = { ruleId: "balance_equation" as const };
-  const unverifiable = (entryIds: string[], message: string, expected: number | null = null): Finding =>
+  // Block findings carry the block id in their key; page findings keep their old keys, so
+  // acknowledgements given before blocks existed still match.
+  const base = { ruleId: "balance_equation" as const, ...(g.block ? { keySuffix: g.block.id } : {}) };
+  const unverifiable = (entryIds: string[], message: string, reason: UnverifiableReason, expected: number | null = null): Finding =>
     finding({
       ...base,
       entryIds,
@@ -412,57 +463,81 @@ function ruleBalanceEquation(page: PageValues, active: Derived[]): Finding | nul
       expected,
       observed: closings.length === 1 ? valueOf(closings[0]!.numbers.amount) : null,
       message,
+      reason,
     });
 
   const markerIds = [...openings, ...closings].map((e) => e.id);
-  if (page.ledgerType !== "customer_credit") {
+  const convention = g.convention;
+  if (convention == null) {
     return unverifiable(
       markerIds,
-      "The account convention is not known, so the balance cannot be checked. Set the ledger type to customer credit if this page tracks one customer's dues.",
+      g.block
+        ? "This part of the page is not an account, so its balance cannot be checked. Say whose account it is if it tracks a customer's or a supplier's dues."
+        : "The account convention is not known, so the balance cannot be checked. Set the ledger type to customer credit if this page tracks one customer's dues.",
+      "unknown_convention",
     );
   }
   if (openings.length !== 1) {
-    return unverifiable(
-      markerIds,
-      openings.length === 0 ? "No opening balance is written." : "More than one opening balance is written.",
-    );
+    return openings.length === 0
+      ? unverifiable(markerIds, "No opening balance is written.", "no_opening")
+      : unverifiable(markerIds, "More than one opening balance is written.", "several_openings");
   }
-  if (closings.length > 1) return unverifiable(markerIds, "More than one closing balance is written.");
+  if (closings.length > 1) return unverifiable(markerIds, "More than one closing balance is written.", "several_closings");
 
   const opening = openings[0]!;
   const closing = closings[0] ?? null;
   const openingValue = valueOf(opening.numbers.amount);
-  if (openingValue == null) return unverifiable(markerIds, "The opening balance has no readable amount.");
+  if (openingValue == null) return unverifiable(markerIds, "The opening balance has no readable amount.", "unreadable_amount");
 
   const endLine = closing ? closing.line : Number.POSITIVE_INFINITY;
   const between = active.filter(
     (e) => e.line > opening.line && e.line < endLine && e.values.type !== "subtotal",
   );
   const ids = [opening.id, ...between.map((e) => e.id), ...(closing ? [closing.id] : [])];
+  const words = ACCOUNT_WORDS[convention];
+  const whose = convention === "customer" ? "this customer's balance" : "what the shop owes this supplier";
 
   let running = openingValue;
+  const unpriced: Derived[] = [];
   for (const e of between) {
-    const sign = creditAccountSign(e.values.type);
+    const sign = accountSign(convention, e.values.type);
     if (sign == null) {
       return unverifiable(
         ids,
-        `Line ${e.line} is a ${e.values.type.replaceAll("_", " ")}, and its effect on this customer's balance is not defined.`,
+        e.values.type === "unknown"
+          ? `Line ${e.line} has no transaction type yet, so its effect on ${whose} is not known.`
+          : `Line ${e.line} is a ${e.values.type.replaceAll("_", " ")}, and its effect on ${whose} is not defined.`,
+        "undefined_effect",
       );
     }
+    // Goods with no price are a gap to fill, never a zero.
+    if (sign === 1 && isUnpricedGoods(e.values)) {
+      unpriced.push(e);
+      continue;
+    }
     const amount = valueOf(e.numbers.amount);
-    if (amount == null) return unverifiable(ids, `Line ${e.line} has no readable amount.`);
+    if (amount == null) return unverifiable(ids, `Line ${e.line} has no readable amount.`, "unreadable_amount");
     running += sign * amount;
   }
 
+  if (unpriced.length > 0) {
+    const lines = unpriced.map((e) => e.line).join(", ");
+    return unverifiable(
+      ids,
+      `Opening ${formatTaka(openingValue)} plus ${words.added} minus ${words.paid} gives ${formatTaka(running)} so far. The goods on line${unpriced.length === 1 ? "" : "s"} ${lines} ${unpriced.length === 1 ? "has" : "have"} no price yet, so the balance is ${formatTaka(running)} plus their price.`,
+      "unpriced_goods",
+    );
+  }
   if (!closing) {
     return unverifiable(
       ids,
       `No closing balance is written. Opening balance and transactions give ${formatTaka(running)}.`,
+      "no_closing",
       running,
     );
   }
   const closingValue = valueOf(closing.numbers.amount);
-  if (closingValue == null) return unverifiable(ids, "The closing balance has no readable amount.", running);
+  if (closingValue == null) return unverifiable(ids, "The closing balance has no readable amount.", "unreadable_amount", running);
 
   const ok = running === closingValue;
   return finding({
@@ -473,8 +548,8 @@ function ruleBalanceEquation(page: PageValues, active: Derived[]): Finding | nul
     expected: running,
     observed: closingValue,
     message: ok
-      ? `Opening ${formatTaka(openingValue)} plus sales minus repayments gives the written closing balance ${formatTaka(closingValue)}.`
-      : `Opening ${formatTaka(openingValue)} plus sales minus repayments gives ${formatTaka(running)}, but the closing balance is written as ${formatTaka(closingValue)}.`,
+      ? `Opening ${formatTaka(openingValue)} plus ${words.added} minus ${words.paid} gives the written closing balance ${formatTaka(closingValue)}.`
+      : `Opening ${formatTaka(openingValue)} plus ${words.added} minus ${words.paid} gives ${formatTaka(running)}, but the closing balance is written as ${formatTaka(closingValue)}.`,
   });
 }
 
@@ -482,7 +557,8 @@ function ruleBalanceEquation(page: PageValues, active: Derived[]): Finding | nul
 // Rule D: running balances written on transaction lines
 // ---------------------------------------------------------------------------
 
-function ruleRunningBalance(page: PageValues, active: Derived[]): Finding[] {
+function ruleRunningBalance(g: Group): Finding[] {
+  const active = g.entries;
   const out: Finding[] = [];
   let current: number | null = null;
   let previousId: string | null = null;
@@ -498,8 +574,8 @@ function ruleRunningBalance(page: PageValues, active: Derived[]): Finding[] {
       continue;
     }
 
-    if (page.ledgerType === "customer_credit") {
-      const sign = creditAccountSign(type);
+    if (g.convention != null) {
+      const sign = accountSign(g.convention, type);
       const amount = valueOf(e.numbers.amount);
       current = current != null && sign != null && amount != null ? current + sign * amount : null;
     } else {
@@ -530,7 +606,7 @@ function ruleRunningBalance(page: PageValues, active: Derived[]): Finding[] {
             expected: null,
             observed: recorded,
             message:
-              page.ledgerType === "customer_credit"
+              g.convention != null
                 ? "The previous balance or this line's effect is unknown, so the running balance cannot be checked."
                 : "The account convention is not known, so the running balance cannot be checked.",
           }),
@@ -619,10 +695,13 @@ export function validateLedger(input: ValidationInput): Finding[] {
     const a = ruleQuantityTimesRate(e);
     if (a) findings.push(a);
   }
-  findings.push(...ruleWrittenTotals(active));
-  const b = ruleBalanceEquation(input.page, active);
-  if (b) findings.push(b);
-  findings.push(...ruleRunningBalance(input.page, active));
+  for (const g of groupsOf(input.page, active)) {
+    const tag = (f: Finding): Finding => (g.block ? { ...f, block: g.block.id } : f);
+    findings.push(...ruleWrittenTotals(g.entries).map(tag));
+    const b = ruleBalanceEquation(g);
+    if (b) findings.push(tag(b));
+    findings.push(...ruleRunningBalance(g).map(tag));
+  }
   return findings;
 }
 

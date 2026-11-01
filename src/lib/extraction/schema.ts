@@ -11,11 +11,18 @@
  * all normalization and arithmetic happen in TypeScript.
  */
 import { z } from "zod";
-import { LEDGER_TYPES, REVIEWABLE_FIELDS, TRANSACTION_TYPES, type TransactionType } from "@/lib/ledger/types";
+import { BLOCK_KINDS, LEDGER_TYPES, REVIEWABLE_FIELDS, type ReviewableField, TRANSACTION_TYPES, type TransactionType } from "@/lib/ledger/types";
 
 /** The current schema. Version 2 adds the money-out transaction types. */
 export const SCHEMA_VERSION = "scriba-extraction-2";
 export const SCHEMA_NAME = "scriba_ledger_extraction_v2";
+
+/**
+ * Version 3 (prompt 6): the page is a list of blocks, every entry names its block, goods may
+ * have no amount, and the model lists its doubts with two or three candidate readings.
+ */
+export const SCHEMA_V3_VERSION = "scriba-extraction-3";
+export const SCHEMA_V3_NAME = "scriba_ledger_extraction_v3";
 
 /** Version 1, kept so prompt 3 can still be run exactly as it was measured. */
 export const SCHEMA_V1_VERSION = "scriba-extraction-1";
@@ -113,6 +120,76 @@ function extractionJsonSchema(transactionTypes: readonly TransactionType[]) {
 export const EXTRACTION_JSON_SCHEMA = extractionJsonSchema(TRANSACTION_TYPES);
 export const EXTRACTION_JSON_SCHEMA_V1 = extractionJsonSchema(SCHEMA_V1_TRANSACTION_TYPES);
 
+export const PAGE_FIELDS_V3 = ["date_text", "ledger_type", "legibility"] as const;
+export const BLOCK_FIELDS = ["id", "kind", "title", "party", "person", "date_text", "box"] as const;
+export const ENTRY_FIELDS_V3 = [...ENTRY_FIELDS, "block"] as const;
+export const DOUBT_FIELDS = ["entry", "field", "options", "note"] as const;
+/** A doubt is about one value; the whole line's text is the source, not a reading to choose. */
+export const DOUBT_FIELD_NAMES = ["type", "customer", "item", "qty", "unit", "rate", "amount", "balance"] as const satisfies readonly ReviewableField[];
+
+const BOX_JSON_SCHEMA = EXTRACTION_JSON_SCHEMA.properties.entries.items.properties.box;
+const V2_ENTRY = EXTRACTION_JSON_SCHEMA.properties.entries.items;
+
+/** Schema 3. Array lengths are not limited here (strict mode may not support it); zod and the parser bound them. */
+export const EXTRACTION_JSON_SCHEMA_V3 = {
+  type: "object",
+  additionalProperties: false,
+  required: ["page", "blocks", "entries", "doubts", "warnings"],
+  properties: {
+    page: {
+      type: "object",
+      additionalProperties: false,
+      required: [...PAGE_FIELDS_V3],
+      properties: {
+        date_text: nullableString,
+        ledger_type: { type: "string", enum: [...LEDGER_TYPES] },
+        legibility: { type: "string", enum: [...LEGIBILITY] },
+      },
+    },
+    blocks: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [...BLOCK_FIELDS],
+        properties: {
+          id: { type: "string" },
+          kind: { type: "string", enum: [...BLOCK_KINDS] },
+          title: nullableString,
+          party: nullableString,
+          person: nullableString,
+          date_text: nullableString,
+          box: BOX_JSON_SCHEMA,
+        },
+      },
+    },
+    entries: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [...ENTRY_FIELDS_V3],
+        properties: { ...V2_ENTRY.properties, block: { type: "string" } },
+      },
+    },
+    doubts: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [...DOUBT_FIELDS],
+        properties: {
+          entry: { type: "string" },
+          field: { type: "string", enum: [...DOUBT_FIELD_NAMES] },
+          options: { type: "array", items: { type: "string" } },
+          note: nullableString,
+        },
+      },
+    },
+    warnings: { type: "array", items: { type: "string" } },
+  },
+} as const;
+
 // Local validation. Bounds keep a malformed or runaway response from being stored as data.
 const text = (max: number) => z.string().max(max);
 const optionalText = (max: number) => z.string().max(max).nullable();
@@ -155,3 +232,37 @@ export const modelOutputSchema = z.object({
 
 export type ModelOutput = z.infer<typeof modelOutputSchema>;
 export type ModelEntry = z.infer<typeof modelEntrySchema>;
+
+export const modelBlockSchema = z.object({
+  id: text(40),
+  kind: z.enum(BLOCK_KINDS),
+  title: optionalText(200),
+  party: optionalText(200),
+  person: optionalText(200),
+  date_text: optionalText(100),
+  box: modelBoxSchema.nullable(),
+});
+
+// Options are bounded loosely so one long doubt does not throw the whole reading away; the
+// parser keeps at most three valid ones.
+export const modelDoubtSchema = z.object({
+  entry: text(40),
+  field: z.enum(DOUBT_FIELD_NAMES),
+  options: z.array(text(200)).max(8),
+  note: optionalText(300),
+});
+
+export const modelOutputSchemaV3 = z.object({
+  page: z.object({
+    date_text: optionalText(100),
+    ledger_type: z.enum(LEDGER_TYPES),
+    legibility: z.enum(LEGIBILITY),
+  }),
+  blocks: z.array(modelBlockSchema).max(30),
+  entries: z.array(modelEntrySchema.extend({ block: text(40) })).max(200),
+  doubts: z.array(modelDoubtSchema).max(60),
+  warnings: z.array(text(400)).max(30),
+});
+
+export type ModelOutputV3 = z.infer<typeof modelOutputSchemaV3>;
+export type ModelBlock = z.infer<typeof modelBlockSchema>;

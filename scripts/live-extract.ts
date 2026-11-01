@@ -13,7 +13,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { getMetaConfig } from "@/lib/config";
 import { sha256Hex } from "@/lib/extraction/cache-key";
-import { parseModelResponse } from "@/lib/extraction/parse";
+import { pageValuesOf, parseModelResponse } from "@/lib/extraction/parse";
 import { getExtractionProfile } from "@/lib/extraction/prompt";
 import { inspectImage } from "@/lib/images/inspect";
 import { processingModeForTurns } from "@/lib/images/orientation";
@@ -89,19 +89,23 @@ if (!parsed.ok) {
 }
 const x = parsed.extraction;
 console.log(`\nPage    ledger_type=${x.page.ledgerType}  legibility=${x.page.legibility}  date=${x.page.dateText ?? "—"}`);
+for (const b of x.blocks ?? []) {
+  console.log(`Block   ${b.id} ${b.kind}  title=${b.title ?? "—"}  party=${b.party ?? "—"}  person=${b.person ?? "—"}  date=${b.dateText ?? "—"}${b.box ? "  [box]" : ""}`);
+}
 for (const e of x.entries) {
   const v = e.values;
   console.log(
-    `  ${String(e.line).padStart(2)} ${v.type.padEnd(16)} ${v.sourceText}` +
-      `\n     qty=${v.quantityText ?? "—"} unit=${v.unit ?? "—"} rate=${v.rateText ?? "—"} amount=${v.amountText ?? "—"} -> ${formatTaka(e.numbers.amountPoisha)}` +
+    `  ${String(e.line).padStart(2)} ${v.block ? `${v.block} ` : ""}${v.type.padEnd(16)} ${v.sourceText}` +
+      `\n     item=${v.item ?? "—"} customer=${v.customer ?? "—"} qty=${v.quantityText ?? "—"} unit=${v.unit ?? "—"} rate=${v.rateText ?? "—"} amount=${v.amountText ?? "—"} -> ${formatTaka(e.numbers.amountPoisha)}` +
       `${e.reviewFields.length ? `  unsure: ${e.reviewFields.join(",")}` : ""}${e.bbox ? "  [box]" : ""}`,
   );
 }
+for (const d of x.doubts ?? []) console.log(`Doubt   ${d.entryId}.${d.field}: ${d.options.join(" / ")}${d.note ? `  (${d.note})` : ""}`);
 if (x.warnings.length) console.log(`Warnings: ${x.warnings.join(" | ")}`);
 
 const findings = validateLedger({
-  page: { ledgerType: x.page.ledgerType, dateText: x.page.dateText, accountName: x.page.accountName },
+  page: pageValuesOf(x),
   entries: x.entries.map((e) => ({ id: e.candidateId, line: e.line, values: e.values, reviewFields: e.reviewFields, uncertaintyReason: e.uncertaintyReason, excluded: false })),
 });
 console.log("\nChecks (deterministic, local):");
-for (const f of findings) console.log(`  [${f.status.toUpperCase()}] ${RULE_LABELS[f.ruleId]}: ${f.message}`);
+for (const f of findings) console.log(`  [${f.status.toUpperCase()}] ${RULE_LABELS[f.ruleId]}${f.block ? ` (${f.block})` : ""}: ${f.message}`);

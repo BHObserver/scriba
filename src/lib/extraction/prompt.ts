@@ -10,9 +10,12 @@ import type { PersonalHints } from "@/lib/learning/profile";
 import {
   EXTRACTION_JSON_SCHEMA,
   EXTRACTION_JSON_SCHEMA_V1,
+  EXTRACTION_JSON_SCHEMA_V3,
   SCHEMA_NAME,
   SCHEMA_V1_NAME,
   SCHEMA_V1_VERSION,
+  SCHEMA_V3_NAME,
+  SCHEMA_V3_VERSION,
   SCHEMA_VERSION,
 } from "./schema";
 
@@ -93,6 +96,78 @@ Page:
 - legibility: clear, partly_unclear or mostly_unclear.
 
 warnings: short notes on anything that affects reading (cut-off edge, overwriting, smudge, glare). Empty if none.`;
+
+/** Prompt 4's digit rules, cut from it so prompt 6 carries them word for word. */
+export const DIGIT_RULES = PROMPT_4.slice(PROMPT_4.indexOf("Reading digits:"), PROMPT_4.indexOf("\n\nEntries:"));
+
+/**
+ * Prompt 6 (2 Nov, U1): schema 3. The model groups scattered writing into blocks by meaning,
+ * copies each word in the script it was written in, records goods without a price and lists
+ * its doubts. Code still computes every number.
+ */
+export const BLOCKS_PROMPT_VERSION = "scriba-prompt-6";
+
+const PROMPT_6 = `You transcribe photographs of handwritten shop ledgers (khata) from Bangladesh into JSON that matches the given schema. The image may be a whole page or a small cropped snippet. The writing may be scattered: groups of lines in different places on the page, side by side or at an angle, joined by arrows or brackets, with notes in the margin.
+
+Transcribe only what is visibly written. Never calculate, infer, complete or correct anything. If a written total looks wrong, copy it exactly as written. Never write a price, amount or total that is not on the page.
+
+${DIGIT_RULES}
+
+Blocks:
+- First find the blocks. A block is writing that belongs together by meaning, wherever it sits: one company's visit, the day's sales, one customer's account, the day's costs, a note. Group by meaning, not by position: two columns side by side are usually two blocks, and a block may continue below or beside another one.
+- A heading or a name written once applies to the lines beside or below it, up to the next heading or the next gap. An arrow or a bracket joins the writing at its ends.
+- Give ids "b1", "b2", ... in reading order: top to bottom, then left to right.
+- kind:
+  - supplier_visit: a company's sales rep came to the shop (for example Pran/প্রাণ, Fresh/ফ্রেশ, Akij/আকিজ, ACI/এসিআই, Aarong/আড়ং, Square/স্কয়ার, Teer/তীর). It may show what the shop owed the company before the visit, money given to the rep (দিলাম: the shop paid), and goods delivered. Goods by the carton, box or sack (কার্টুন, Box, বস্তা) with no price are a delivery to the shop, so such a block is a supplier_visit even when the name is hard to read.
+  - supplier_account: what the shop owes one supplier or wholesaler (মহাজন) over several days.
+  - customer_account: what one customer owes: goods given on credit and the customer's payments.
+  - day_sales: the day's sales, for cash or on credit, possibly to several customers.
+  - expenses: shop costs that are not stock.
+  - other: anything else, or when unsure.
+- title: the block's heading exactly as written, or null.
+- party: the company, supplier or customer the block is about, as written, without the person. person: a rep or contact named with it, as written, or null. For "Praan (Selim)", party is "Praan" and person is "Selim".
+- date_text: a date written for this block only, exactly as written, or null.
+- box: the whole block on a 0-1000 grid (x_min, y_min, x_max, y_max; origin top-left), or null if unsure.
+
+Entries:
+- One entry per line that carries an amount, a balance, or goods (an item with or without a quantity). List them block by block, top to bottom within each block. Give ids "e1", "e2", ... and line numbers 1, 2, ... in that order.
+- block: the id of the block the line belongs to.
+- Not entries: dates, headings and names written on a line of their own (they belong to the block), and titles or labels such as "Sample-03" or নগদ বিক্রির হিসাব. A margin note without a number is not an entry: put it in the note of the line it explains.
+- text: the whole line exactly as written, in the script it was written in: Bangla words in Bangla script, English words in Latin letters, Banglish as it is spelled (for example "Before - 2800", "Juice 1 Box"). Do not translate, transliterate or correct spelling. This is for words only: every digit follows the digit rules above, so on a Bangla page digits are written as Bangla digits.
+- qty, rate, amount, balance: copy each number as written, with its commas and decimal point and digits read as above. Use null when it is not written.
+- amount: the line's money figure. On opening_balance and closing_balance lines the balance figure goes in amount.
+- Goods without a price: a line such as "Juice 1 Box" has item "Juice", qty "1", unit "Box" and amount null. Never price goods, and never move a quantity into amount.
+- unit: as written (e.g. কেজি, লিটার, টা, প্যাকেট, Box, pcs), or null.
+- item: as written, or null. customer: a name written on the line itself (in day_sales, the customer of that line), as written, else null. The block's party is not repeated on its lines. Never invent a name.
+- Role words, in any script: Before, Prev, আগের, পূর্বের mean a balance from before; Given, Paid, দিলাম, দেওয়া, জমা mean money paid; Total, মোট, যোগ mean a written sum.
+- type, by what happened on the line:
+  - credit_sale: goods given to a customer on credit (বাকি, বাকিতে).
+  - cash_sale: goods sold and paid for at once (নগদ, নগদ বিক্রি).
+  - repayment: money a customer paid towards what they owe (জমা, পরিশোধ, দিলেন).
+  - purchase: stock bought for the shop and paid in cash (মাল কেনা, মাল ক্রয়, নগদে কেনা).
+  - credit_purchase: stock taken from a supplier on credit (মহাজনের বাকি, বাকিতে মাল আনা). Goods a company delivered in a supplier_visit are credit_purchase, unless the line says they were paid for.
+  - supplier_payment: money the shop paid to a supplier (মহাজনকে দেওয়া, মহাজন জমা). Given or দিলাম in a supplier_visit is supplier_payment.
+  - expense: shop costs that are not stock (খরচ, ভাড়া, দোকান ভাড়া, বেতন, বিদ্যুৎ বিল, গাড়ি ভাড়া, চা-নাস্তা).
+  - opening_balance: a balance brought forward (আগের বাকি, পূর্বের জের, Before). In a supplier_visit, what the shop owed the company before the visit.
+  - closing_balance: the balance due after all transactions and payments, usually the block's last line (বর্তমান বাকি, সর্বমোট বাকি).
+  - subtotal: a written sum of the lines above it in the same block (মোট, যোগ, Total, আজকের বাকি, মোট বাকিতে, মোট নগদ বিক্রি, মোট খরচ).
+  - adjustment; unknown when unsure.
+- The block decides who is on the other side. In customer_account and day_sales blocks, জমা is repayment and বাকি is credit_sale. In supplier_visit and supplier_account blocks, money the shop gave is supplier_payment and goods taken on বাকি are credit_purchase. When the direction is unclear, use unknown. Do not guess credit_sale.
+- balance: only a running balance written on a transaction line next to its amount, otherwise null.
+- crossed_out: true if the line or its value is struck through.
+- review: fields you could not read with confidence. note: at most 12 words on why, else null.
+- box: tight bounding box of the line on the same grid, or null if unsure.
+
+Doubts:
+- When a value could be read in two or three ways, give your best reading in the entry, list that field in review, and add a doubt: entry (the entry id), field (never text), options (two or three readings exactly as they could be written, your best reading first) and note (at most 12 words, or null).
+- A doubt is about reading the ink, never about arithmetic. When only one reading is plausible, add no doubt.
+
+Page:
+- date_text: the page's date exactly as written, or null.
+- ledger_type: customer_credit if the whole page tracks what one customer owes; cash_sales if it only lists cash sales; mixed if it has blocks of different kinds; unknown if unclear.
+- legibility: clear, partly_unclear or mostly_unclear.
+
+warnings: short notes on anything that affects reading (cut-off edge, overwriting, smudge, glare, writing too small to read). Empty if none.`;
 
 export const EXTRACTION_USER_TEXT = "Transcribe this ledger image.";
 
@@ -186,6 +261,13 @@ const PROFILES: Record<string, ExtractionProfile> = {
     schemaName: SCHEMA_NAME,
     jsonSchema: EXTRACTION_JSON_SCHEMA,
   },
+  "scriba-prompt-6": {
+    promptVersion: BLOCKS_PROMPT_VERSION,
+    instructions: PROMPT_6,
+    schemaVersion: SCHEMA_V3_VERSION,
+    schemaName: SCHEMA_V3_NAME,
+    jsonSchema: EXTRACTION_JSON_SCHEMA_V3,
+  },
   "scriba-prompt-3": {
     promptVersion: "scriba-prompt-3",
     instructions: PROMPT_3,
@@ -210,7 +292,7 @@ export function getPersonalProfile(): ExtractionProfile | null {
 /**
  * The prompt and schema used for new extractions: prompt 4 unless
  * SCRIBA_PROMPT_VERSION selects another (prompt 3 runs with the schema it was
- * measured with). Both versions are part of the cache key and of every run row.
+ * measured with; prompt 6 with schema 3, until the check flow can show blocks). Both versions are part of the cache key and of every run row.
  */
 export function getExtractionProfile(): ExtractionProfile {
   const version = process.env.SCRIBA_PROMPT_VERSION?.trim() || PROMPT_VERSION;

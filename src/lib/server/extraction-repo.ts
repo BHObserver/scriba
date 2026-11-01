@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { STORAGE_BUCKET } from "@/lib/config";
+import { pageValuesOf } from "@/lib/extraction/parse";
 import type { ExtractionRepo, RunFailure, RunRecord, RunStatus, RunSuccess } from "@/lib/extraction/pipeline";
 
 type RunRow = {
@@ -196,11 +197,7 @@ export function createSupabaseExtractionRepo(opts: {
           validator_version: r.validatorVersion,
         },
         p_entries: entries,
-        p_page: {
-          dateText: r.extraction.page.dateText,
-          ledgerType: r.extraction.page.ledgerType,
-          accountName: r.extraction.page.accountName,
-        },
+        p_page: pageValuesOf(r.extraction),
         p_findings: findings,
       });
       if (error) throw new Error(error.message);

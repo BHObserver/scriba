@@ -19,6 +19,13 @@ export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 export const LEDGER_TYPES = ["customer_credit", "cash_sales", "mixed", "unknown"] as const;
 export type LedgerType = (typeof LEDGER_TYPES)[number];
 
+/**
+ * What a block of writing is (schema 3). A block is writing that belongs together wherever
+ * it sits on the page; its kind, not the page's, decides the party kind and the checks.
+ */
+export const BLOCK_KINDS = ["day_sales", "customer_account", "supplier_visit", "supplier_account", "expenses", "other"] as const;
+export type BlockKind = (typeof BLOCK_KINDS)[number];
+
 export const REVIEWABLE_FIELDS = [
   "text",
   "type",
@@ -50,12 +57,29 @@ export type EntryValues = {
   amountText: string | null;
   balanceText: string | null;
   crossedOut: boolean;
+  /** The id of the block this line belongs to (schema 3). Absent on readings without blocks. */
+  block?: string | null;
+};
+
+/** The editable form of one block. Its box stays on the reading, like a line's box. */
+export type BlockValues = {
+  id: string;
+  kind: BlockKind;
+  /** The heading as written, e.g. "Praan (Selim)" or নগদ বিক্রি. */
+  title: string | null;
+  /** The company or customer, as written. The party of the block's lines. */
+  party: string | null;
+  /** The rep or contact, as written: a note on the records, never the party. */
+  person: string | null;
+  dateText: string | null;
 };
 
 export type PageValues = {
   dateText: string | null;
   ledgerType: LedgerType;
   accountName: string | null;
+  /** Schema 3 readings only. Absent: the page-level rules apply, as for prompt 4. */
+  blocks?: BlockValues[];
 };
 
 export const SALE_TYPES: ReadonlySet<TransactionType> = new Set(["credit_sale", "cash_sale"]);
@@ -89,6 +113,15 @@ export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
   subtotal: "Written total",
   adjustment: "Adjustment",
   unknown: "Unclassified",
+};
+
+export const BLOCK_KIND_LABELS: Record<BlockKind, string> = {
+  day_sales: "Day's sales",
+  customer_account: "Customer account",
+  supplier_visit: "Company visit",
+  supplier_account: "Supplier account",
+  expenses: "Expenses",
+  other: "Other",
 };
 
 export const LEDGER_TYPE_LABELS: Record<LedgerType, string> = {

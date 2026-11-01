@@ -6,10 +6,28 @@
  * malformed response is reported as a failure, with the raw text preserved by the
  * caller for diagnosis.
  */
-import type { BoundingBox, EntryValues, LedgerType, ReviewableField } from "@/lib/ledger/types";
+import { blockPartyKind, splitPartyPerson } from "@/lib/ledger/blocks";
+import {
+  type BlockValues,
+  type BoundingBox,
+  type EntryValues,
+  type LedgerType,
+  type PageValues,
+  type ReviewableField,
+  TRANSACTION_TYPES,
+} from "@/lib/ledger/types";
 import { normalizeDate, parseMoney, parseQuantity, parseRate } from "@/lib/numerals";
-import { getExtractionProfile } from "./prompt";
-import { type ModelEntry, type ModelOutput, modelOutputSchema } from "./schema";
+import { FIELD_TO_VALUE_KEY } from "@/lib/review/values";
+import { type ExtractionProfile, getExtractionProfile } from "./prompt";
+import {
+  type ModelBlock,
+  type ModelEntry,
+  type ModelOutput,
+  type ModelOutputV3,
+  SCHEMA_V3_VERSION,
+  modelOutputSchema,
+  modelOutputSchemaV3,
+} from "./schema";
 
 export type NormalizedEntry = {
   candidateId: string;
@@ -27,6 +45,15 @@ export type NormalizedEntry = {
   };
 };
 
+/** A block as read: its editable values and its box on the 0-1000 grid. */
+export type NormalizedBlock = BlockValues & { box: BoundingBox | null };
+
+/**
+ * A reading the model was unsure of, with two or three candidates. The entry's current value
+ * comes first; every option is a valid value for its field.
+ */
+export type NormalizedDoubt = { entryId: string; field: ReviewableField; options: string[]; note: string | null };
+
 export type NormalizedExtraction = {
   schemaVersion: string;
   promptVersion: string;
@@ -42,6 +69,9 @@ export type NormalizedExtraction = {
     writtenTotals: Array<{ candidateId: string; amountPoisha: number | null }>;
   };
   entries: NormalizedEntry[];
+  /** Schema 3 only (absent on earlier readings and on runs stored before it). */
+  blocks?: NormalizedBlock[];
+  doubts?: NormalizedDoubt[];
   /** Warnings from the model followed by warnings raised while normalizing. */
   warnings: string[];
 };
@@ -84,8 +114,101 @@ function okValue(p: ReturnType<typeof parseMoney>): number | null {
   return p.ok ? p.value : null;
 }
 
-export function normalizeModelOutput(output: ModelOutput): NormalizedExtraction {
+const MAX_OPTIONS = 3;
+
+function normalizeBlocks(blocks: ModelBlock[], warnings: string[]): NormalizedBlock[] {
+  const seen = new Set<string>();
+  return blocks.map((b, index) => {
+    let id = b.id.trim() || `b${index + 1}`;
+    if (seen.has(id)) {
+      let n = blocks.length + 1;
+      while (seen.has(`b${n}`)) n++;
+      warnings.push(`Duplicate block id "${id}" was renamed to "b${n}"; its lines stay with the first block of that id.`);
+      id = `b${n}`;
+    }
+    seen.add(id);
+    let party = blankToNull(b.party);
+    let person = blankToNull(b.person);
+    // An account or a visit is about its heading's name when the model left party empty.
+    const title = blankToNull(b.title);
+    if (!party && title && blockPartyKind(b.kind)) party = title;
+    if (party && !person) ({ party, person } = splitPartyPerson(party));
+    return {
+      id,
+      kind: b.kind,
+      title,
+      party,
+      person,
+      dateText: blankToNull(b.date_text),
+      box: normalizeBox(b.box, warnings, id),
+    };
+  });
+}
+
+/** True when `text` is a value the field can hold, and its comparable form. */
+function optionValue(field: ReviewableField, text: string): string | null {
+  switch (field) {
+    case "qty": {
+      const p = parseQuantity(text);
+      return p.ok ? `q${p.value}` : null;
+    }
+    case "rate": {
+      const p = parseRate(text);
+      return p.ok ? `r${p.value}` : null;
+    }
+    case "amount":
+    case "balance": {
+      const p = parseMoney(text);
+      return p.ok ? `m${p.value}` : null;
+    }
+    case "type":
+      return (TRANSACTION_TYPES as readonly string[]).includes(text) ? text : null;
+    default:
+      return text.length <= 200 ? text.normalize("NFC") : null;
+  }
+}
+
+function normalizeDoubts(doubts: ModelOutputV3["doubts"], entries: NormalizedEntry[], idOf: Map<string, string>, warnings: string[]) {
+  const byId = new Map(entries.map((e) => [e.candidateId, e]));
+  const out: NormalizedDoubt[] = [];
+  const done = new Set<string>();
+  for (const d of doubts) {
+    const entry = byId.get(idOf.get(d.entry.trim()) ?? "");
+    if (!entry || done.has(`${entry.candidateId}|${d.field}`)) continue;
+    const current = entry.values[FIELD_TO_VALUE_KEY[d.field]];
+    const candidates = [...(typeof current === "string" ? [current] : []), ...d.options.map((o) => o.trim())];
+    const options: string[] = [];
+    const values = new Set<string>();
+    for (const o of candidates) {
+      const value = o.length > 0 ? optionValue(d.field, o) : null;
+      if (value == null || values.has(value)) continue;
+      values.add(value);
+      options.push(o);
+      if (options.length === MAX_OPTIONS) break;
+    }
+    if (options.length < 2) {
+      warnings.push(`A doubt about ${d.field} on ${entry.candidateId} was dropped: it had fewer than two valid readings.`);
+      continue;
+    }
+    done.add(`${entry.candidateId}|${d.field}`);
+    if (!entry.reviewFields.includes(d.field)) entry.reviewFields.push(d.field);
+    out.push({ entryId: entry.candidateId, field: d.field, options, note: blankToNull(d.note) });
+  }
+  return out;
+}
+
+type AnyModelOutput = ModelOutput | ModelOutputV3;
+const isV3 = (o: AnyModelOutput): o is ModelOutputV3 => "blocks" in o;
+
+export function normalizeModelOutput(
+  output: AnyModelOutput,
+  profile: Pick<ExtractionProfile, "schemaVersion" | "promptVersion"> = getExtractionProfile(),
+): NormalizedExtraction {
   const warnings = [...output.warnings.filter((w) => w.trim().length > 0)];
+  const blocks = isV3(output) ? normalizeBlocks(output.blocks, warnings) : null;
+  const blockIds = new Set(blocks?.map((b) => b.id));
+  const idOf = new Map<string, string>();
+  const orphans: string[] = [];
 
   // Stable order by the model's line number, then by response order.
   const ordered = output.entries.map((e, i) => ({ e, i })).sort((a, b) => a.e.line - b.e.line || a.i - b.i);
@@ -100,6 +223,7 @@ export function normalizeModelOutput(output: ModelOutput): NormalizedExtraction 
       id = replacement;
     }
     seen.add(id);
+    if (!idOf.has(e.id.trim())) idOf.set(e.id.trim(), id);
     const line = index + 1;
     if (e.line !== line) renumbered = true;
 
@@ -125,6 +249,11 @@ export function normalizeModelOutput(output: ModelOutput): NormalizedExtraction 
       balanceText: blankToNull(balance),
       crossedOut: e.crossed_out,
     };
+    if (blocks) {
+      const block = "block" in e && typeof e.block === "string" ? e.block.trim() : "";
+      if (blockIds.has(block)) values.block = block;
+      else orphans.push(id);
+    }
     return {
       candidateId: id,
       line,
@@ -142,13 +271,24 @@ export function normalizeModelOutput(output: ModelOutput): NormalizedExtraction 
   });
   if (renumbered) warnings.push("Line numbers were renumbered to follow the reading order.");
 
+  // A line whose block the reading did not describe goes to one "other" block, never dropped.
+  if (blocks && orphans.length > 0) {
+    let n = blocks.length + 1;
+    while (blockIds.has(`b${n}`)) n++;
+    const id = `b${n}`;
+    blocks.push({ id, kind: "other", title: null, party: null, person: null, dateText: null, box: null });
+    for (const e of entries) if (orphans.includes(e.candidateId)) e.values.block = id;
+    warnings.push(`${orphans.join(", ")} named no block of this reading, so ${orphans.length === 1 ? "it was" : "they were"} put in block ${id} ("other").`);
+  }
+  const doubts = isV3(output) ? normalizeDoubts(output.doubts, entries, idOf, warnings) : null;
+
   const single = (type: string) => {
     const matches = entries.filter((e) => e.values.type === type && !e.values.crossedOut);
     return matches.length === 1 ? matches[0]!.numbers.amountPoisha : null;
   };
 
   const dateText = blankToNull(output.page.date_text);
-  const { schemaVersion, promptVersion } = getExtractionProfile();
+  const { schemaVersion, promptVersion } = profile;
   return {
     schemaVersion,
     promptVersion,
@@ -156,7 +296,7 @@ export function normalizeModelOutput(output: ModelOutput): NormalizedExtraction 
       dateText,
       dateIso: normalizeDate(dateText),
       ledgerType: output.page.ledger_type,
-      accountName: blankToNull(output.page.account_name),
+      accountName: "account_name" in output.page ? blankToNull(output.page.account_name) : null,
       legibility: output.page.legibility,
       openingBalancePoisha: single("opening_balance"),
       closingBalancePoisha: single("closing_balance"),
@@ -165,8 +305,17 @@ export function normalizeModelOutput(output: ModelOutput): NormalizedExtraction 
         .map((e) => ({ candidateId: e.candidateId, amountPoisha: e.numbers.amountPoisha })),
     },
     entries,
+    ...(blocks ? { blocks, doubts: doubts ?? [] } : {}),
     warnings,
   };
+}
+
+/** The page values review starts from: the page fields, and the blocks without their boxes. */
+export function pageValuesOf(extraction: NormalizedExtraction): PageValues {
+  const { dateText, ledgerType, accountName } = extraction.page;
+  if (!extraction.blocks) return { dateText, ledgerType, accountName };
+  const blocks = extraction.blocks.map((b) => ({ id: b.id, kind: b.kind, title: b.title, party: b.party, person: b.person, dateText: b.dateText }));
+  return { dateText, ledgerType, accountName, blocks };
 }
 
 /** Strip a Markdown code fence if a model wraps its JSON in one. */
@@ -175,7 +324,10 @@ function unfence(text: string): string {
   return m ? m[1]! : text.trim();
 }
 
-export function parseModelResponse(response: ModelResponseSummary): ParseResult {
+export function parseModelResponse(
+  response: ModelResponseSummary,
+  profile: Pick<ExtractionProfile, "schemaVersion" | "promptVersion"> = getExtractionProfile(),
+): ParseResult {
   if (response.refusal) return { ok: false, kind: "refusal", detail: response.refusal.slice(0, 300) };
   if (response.status === "incomplete") {
     return {
@@ -193,7 +345,7 @@ export function parseModelResponse(response: ModelResponseSummary): ParseResult 
   } catch {
     return { ok: false, kind: "invalid_json", detail: "The response was not valid JSON (it may be truncated)." };
   }
-  const parsed = modelOutputSchema.safeParse(json);
+  const parsed = (profile.schemaVersion === SCHEMA_V3_VERSION ? modelOutputSchemaV3 : modelOutputSchema).safeParse(json);
   if (!parsed.success) {
     const issues = parsed.error.issues
       .slice(0, 5)
@@ -201,5 +353,5 @@ export function parseModelResponse(response: ModelResponseSummary): ParseResult 
       .join("; ");
     return { ok: false, kind: "schema_mismatch", detail: `The response did not match the schema: ${issues}` };
   }
-  return { ok: true, extraction: normalizeModelOutput(parsed.data) };
+  return { ok: true, extraction: normalizeModelOutput(parsed.data, profile) };
 }

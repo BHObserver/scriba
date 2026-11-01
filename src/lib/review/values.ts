@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   type EntryValues,
   type ReviewableField,
+  BLOCK_KINDS,
   LEDGER_TYPES,
   REVIEWABLE_FIELDS,
   TRANSACTION_TYPES,
@@ -20,13 +21,39 @@ export const entryValuesSchema = z.object({
   amountText: shortText,
   balanceText: shortText,
   crossedOut: z.boolean(),
+  block: z.string().trim().min(1).max(40).nullable().optional(),
+});
+
+export const blockValuesSchema = z.object({
+  id: z.string().trim().min(1).max(40),
+  kind: z.enum(BLOCK_KINDS),
+  title: shortText,
+  party: shortText,
+  person: shortText,
+  dateText: shortText,
 });
 
 export const pageValuesSchema = z.object({
   dateText: shortText,
   ledgerType: z.enum(LEDGER_TYPES),
   accountName: shortText,
+  blocks: z
+    .array(blockValuesSchema)
+    .max(30)
+    .refine((blocks) => new Set(blocks.map((b) => b.id)).size === blocks.length, "Block ids must be unique.")
+    .optional(),
 });
+
+/**
+ * Values sent by a client that predates blocks carry no block fields. Keep the stored ones
+ * instead of erasing them; an explicit value (even null for a line) replaces them.
+ */
+export function keepBlocks<T extends { blocks?: unknown }>(next: T, stored: { blocks?: unknown }): T {
+  return next.blocks === undefined && stored.blocks !== undefined ? { ...next, blocks: stored.blocks } : next;
+}
+export function keepBlock<T extends { block?: unknown }>(next: T, stored: { block?: unknown }): T {
+  return next.block === undefined && stored.block !== undefined ? { ...next, block: stored.block } : next;
+}
 
 export const reviewableFieldSchema = z.enum(REVIEWABLE_FIELDS);
 

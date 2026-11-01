@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { UUID_RE, apiUser, jsonError } from "@/lib/server/auth";
-import { pageValuesSchema } from "@/lib/review/values";
+import { keepBlocks, pageValuesSchema } from "@/lib/review/values";
 
 const bodySchema = z.union([
   z.object({ expectedVersion: z.number().int().min(1), values: pageValuesSchema }),
@@ -25,9 +25,15 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/runs/[id]/
     return NextResponse.json({ ok: true });
   }
 
+  // A client that predates blocks sends the page fields only; keep the stored blocks.
+  let values = parsed.data.values;
+  if (values.blocks === undefined) {
+    const { data: stored } = await supabase.from("page_reviews").select("page_values").eq("run_id", runId).maybeSingle();
+    if (stored) values = keepBlocks(values, stored.page_values ?? {});
+  }
   const { data, error } = await supabase
     .from("page_reviews")
-    .update({ page_values: parsed.data.values })
+    .update({ page_values: values })
     .eq("run_id", runId)
     .eq("version", parsed.data.expectedVersion)
     .select("page_values, version, review_started_at")
