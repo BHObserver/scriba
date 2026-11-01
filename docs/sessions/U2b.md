@@ -1,6 +1,6 @@
 # U2b: question copy (2 Nov 2026)
 
-**Status:** done. `bun run check` passes (679 tests, 6 new) and so does `bun run build` (the `private-test-data` junction was moved aside for the build and put back). `scriba-mvp` was merged in first (D5, 6244d70: design files only). Ran while C2 (Track A, `scriba/`) and U3 (`scriba-u3`) were running; neither was touched. **No hosted-DB change. No live calls.**
+**Status:** done. `bun run check` passes (679 tests, 6 new) and so does `bun run build` (the `private-test-data` junction was moved aside for the build and put back). `scriba-mvp` was merged in first (D5, 6244d70: design files only). Ran beside C2 (Track A, `scriba/`) and U3 (`scriba-u3`); neither was touched. **No hosted-DB change. No live calls.**
 
 ## What's done
 
@@ -30,7 +30,7 @@
 - Render `sentenceText(i18n, q.sentence)`, then `q.why?.sentence` in the smaller line, with a tick when `q.why.verified`. Render each option's `label`, and its `detail` under it when there is one.
 - **The price card**: a `delivery` question shows its `entries` as dashed price gaps, one total field (`input`), "I'll price each one" and "Later". After "each", the engine asks `price:<row>` one per item. Group consecutive `price` questions of one block into one card, headed by `q.prices` with `{ count }`. Each item gets a slot (`q.price.slot`), and "Save the prices" (`q.price.save`) posts one answer per filled slot in order. A single `price` question is its own card with `q.price`.
 - Everything else in "For B7" in `U2.md` still holds.
-- **Merges**: B7 branches from `scriba-mvp` and merges `track-engine`, which now includes D5. Run it in its own worktree, because C2 has uncommitted work in `scriba/`. U3's branch (`track-u3`, from 6244d70) doesn't have U2 or U2b yet. It doesn't need them, but merge before anything there touches `q.*` or the questions.
+- **Merges**: B7 starts in `scriba/` with `git merge track-engine`. It merges cleanly into `scriba-mvp` at C2 (c1e30d2), checked with `git merge-tree`. `track-u3` also merges cleanly into `track-engine`.
 
 ## Open
 
