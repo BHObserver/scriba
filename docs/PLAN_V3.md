@@ -67,7 +67,7 @@ Same tracks as the master plan: A in `scriba/` on `scriba-mvp`, B in `../scriba-
 | U4 | B | Company memo (challan): read it, link it to the visit, fill prices | U2, B7 |
 | F2 | with user | Testing and evaluation (MASTER_PLAN), plus the v3 test pages | all of the above |
 
-Order if one account does everything: C1 → U1 → D5 → C2 → U2 → U2b → B7 → U3 → U4 → F2 → F3 → F4.
+Order if one account does everything: C1 → U1 → D5 → C2 → U2 → U2b → B7 → U3 → U4 → **T1 → T2 → T3 → T4 → T5 → T6 → V1** (see "Trust fixes" below) → F2 → F3 → F4.
 
 ---
 
@@ -161,6 +161,164 @@ Order if one account does everything: C1 → U1 → D5 → C2 → U2 → U2b →
 - **Engine half done (2 Nov)**, the UI half after B7 (the user's split): memo prompt and schema, one call under the page's credit rules, a `kind`/`memo_for` migration (applied to the hosted dev project on 2 Nov, UI half part 1), linking and line matching, memo-proposed prices on `delivery` and `price`, and questions for memo goods not on the page and figures that differ. Live $0.077 on two synthetic memos. See `docs/sessions/U4.md`.
 - **UI half done (2 Nov)**, in three parts: the memo is added on the page's details screen and read once; in the ask deck the price slots start with the memo's prices (saved as the memo's answer), and a strip shows the memo's printed lines beside the question. Checked in Edge and once live with M01 on V01 ($0.116). **U4 is done.**
 
+## Trust fixes after the five-page test (planned 2 Nov evening)
+
+The user scanned five handwritten pages ("Page 1"–"Page 5", demo shop, prompt 6, uploaded 2 Nov 13:36 UTC) and checked them in the ask deck. Reading was mostly good. But Scriba approved things he never saw, and gave him no way to change them. He asked for these fixes before the voice feature (below, V1).
+
+### What the test found (root causes, so no session has to look again)
+
+Documents: P1 `b6a9cbba` (confirmed), P2 `157e7df4` (confirmed), P3 `b4aea1e6`, P4 `5ceb678e`, P5 `7449002b`. Each has one prompt-6 run.
+
+1. **"Yes" approves every line.** On P1 the model put the lines after "করিম বাকি … মোট ২৬০" (আটা, লবণ, ডিম, মোট ২৫০) in Karim's block. They are really a separate sale: no dashed line, written just below. Each মোট matched its own lines (rule C, `src/lib/validation/engine.ts` ~342), so "হিসাব মিলেছে" showed. `meaningQuestion` (`src/lib/questions/engine.ts` 288–323) lists every row of the block in `entries`, and `acceptAnswered` (`src/components/check/ask-model.ts` 95–107) accepts them all. So "is this Karim's?" → yes approved all 7 lines, and they never came to the rest card where a line can be tapped and fixed. There's no way to move lines out of a block.
+2. **The same on visits.** P3 "ফ্রেশের কামাল আগের ১৬০০" was read as ২৬০০ with no doubt. The meaning card shows "before ৳2,600, paid ৳1,000" with only yes or another kind, so there's no way to fix a figure.
+3. **"Before" ignores the khata.** On P2, "করিম জমা দিল ২০০" asked "করিমের কী আগে বাকি ছিল?" although Karim was in the book from P1. `openingQuestion` (engine.ts 438–464) never reads the book. Dues are loaded only for "same party?" questions (`partiesToExplain`, engine.ts 370; `loadQuestionInput`, `src/lib/server/questions-data.ts`), and that question is skipped when the name matches exactly.
+4. **The book drops a later "before" silently.** `entriesOf` (`src/lib/insights/accounts.ts` 67–87) counts `opening_balance` only as a party's first entry. The ৳260 he typed on P2 was ignored. Karim (party `19297dff`) shows ৳310 (510 − 200); he meant ৳60.
+5. **A confirmed page can't be changed.** Confirming goes through `scriba_confirm_entries` (service role only, `supabase/migrations/20261031120000_scriba_shop_v2.sql` 96–190), and nothing undoes it.
+6. **Digits in his hand:** ৩ read as ৬ (চিনি ১৩০ → ১৬০, on P1 and P2; he fixed both) and ১ read as ২ (১৬০০ → ২৬০০). The writer notes learned from his fixes (P3, `src/lib/learning/profile.ts`) ride only on prompt 5 (prompt 4 + notes). Prompt 6 doesn't get them (`getPersonalProfile`, `src/lib/extraction/prompt.ts`).
+
+### Decisions (2 Nov)
+
+- **A card approves only the lines whose figures it showed, with a way to change them.** "Yes, it's Karim's" confirms the name and the kind, never the lines.
+- **Any line can start a new part.** Code also asks by itself when an account part has two written subtotals and the lines after the first name nobody.
+- **The khata is Scriba's memory.**
+  - For a party already in the book, the book's due is proposed as "before".
+  - A "before" written on the page is compared with the book.
+  - A figure he gives that differs from the book is never dropped: it reaches the book as a visible adjustment.
+- **A confirmed page can be reopened.** Its records leave the khata, the audit trail keeps everything, and confirming again goes through the same approval rules.
+- Non-negotiables unchanged. Hosted DB changes need the user's go-ahead in the session that makes them. No live calls except in T6 and V1.
+
+### Sessions
+
+| ID | Track | Session | Needs |
+|---|---|---|---|
+| T1 | A | "Yes" means only what was asked; fix a figure from any card | n/a |
+| T2 | A (+ engine files) | Split a part | T1 |
+| T3 | B | The khata's due as "before"; no figure dropped | n/a |
+| T4 | B | Reopen a confirmed page: migration, function, API | n/a (best after T3) |
+| T5 | A | Reopen in the app; fix Karim's account with the user | T2, T4 |
+| T6 | B | Writer's digit notes and khata layout on prompt 6, measured | user's consent for the five pages |
+| V1 | B | Voice reading, step 1: measure Bangla speech | T1–T6 |
+
+- **One account:** T1 → T2 → T3 → T4 → T5 → T6 → V1.
+- **Two accounts:** Track A runs T1 → T2 → T5 in `scriba/`, and Track B runs T3 → T4 → T6 in `../scriba-engine`. Track B merges `scriba-mvp` first; it's behind.
+- T2 and T3 both edit `src/lib/questions/engine.ts`, in different functions. Whoever merges second resolves.
+- Each session writes `docs/sessions/T<n>.md` and commits, as in MASTER_PLAN "How to use".
+
+---
+
+### T1: "yes" means only what was asked (Track A)
+
+- **Read only:** this section; `ask-model.ts` (`coveredLines`, `deckItems`, `acceptAnswered`, `acceptRest`); `ask-session.tsx` where answers are applied (~180–230) and items are rendered (~440–510); `ask-cards.tsx` (`QuestionCard` options ~170–200, `RestCard` ~354); engine.ts `meaningQuestion` (288–323); the `local` option (engine.ts ~507, types.ts 74); DESIGN_SPEC D5's rest card only.
+- **Which answers may accept lines:** one list in one place, tested. Per kind:
+  - **Accept:** `doubt`, `price`/prices card, `delivery`, `direction`, `memo_differs`, `unbalanced` (only when he changed a figure). Also `block_kind`, but only if its card lists each line with its figure; check, and make it list them if not.
+  - **Never:** `meaning`, `same_party`, `date`, `memo`. Also `opening`, except the line the answer added.
+- The lines left after a part's questions come on the rest card. There each one can already be tapped to fix, and "সব ঠিক" accepts them.
+- **The meaning card gets a local option** ("একটা লাইন ভুল" / "A line is wrong"). It opens the lines sheet for that part (`actions.lines`), so a visit's আগের/দিলাম can be fixed on the spot. After a fix, the questions are worked out again (existing).
+- Strings in bn and en; update `design/COPY.md`.
+- **Tests (ask-model):**
+  - meaning → yes leaves the lines open, and they come as a rest item;
+  - a P1-like fixture (Karim's part, 7 lines, two subtotals) puts all 7 on the rest card;
+  - a doubt answer still accepts its line.
+- **Verify** in Edge at 390×844, bn and en, on `/kit/check?step=asks`: meaning yes → rest card; fix আগের from the meaning card. No live calls.
+
+### T2: split a part (Track A, with engine files)
+
+- **Read only:** this section, T1's note, `src/lib/questions/answer.ts`, types.ts (`Change`, kinds), engine.ts `buildQuestions` (1108–1199), `src/lib/ledger/blocks.ts`, `src/app/api/runs/[id]/answers/route.ts`, `src/lib/review/values.ts` (page limits); UI: `RestCard`, `LinesSheet` (`ask-sheet.tsx`), `FixSheet` (`deck-sheets.tsx`).
+- **Change `split`:** `{ op: "split"; block; from: entryId; values: { kind, party?, person?, title? } }`.
+  - It creates the next free `bN` block and moves the block's lines from `from` to its end (page order) into it, by editing `values.block`.
+  - The boxes become the union of each part's lines.
+  - Splitting at a block's first line isn't a split; that's the meaning question's job.
+- **Code question `split:<block>`** (new kind `split`):
+  - **When:** a `customer_account` or `supplier_account` block has ≥ 2 written subtotals, and the lines after the first subtotal name no party.
+  - **Wording:** "মোট ২৬০-এর পরের ৩টা লাইন (৳২৫০) কি করিমেরই?" Code works out the count and the sum.
+  - **Options:** yes (nothing changes, not asked again); "না, আলাদা বিক্রি" (split → `day_sales`); "অন্য কারো বাকি" (text input → split → `customer_account` with that name).
+  - It's asked right after the block's meaning question.
+- **Manual split:** "এখান থেকে আলাদা হিসাব" in the fix sheet of any line except a block's first. A small sheet asks what the lines from here down are: দিনের বিক্রি / অন্য কারো বাকি (name) / খরচ / অন্য কিছু.
+  - It goes through the answers route with the same `applyChanges`, as `split:<block>:<entry>`, so it lands in the audit trail like any answer.
+  - The server checks that the entry is in the block and isn't its first line.
+- After a split the deck works its items out again; the new part gets its own questions.
+- **Tests:**
+  - a hand-written P1-shaped fixture (no real data in tests): the question appears;
+  - "আলাদা বিক্রি" → Karim's part has 3 lines (৳260 due), and the new `day_sales` part's subtotal checks;
+  - manual split mid-block; refusal at a first line.
+- **Verify** in Edge (dev-board fixture for the Karim case), bn and en. No live calls.
+
+### T3: the khata's due as "before" (Track B)
+
+- **Read only:** this section; `src/lib/insights/accounts.ts` (`entriesOf`, credit and payment filters ~130–160); `questions-data.ts` (`loadQuestionInput`, `lastDues`); engine.ts `openingQuestion`, `samePartyQuestion`, `partiesToExplain`; validation `balance_equation` (~470–500); `src/components/money/party-screen.tsx` timeline (~175–190).
+- **Book:** an `opening_balance` after a party's first entry is the page's statement of the due.
+  - **Equal** to the running balance: nothing changes.
+  - **Different:** an `adjust` entry with the signed difference, so the balance becomes the stated figure.
+  - Decide and test how an adjust counts in last payment, oldest unpaid and risks. Suggested: a down-adjust clears the oldest credit like a payment but isn't a "payment"; an up-adjust is like a credit.
+  - Timeline line: "খাতা ঠিক করা: পাতায় আগের ৳… লেখা" (party-screen.tsx: the smallest change, noted).
+  - This turns today's Karim into ৳60 by an adjustment of −৳250. Say so in the note.
+- **Load dues** for every block party already in the book (exact key or `merged_into` root), as of the page's day, not only for "same party?". Rename `partiesToExplain` to say so.
+- **No "before" on the page, party has entries:** the opening question becomes "খাতায় করিমের বাকি ৳২৬০ — এই পাতার আগে এটাই ছিল?"
+  - **yes** (proposed): adds the opening line with the book's figure;
+  - **"অন্য টাকা"** (money): the card says the khata will be adjusted by the difference;
+  - **later.**
+  - A party with no entries is asked as today.
+- **"Before" written, party known:**
+  - **Equal:** a ticked `why` on the meaning card ("খাতার সাথে মিলেছে").
+  - **Different:** question `book_differs:<row>`: "পাতায় আগের ৳২,৬০০, খাতায় ৳১,৬০০ — কোনটা ঠিক?" Options: পাতা (keep; becomes an adjustment), খাতা (edit the line to the book's figure), type. This catches a misread "before" (১৬০০ → ২৬০০) whenever the company is already in the book.
+- Strings `q.book.*` bn and en (append only), and regenerate COPY.md Part 4.
+- **Tests:** accounts (adjust up, down, equal; risk numbers); questions (the three cases, plus same-party yes → compared with the matched party). No live calls.
+
+### T4: reopen a confirmed page, engine half (Track B, migration)
+
+- **Read only:** this section; core migration 136–185 (`entry_reviews`, `review_events` and its action check) and 286–360 (triggers); shop_v2 96–190 (`scriba_confirm_entries`); `src/app/api/runs/[id]/confirm/route.ts`; the pglite migration tests in `tests/` (grep `pglite`).
+- **Migration** (additive; **ask the user before `bun run db:push`**):
+  - `scriba_reopen_run(p_owner_id, p_run_id)`, security definer, service role only. It:
+    - locks the run's confirmed rows;
+    - deletes their `confirmed_records`;
+    - sets the rows back to `draft`;
+    - sets `ledger_documents.status` back to `extracted`;
+    - writes a page-level event listing the removed records (ids, types, amounts, parties) so the audit trail shows what left the khata.
+  - Add the `reopen` action to `review_events` (check constraint, and the audit trigger: confirmed → draft = `reopen`).
+  - The confirmation's validation findings stay as history. Parties stay: with no records they don't show on dues.
+  - A day already closed keeps its snapshot. The API reports `dayClosed: true` so the app can warn.
+- **API:** `POST /api/runs/[id]/reopen`. The owner is checked through the user's client, then the service call, as confirm does. Only the document's latest succeeded run, rate-limited like confirm.
+- **Tests (pglite):**
+  - reopen → all rows draft, records gone, events written;
+  - confirm again works and creates new records;
+  - another owner's run and a draft run are refused;
+  - other pages' records untouched.
+- No live calls.
+
+### T5: reopen in the app, and fix Karim's account (Track A)
+
+- **Read only:** this section, T4's and T3's notes, `ask-session.tsx` (`alreadyIn`, the done stage), `end-views.tsx`, the page details screen (grep `partially_confirmed` in `src/app/(app)`).
+- **"পাতাটা ঠিক করুন" / "Fix this page"** on a finished page (deck done view and page details).
+  - A confirm sheet says the page's figures leave the khata until it is confirmed again, plus the closed-day warning when T4 reports one.
+  - Then the deck opens with his answers kept: the lines come as rest cards, and session acceptances are cleared.
+- Strings bn and en, COPY.md. Edge 390×844, bn and en.
+- **With the user, on the dev project:**
+  1. Reopen P1.
+  2. Split Karim's part at আটা ("আলাদা বিক্রি").
+  3. Confirm, and check that Karim's ledger shows ৳260 → ৳60 after P2 with no adjustment line, and that the ৳250 shows in that day's cash sales.
+  - P2 needs no reopen: its "before" ৳260 now equals the book.
+
+### T6: his digits on prompt 6 (Track B, live ≤ $1)
+
+- **Before anything:** the user's consent to use the five 2 Nov pages as test samples (git-ignored `private-test-data/v3/`).
+  - Draft ground truth for them: start from his confirmed values, and list the digits he must check.
+  - Score against it only after he has checked it.
+- **Read only:** this section, `docs/sessions/P3.md` and `U3.md` (the scorer); prompt.ts (`PROMPT_6`, `PROFILES`, `getPersonalProfile`, `withLayout`, `LAYOUT_BASES`); `pipeline.ts` ~180–200; `scripts/score-readings.ts`.
+- **A personal variant of prompt 6** (new version id, schema 3): prompt 6 plus the writer notes and the reference strip. Add the khata layout for prompt 6 too, adapted to blocks. These two were what kept prompt 6 from being the default (B7).
+- Find where the 2 Nov test got prompt 6 from: `.env.local` has no `SCRIBA_PROMPT_VERSION`, so check the Vercel env or the shell. Write it down.
+- **Measure:** the five pages, prompt 6 against prompt 6 + notes. Report digits and amounts right, cost and time. The user decides the default.
+
+### V1: voice reading, step 1: measure Bangla speech (Track B, live ≤ $0.10)
+
+The user's idea (2 Nov): he reads the khata to Scriba one part at a time, Scriba makes the same cards, he confirms and goes on. Agreed shape: photo first (evidence and parts), then he can read any part aloud. Where his voice and the ink agree, nothing is asked; where they differ, one card shows both. A voice-only mode comes from the same pieces.
+
+- **Measure first.** P1 only ever heard English text-to-speech, so Bangla speech is unproven.
+  - The user records himself reading pages 1–3, one part per clip (≤ 15 s, the recorder's limit), once quiet and once with shop noise.
+  - `scripts/live-voice.ts` takes a folder of WAVs.
+  - Report per clip: transcript, the numbers `number-words.ts` finds, item and name words, and the misses.
+- **Output:** go or no-go, and what the design needs: how he says a part's start and end, মোট, names, "আগের"/"দিলাম". The voice sessions (V2…) are planned from these numbers.
+
 ## Open questions for the user
 
-None blocking. The stored-original choice (C2) and the migrations (U1, C2) are asked about in those sessions.
+- T6 needs his consent to use the five 2 Nov pages as test samples. V1 needs his recordings.
+- The stored-original choice (C2) and the migrations (U1, C2) were settled in those sessions.
