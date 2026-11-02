@@ -16,7 +16,15 @@ import { buildQuestions } from "@/lib/questions/engine";
 import type { KnownParty } from "@/lib/questions/types";
 import type { PageState, ReviewRow } from "@/lib/review/state";
 
-export type Fixture = { photo: Photo; page: PageState; rows: ReviewRow[]; doubts: NormalizedDoubt[]; source: string };
+export type Fixture = {
+  photo: Photo;
+  page: PageState;
+  rows: ReviewRow[];
+  doubts: NormalizedDoubt[];
+  source: string;
+  /** A pretend khata of its own (T3): the parties in it and their dues (party id, poisha) just before the page. */
+  book?: { parties: KnownParty[]; dues: Array<[string, number]> };
+};
 /** A company memo's stored reading (U4): what the engine reads, and what the card shows. */
 export type KitMemo = { memo: MemoForPage; view: MemoView };
 
@@ -31,7 +39,8 @@ const CAPTURED_ON = "2026-11-01";
 export function CheckBoard({ step, fixture, memos }: { step: string; fixture: Fixture; memos: KitMemo[] }) {
   const { t } = useI18n();
   const ask = useMemo(() => {
-    const base = { doubts: fixture.doubts, parties: PARTIES, capturedOn: CAPTURED_ON, dues: DUES, ...(memos.length > 0 ? { memos: memos.map((m) => m.memo) } : {}) };
+    const book = fixture.book ? { parties: fixture.book.parties, dues: new Map(fixture.book.dues) } : { parties: PARTIES, dues: DUES };
+    const base = { doubts: fixture.doubts, parties: book.parties, capturedOn: CAPTURED_ON, dues: book.dues, ...(memos.length > 0 ? { memos: memos.map((m) => m.memo) } : {}) };
     return { api: localAskApi(base), set: buildQuestions({ ...base, page: fixture.page.values, rows: fixture.rows }) };
   }, [fixture, memos]);
   const common = { documentId: DOC, photo: fixture.photo, readTurns: fixture.photo.turns, pageNumber: 1, pageCount: 2, detailsHref: "/kit", nextHref: null, backHref: "/kit", api: API, capturedAt: "2026-10-31T09:30:00Z" };

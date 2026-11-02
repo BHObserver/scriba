@@ -265,6 +265,7 @@ Documents: P1 `b6a9cbba` (confirmed), P2 `157e7df4` (confirmed), P3 `b4aea1e6`, 
   - **Different:** question `book_differs:<row>`: "পাতায় আগের ৳২,৬০০, খাতায় ৳১,৬০০ — কোনটা ঠিক?" Options: পাতা (keep; becomes an adjustment), খাতা (edit the line to the book's figure), type. This catches a misread "before" (১৬০০ → ২৬০০) whenever the company is already in the book.
 - Strings `q.book.*` bn and en (append only), and regenerate COPY.md Part 4.
 - **Tests:** accounts (adjust up, down, equal; risk numbers); questions (the three cases, plus same-party yes → compared with the matched party). No live calls.
+- **Result (3 Nov):** done, on `scriba-mvp` (run in `scriba/`, one track at a time). An adjustment is an `adjust` entry with the signed difference: down clears the oldest credit but isn't a payment, and up is owed like a credit but is never a "big credit". The due compared is the one just before the page (`dueBefore`), and the page's own records are left out. Merged spellings count as in the book. The answer route now loads the dues. Karim is ৳60 in the dev book (−৳250), checked read-only. Dev board: `/kit/check?step=asks&photo=karim2`. Checked in Edge in both languages, $0. See `docs/sessions/T3.md`.
 
 ### T4: reopen a confirmed page, engine half (Track B, migration)
 

@@ -41,6 +41,11 @@ export const QUESTION_KINDS = [
    * or from a line he picked down ("from here, a separate part", never put to him unasked).
    */
   "split",
+  /**
+   * T3: a "before" read from the page that isn't what the khata shows for that party just before
+   * the page: a misread digit, or a khata to correct.
+   */
+  "book_differs",
 ] as const;
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 
@@ -138,8 +143,12 @@ export type QuestionSet = {
   later: Question[];
 };
 
-/** A party already in the book, for the "same party?" question. */
-export type KnownParty = { id: string; kind: PartyKind; name: string; key: string };
+/**
+ * A party already in the book, for the "same party?" question and the khata's due (T3).
+ * `mergedInto`: a spelling merged into another party. Its name is in the book (its due is that
+ * party's), but it is never offered as a match.
+ */
+export type KnownParty = { id: string; kind: PartyKind; name: string; key: string; mergedInto?: string };
 
 export type QuestionInput = {
   page: PageValues;
@@ -151,9 +160,10 @@ export type QuestionInput = {
   /** The day the photo was taken, in Bangladesh (YYYY-MM-DD), for the date question. */
   capturedOn: string | null;
   /**
-   * What the khata last showed for some of the parties, in poisha (positive: they owe the shop,
-   * or the shop owes them), so "same party?" can say why it asks. Only the parties
-   * `partiesToExplain` names; absent when not loaded.
+   * What the khata showed for some of the parties just before this page, in poisha (positive:
+   * they owe the shop, or the shop owes them): the parties `bookPartiesOf` names that have
+   * anything in the book before the page. The "before" questions compare with it (T3), and "same
+   * party?" says why it asks. Absent when not loaded.
    */
   dues?: ReadonlyMap<string, number>;
   /** U4: the company memos photographed with the page, with their latest readings. */

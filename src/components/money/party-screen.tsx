@@ -15,6 +15,7 @@ import {
   balanceLabel,
   dateLabel,
   duesHref,
+  entryAmount,
   entryText,
   oldestText,
   reminderPhotoIds,
@@ -179,8 +180,8 @@ export function PartyScreen(view: PartyScreenView) {
                 </div>
                 <DetailStrip line={line} height={56} />
                 <div className="tl-row">
-                  <span className="tl-what">{entryText(kind, e.direction, line ?? null, i18n)}</span>
-                  <span className="tl-amt">{`${e.direction === "down" ? "−" : "+"} ${i18n.money(e.amountPoisha)}`}</span>
+                  <span className="tl-what">{entryText(kind, e, line ?? null, i18n)}</span>
+                  <span className="tl-amt">{entryAmount(e, i18n)}</span>
                 </div>
                 <div className="tl-bal">{afterText(kind, e.balancePoisha, i18n)}</div>
               </article>

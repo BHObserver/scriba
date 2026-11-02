@@ -4,12 +4,14 @@
  * payment, the oldest unpaid credit by FIFO (payments clear the oldest credit first) and risk
  * flags, each with the reason and the records behind it.
  *
- * Opening balances: account pages repeat the previous page's closing balance as their opening
- * line, so an opening balance counts only as a party's starting point (money owed from before
- * Scriba), when it comes before any credit or payment of that party. Later ones are ignored.
+ * Opening balances: a party's first one is its starting point (money owed from before Scriba).
+ * A later one is the page's statement of the due (T3): account pages repeat the previous page's
+ * closing balance as their opening line, so one equal to the running balance changes nothing. One
+ * that differs is never dropped: it becomes an adjustment by the difference, so the balance is
+ * what the page says, and the timeline shows why.
  */
 import type { PartyKind } from "@/lib/ledger/parties";
-import { type Book, rootPartyId } from "./book";
+import { type Book, compareRecords, rootPartyId } from "./book";
 import { addDays, daysBetween } from "./calendar";
 import type { Figure, InsightParty, InsightRecord, RecordType } from "./types";
 
@@ -34,8 +36,12 @@ export type AccountEntry = {
   recordId: string;
   documentId: string;
   date: string;
-  /** start: owed from before Scriba (an opening balance); up: credit; down: payment. */
-  direction: "start" | "up" | "down";
+  /**
+   * start: owed from before Scriba (an opening balance); up: credit; down: payment; adjust: a
+   * later page's "before" that differs from the book (T3), which sets the balance to it.
+   */
+  direction: "start" | "up" | "down" | "adjust";
+  /** Positive, except an adjustment's: the signed difference (negative when the due went down). */
   amountPoisha: number;
   /** Balance after this entry. */
   balancePoisha: number;
@@ -72,14 +78,16 @@ function entriesOf(records: readonly InsightRecord[], kind: PartyKind): AccountE
     if (r.type === CREDIT[kind]) direction = "up";
     else if (r.type === PAYMENT[kind]) direction = "down";
     else if (r.type === "opening_balance" && entries.length === 0) direction = "start";
+    else if (r.type === "opening_balance" && r.amountPoisha !== balance) direction = "adjust";
     else continue;
-    balance += direction === "down" ? -r.amountPoisha : r.amountPoisha;
+    const amountPoisha = direction === "adjust" ? r.amountPoisha - balance : r.amountPoisha;
+    balance += direction === "down" ? -amountPoisha : amountPoisha;
     entries.push({
       recordId: r.id,
       documentId: r.documentId,
       date: r.businessDate,
       direction,
-      amountPoisha: r.amountPoisha,
+      amountPoisha,
       balancePoisha: balance,
     });
   }
@@ -129,6 +137,7 @@ function risksOf(account: Omit<PartyAccount, "risks">, asOf: string): Risk[] {
     });
   }
 
+  // Credits he gave: an adjustment isn't one, so it is neither usual nor big.
   const credits = entries.filter((e) => e.direction === "up");
   const isRecent = (e: AccountEntry) => daysBetween(e.date, asOf) < RISK_RULES.recentDays;
   const older = credits.filter((e) => !isRecent(e)).map((e) => e.amountPoisha);
@@ -154,9 +163,11 @@ function buildAccount(party: InsightParty, records: readonly InsightRecord[], as
     ? { recordId: last.recordId, date: last.date, amountPoisha: last.amountPoisha, daysAgo: daysBetween(last.date, asOf) }
     : null;
 
-  // FIFO: all payments together clear the oldest credits first.
-  const credits = entries.filter((e) => e.direction !== "down");
-  let paid = payments.reduce((sum, e) => sum + e.amountPoisha, 0);
+  // FIFO: all payments together clear the oldest credits first. An adjustment down clears them
+  // the same way, but isn't a payment (it doesn't reset "no payment"); one up is owed like a credit.
+  const clears = (e: AccountEntry) => e.direction === "down" || (e.direction === "adjust" && e.amountPoisha < 0);
+  const credits = entries.filter((e) => !clears(e));
+  let paid = entries.filter(clears).reduce((sum, e) => sum + Math.abs(e.amountPoisha), 0);
   let oldestUnpaid: PartyAccount["oldestUnpaid"] = null;
   let unpaidRecordIds: string[] = [];
   for (const [i, c] of credits.entries()) {
@@ -192,6 +203,25 @@ export function partyAccount(book: Book, partyId: string, asOf: string): PartyAc
   const party = book.parties.get(root);
   if (!party) return null;
   return buildAccount(party, book.records.filter((r) => r.partyId === root && r.businessDate <= asOf), asOf);
+}
+
+/** Where a page sits in the khata: its business day, then when it was photographed. */
+export type PagePlace = { documentId: string; date: string; capturedAt: string };
+
+/**
+ * A party's due just before a page (T3), from the records ahead of it in khata order; the page's
+ * own are left out (a page checked again). A merged party is followed to the party it was merged
+ * into. Null when the book has nothing of the party before the page.
+ */
+export function dueBefore(book: Book, partyId: string, page: PagePlace): number | null {
+  const root = rootPartyId(book.parties, partyId);
+  const party = book.parties.get(root);
+  if (!party) return null;
+  const here = { businessDate: page.date, capturedAt: page.capturedAt, documentId: page.documentId, lineOrder: -1, id: "" };
+  const ahead = book.records.filter(
+    (r) => r.partyId === root && r.documentId !== page.documentId && compareRecords(r, { ...r, ...here }) < 0,
+  );
+  return entriesOf(ahead, party.kind).at(-1)?.balancePoisha ?? null;
 }
 
 /** Every party with records up to `asOf`, optionally of one kind. */

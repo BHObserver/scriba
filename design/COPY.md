@@ -636,7 +636,7 @@ The question rows (`q.*`) are in Part 4: U2b reconciled them with U2's questions
 | `keep` | রাখুন | Keep |
 | `del` | মুছুন | Delete |
 
-## Part 4: Scriba asks, as built (U2 + U2b, U4, T1, T2)
+## Part 4: Scriba asks, as built (U2 + U2b, U4, T1, T2, T3)
 
 Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generated from the code in U2b. Change the strings there, not here. A question's sentence, its `why` line and each option's `detail` are rendered with `sentenceText`. `{1}` slots hold his words, money (৳, locale digits), counts or days. T1 (3 Nov) added `q.meaning.line`, the meaning card's option that opens the part's lines so one can be fixed there; the plan's wording, not yet read by a Bangla reader. T2 (3 Nov) added the `q.split.*` rows: the question "are the lines after the first total Karim's too?" and the sheet behind "a separate part from here". The plan's wording where it gave one (`q.split`, `q.split.sale`, `q.split.other.customer`); the rest written in T2. Not yet read by a Bangla reader. `{4}-এরই` attaches to the name the same way `{1}-এর` does in `q.meaning.customer`.
 
@@ -760,6 +760,27 @@ Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generate
 | `q.date.photo` | হ্যাঁ, ছবির দিন · {1} | Yes, the photo's day · {1} |
 | `q.date.before` | আগের দিন · {1} | The day before · {1} |
 | `q.date.other` | অন্য দিন | Another day |
+
+### T3: the khata's due as "before", as built
+
+From T3 (3 Nov), appended at the end of the dictionaries. For a party already in the khata, the "before" question proposes the khata's due just before this page (`q.book.opening.*`; `.clear.*` when the khata shows nothing owed, with `q.opening.none` as its button). "A different amount" is the keypad behind "No, change it", and the card's `why` says the khata will be corrected to it. A written "before" that differs from the khata asks which is right (`q.book.differs`, two tiles with the figures; the page's tile has the `q.book.up`/`q.book.down` detail). One that matches puts a ticked `q.book.match` under the part's meaning card. The plan's wording for `q.book.opening.customer` and `q.book.differs`; the rest written in T3. Not yet read by a Bangla reader. The party timeline's adjustment line, `pl.adjust`, sits with the other `pl.*` keys.
+
+| Key | বাংলা | English |
+|---|---|---|
+| `q.book.opening.customer` | খাতায় {1}-এর বাকি {2} — এই পাতার আগে এটাই ছিল? | The khata shows {1} owing {2}. Was that it before this page? |
+| `q.book.opening.supplier` | খাতায় {1}-এর কাছে দেনা {2} — এই পাতার আগে এটাই ছিল? | The khata shows you owe {1} {2}. Was that it before this page? |
+| `q.book.opening.clear.customer` | খাতায় {1}-এর কোনো বাকি নেই — এই পাতার আগেও কিছু ছিল না? | The khata shows nothing owed by {1}. Nothing before this page either? |
+| `q.book.opening.clear.supplier` | খাতায় {1}-এর কাছে কোনো দেনা নেই — এই পাতার আগেও কিছু ছিল না? | The khata shows nothing owed to {1}. Nothing before this page either? |
+| `q.book.opening.yes` | হ্যাঁ, {1} | Yes, {1} |
+| `q.book.opening.other` | অন্য টাকা | A different amount |
+| `q.book.opening.why` | অন্য টাকা দিলে খাতা সেই টাকায় ঠিক করা হবে, আর ঠিক করাটা খাতায় দেখা যাবে। | Give a different amount and the khata is corrected to it, with the correction shown. |
+| `q.book.match` | খাতার সাথে মিলেছে: আগের {1} | Matches the khata: {1} before |
+| `q.book.differs` | পাতায় আগের {1}, খাতায় {2} — কোনটা ঠিক? | The page says {1} before, the khata {2}. Which is right? |
+| `q.book.page` | পাতা: {1} | Page: {1} |
+| `q.book.book` | খাতা: {1} | Khata: {1} |
+| `q.book.up` | খাতা {1} বাড়িয়ে ঠিক করা হবে | The khata is corrected up {1} |
+| `q.book.down` | খাতা {1} কমিয়ে ঠিক করা হবে | The khata is corrected down {1} |
+| `pl.adjust` | খাতা ঠিক করা: পাতায় আগের {1} লেখা | Khata corrected: the page says {1} before |
 
 ### U4: the company memo, as built
 

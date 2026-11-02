@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { duesList, partyAccount, partyAccounts } from "./accounts";
+import { dueBefore, duesList, partyAccount, partyAccounts } from "./accounts";
 import { prepareBook } from "./book";
 import { addDays } from "./calendar";
 import { bookInput, makeParty, makeRecords, type RecSpec, SAMPLE_TODAY, sampleShop } from "./testing";
@@ -92,7 +92,7 @@ describe("running balance and FIFO", () => {
     expect(a.unpaidRecordIds).toEqual([]);
   });
 
-  test("an opening balance is the starting point; later ones repeat the balance and are ignored", () => {
+  test("an opening balance is the starting point; a later one that repeats the balance changes nothing", () => {
     const a = account([
       { date: ago(30), type: "opening_balance", taka: 900, doc: "pg1", id: "open" },
       { date: ago(30), type: "credit_sale", taka: 300, doc: "pg1" },
@@ -106,7 +106,7 @@ describe("running balance and FIFO", () => {
     expect(a.oldestUnpaid).toMatchObject({ recordId: "open", leftPoisha: 40_000 });
   });
 
-  test("an opening balance after a credit is not added", () => {
+  test("an opening balance after a credit, equal to the balance, is not added", () => {
     const a = account([
       { date: ago(10), type: "credit_sale", taka: 300 },
       { date: ago(5), type: "opening_balance", taka: 300 },
@@ -135,6 +135,114 @@ describe("running balance and FIFO", () => {
     const a = partyAccount(prepareBook(bookInput(records, { parties: [supplier] })), "s", AS_OF)!;
     expect(a.balancePoisha).toBe(300_000);
     expect(a.entries).toHaveLength(2);
+  });
+});
+
+describe("a later \"before\" that differs from the book (T3)", () => {
+  // The five-page test's Karim, as he is in the dev book: page 1 gave him five credits (৳510, a
+  // separate ৳250 sale among them), page 2 says "before ৳260" and he paid ৳200.
+  const karim = [
+    { date: ago(2), type: "credit_sale" as const, taka: 160, doc: "p1", id: "c1" },
+    { date: ago(2), type: "credit_sale" as const, taka: 100, doc: "p1", id: "c2" },
+    { date: ago(2), type: "credit_sale" as const, taka: 120, doc: "p1", id: "c3" },
+    { date: ago(2), type: "credit_sale" as const, taka: 30, doc: "p1", id: "c4" },
+    { date: ago(2), type: "credit_sale" as const, taka: 100, doc: "p1", id: "c5" },
+    { date: ago(1), type: "opening_balance" as const, taka: 260, doc: "p2", id: "open2" },
+    { date: ago(1), type: "repayment" as const, taka: 200, doc: "p2", id: "pay" },
+  ];
+
+  test("down: the page's ৳260 is kept as an adjustment of −৳250, so Karim owes ৳60, not ৳310", () => {
+    const a = account(karim);
+    expect(a.entries.map((e) => [e.direction, e.amountPoisha, e.balancePoisha])).toEqual([
+      ["up", 16_000, 16_000],
+      ["up", 10_000, 26_000],
+      ["up", 12_000, 38_000],
+      ["up", 3_000, 41_000],
+      ["up", 10_000, 51_000],
+      ["adjust", -25_000, 26_000],
+      ["down", 20_000, 6_000],
+    ]);
+    expect(a.balancePoisha).toBe(6_000);
+    // The adjustment clears the oldest credits like a payment, but the last payment is the ৳200.
+    expect(a.lastPayment).toMatchObject({ recordId: "pay", amountPoisha: 20_000 });
+    expect(a.oldestUnpaid).toMatchObject({ recordId: "c5", leftPoisha: 6_000 });
+    expect(a.unpaidRecordIds).toEqual(["c5"]);
+  });
+
+  test("up: an adjustment is owed like a credit, after the credits before it", () => {
+    const a = account([
+      { date: ago(20), type: "credit_sale", taka: 300, doc: "a", id: "c1" },
+      { date: ago(10), type: "opening_balance", taka: 500, doc: "b", id: "open" },
+      { date: ago(10), type: "repayment", taka: 100, doc: "b" },
+    ]);
+    expect(a.entries.map((e) => [e.direction, e.amountPoisha, e.balancePoisha])).toEqual([
+      ["up", 30_000, 30_000],
+      ["adjust", 20_000, 50_000],
+      ["down", 10_000, 40_000],
+    ]);
+    expect(a.oldestUnpaid).toMatchObject({ recordId: "c1", leftPoisha: 20_000 });
+    expect(a.unpaidRecordIds).toEqual(["c1", "open"]);
+  });
+
+  test("equal: nothing changes, and no line is added to the timeline", () => {
+    const a = account([
+      { date: ago(20), type: "credit_sale", taka: 300, doc: "a" },
+      { date: ago(10), type: "opening_balance", taka: 300, doc: "b" },
+    ]);
+    expect(a.entries.map((e) => e.direction)).toEqual(["up"]);
+  });
+
+  test("an adjustment down is not a payment: nothing paid for 40 days is still flagged", () => {
+    const a = account([
+      { date: ago(40), type: "credit_sale", taka: 500, doc: "a", id: "c1" },
+      { date: ago(35), type: "opening_balance", taka: 300, doc: "b" },
+    ]);
+    expect(a.balancePoisha).toBe(30_000);
+    expect(a.lastPayment).toBeNull();
+    expect(a.oldestUnpaid).toMatchObject({ recordId: "c1", leftPoisha: 30_000, daysAgo: 40 });
+    expect(a.risks).toMatchObject([{ code: "no_payment", days: 40 }]);
+  });
+
+  test("an adjustment up is not a credit he gave: never the unusual one, nor part of the usual", () => {
+    const older = [
+      { date: ago(25), type: "credit_sale" as const, taka: 300 },
+      { date: ago(20), type: "credit_sale" as const, taka: 300 },
+      { date: ago(10), type: "credit_sale" as const, taka: 300 },
+    ];
+    const up = account([...older, { date: ago(1), type: "opening_balance", taka: 2900, doc: "late" }]);
+    expect(up.balancePoisha).toBe(290_000);
+    expect(up.risks.map((r) => r.code)).not.toContain("big_credit");
+    // An old adjustment doesn't make a fourth "usual" credit either: two credits and one adjustment aren't enough.
+    const two = account([older[0]!, older[1]!, { date: ago(15), type: "opening_balance", taka: 900, doc: "mid" }, { date: ago(1), type: "credit_sale", taka: 2000 }]);
+    expect(two.risks.map((r) => r.code)).not.toContain("big_credit");
+  });
+});
+
+describe("the due just before a page (T3)", () => {
+  const parties = [makeParty("k", "customer", "করিম"), makeParty("k2", "customer", "করীম", "k")];
+  const book = prepareBook(
+    bookInput(
+      makeRecords([
+        { date: ago(2), type: "credit_sale", taka: 510, party: "k", doc: "p1", capturedAt: `${ago(2)}T05:00:00.000Z` },
+        { date: ago(1), type: "opening_balance", taka: 260, party: "k2", doc: "p2", capturedAt: `${ago(1)}T05:00:00.000Z` },
+        { date: ago(1), type: "repayment", taka: 200, party: "k", doc: "p2", capturedAt: `${ago(1)}T05:00:00.000Z` },
+      ]),
+      { parties },
+    ),
+  );
+  const at = (documentId: string, date: string, time: string) => ({ documentId, date, capturedAt: `${date}T${time}:00.000Z` });
+
+  test("the records ahead of the page in khata order, its own left out", () => {
+    expect(dueBefore(book, "k", at("p2", ago(1), "05:00"))).toBe(51_000);
+    expect(dueBefore(book, "k", at("p3", ago(1), "06:00"))).toBe(6_000);
+    expect(dueBefore(book, "k", at("p0", ago(1), "04:00"))).toBe(51_000);
+    expect(dueBefore(book, "k", at("p0", ago(2), "04:00"))).toBeNull();
+    expect(dueBefore(book, "k", at("p9", ago(0), "01:00"))).toBe(6_000);
+  });
+
+  test("a merged spelling gives its party's due; an unknown party none", () => {
+    expect(dueBefore(book, "k2", at("p3", ago(1), "06:00"))).toBe(6_000);
+    expect(dueBefore(book, "missing", at("p3", ago(1), "06:00"))).toBeNull();
   });
 });
 

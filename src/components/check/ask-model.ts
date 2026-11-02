@@ -122,6 +122,8 @@ export const ANSWER_ACCEPTS = {
   memo_extra: "none",
   // Each part's lines come on that part's quick confirm (T2).
   split: "none",
+  // Its card shows the "before" line's figure beside the khata's (T3).
+  book_differs: "lines",
 } as const satisfies Record<QuestionKind, "lines" | "changed" | "added" | "none">;
 
 const FIGURES = ["quantityText", "rateText", "amountText", "balanceText"] as const;

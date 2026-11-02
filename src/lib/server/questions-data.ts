@@ -1,39 +1,45 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { partyAccount } from "@/lib/insights/accounts";
+import { type PagePlace, dueBefore } from "@/lib/insights/accounts";
 import { type QuarterTurns, turnsForProcessingMode } from "@/lib/images/orientation";
-import { dhakaDate } from "@/lib/ledger/dates";
+import { businessDateFor, dhakaDate } from "@/lib/ledger/dates";
 import type { PartyKind } from "@/lib/ledger/parties";
 import type { MemoForPage } from "@/lib/memo/match";
 import { storedMemo } from "@/lib/memo/parse";
 import { NEW_ROW_PREFIX, type ReviewState } from "@/lib/questions/answer";
-import { buildQuestions, partiesToExplain } from "@/lib/questions/engine";
+import { bookPartiesOf } from "@/lib/questions/engine";
 import type { KnownParty, QuestionInput } from "@/lib/questions/types";
 import { entryValuesSchema, pageValuesSchema } from "@/lib/review/values";
 import { type RunReview, loadRunReview } from "./review-data";
 import { loadShop } from "./shop-data";
 
 /**
- * A run's review plus what the questions need: the model's doubts, the shop's parties, the
- * photo's day, the company memos photographed with the page (U4), and the last due of a party a
- * "same party?" question names. That last part reads the whole book, so it is loaded only when
- * such a question is asked, and `dues: false` skips it where only the answer is checked (the
- * sentences aren't shown).
+ * A run's review plus what the questions need: the model's doubts, the shop's parties (merged
+ * spellings too), the photo's day, the company memos photographed with the page (U4), and what
+ * the khata showed just before this page for the parties the questions compare with (T3:
+ * `bookPartiesOf`). That last part reads the whole book, so it is loaded only when such a party
+ * is on the page. The answer route loads it too: the khata's due decides what an answer adds.
  */
 export async function loadQuestionInput(
   supabase: SupabaseClient,
   runId: string,
   /** `review`: the run's review, when the caller has already loaded it. */
-  o: { dues?: boolean; review?: RunReview } = {},
+  o: { review?: RunReview } = {},
 ): Promise<{ review: RunReview; input: QuestionInput; memos: PageMemo[] } | null> {
   const review = o.review ?? (await loadRunReview(supabase, runId));
   if (!review || review.run.status !== "succeeded") return null;
   const [{ data: parties }, { data: doc }, pageMemos] = await Promise.all([
-    supabase.from("parties").select("id, kind, display_name, normalized_key").is("merged_into", null).limit(5000),
-    supabase.from("ledger_documents").select("uploaded_at").eq("id", review.run.documentId).maybeSingle(),
+    supabase.from("parties").select("id, kind, display_name, normalized_key, merged_into").limit(5000),
+    supabase.from("ledger_documents").select("uploaded_at, business_date, business_date_source").eq("id", review.run.documentId).maybeSingle(),
     loadMemos(supabase, review.run.documentId),
   ]);
-  const known: KnownParty[] = (parties ?? []).map((p) => ({ id: p.id as string, kind: p.kind as PartyKind, name: p.display_name as string, key: p.normalized_key as string }));
+  const known: KnownParty[] = (parties ?? []).map((p) => ({
+    id: p.id as string,
+    kind: p.kind as PartyKind,
+    name: p.display_name as string,
+    key: p.normalized_key as string,
+    ...(p.merged_into ? { mergedInto: p.merged_into as string } : {}),
+  }));
   const memos = pageMemos.map((m) => m.memo);
   const input: QuestionInput = {
     page: review.page.values,
@@ -43,8 +49,13 @@ export async function loadQuestionInput(
     capturedOn: doc?.uploaded_at ? dhakaDate(new Date(doc.uploaded_at as string)) : null,
     ...(memos.length > 0 ? { memos } : {}),
   };
-  const explain = o.dues === false ? [] : partiesToExplain(buildQuestions(input));
-  if (explain.length > 0) input.dues = await lastDues(supabase, explain, input.capturedOn ?? dhakaDate(new Date()));
+  const inBook = bookPartiesOf(input);
+  if (inBook.length > 0 && doc?.uploaded_at) {
+    const capturedAt = doc.uploaded_at as string;
+    // The page's day as confirming will set it: his own choice, else the written date, else the photo's.
+    const date = doc.business_date_source === "user" ? (doc.business_date as string) : businessDateFor(review.page.values.dateText, new Date(capturedAt)).iso;
+    input.dues = await duesBefore(supabase, inBook, { documentId: review.run.documentId, date, capturedAt });
+  }
   return { review, input, memos: pageMemos };
 }
 
@@ -72,13 +83,16 @@ async function loadMemos(supabase: SupabaseClient, documentId: string): Promise<
   });
 }
 
-/** What the khata showed for these parties on the photo's day, from confirmed records, worked out as the dues screen does. */
-async function lastDues(supabase: SupabaseClient, partyIds: readonly string[], asOf: string): Promise<Map<string, number>> {
+/**
+ * What the khata showed for these parties just before the page, from confirmed records, worked out
+ * as the dues screen does. A party with nothing in the book before the page is left out.
+ */
+async function duesBefore(supabase: SupabaseClient, partyIds: readonly string[], page: PagePlace): Promise<Map<string, number>> {
   const { book } = await loadShop(supabase);
   const dues = new Map<string, number>();
   for (const id of partyIds) {
-    const account = partyAccount(book, id, asOf);
-    if (account && account.entries.length > 0) dues.set(id, account.balancePoisha);
+    const due = dueBefore(book, id, page);
+    if (due != null) dues.set(id, due);
   }
   return dues;
 }

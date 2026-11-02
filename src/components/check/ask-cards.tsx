@@ -93,7 +93,7 @@ function Visual({ q, rows, photo, capturedOn, memo }: { q: Question; rows: reado
       </div>
     );
   }
-  if (q.entry && (q.kind === "doubt" || q.kind === "direction")) {
+  if (q.entry && (q.kind === "doubt" || q.kind === "direction" || q.kind === "book_differs")) {
     const row = rows.find((r) => r.id === q.entry);
     return row ? (
       <div className="as-crop">

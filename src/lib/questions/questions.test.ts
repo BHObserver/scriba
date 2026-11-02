@@ -25,7 +25,7 @@ import { keepAnswers, pageValuesSchema } from "@/lib/review/values";
 import { validateLedger } from "@/lib/validation/engine";
 import { readYesNo } from "@/lib/voice/answer-words";
 import { acceptedFindings, answerQuestion, applyChanges } from "./answer";
-import { buildQuestions, partiesToExplain, splitHereQuestion, writtenDay } from "./engine";
+import { bookPartiesOf, buildQuestions, splitHereQuestion, writtenDay } from "./engine";
 import { romanize, soundsAlike } from "./similar";
 import { spokenAnswer } from "./speech";
 import { sentenceText } from "./text";
@@ -275,7 +275,7 @@ describe("a name that may already be in the book", () => {
 
   test("why: the khata's last due, and whether this page's “before” is the same", () => {
     const base = inputOf(read(), { parties: [pran] });
-    expect(partiesToExplain(buildQuestions(base))).toEqual(["p1"]);
+    expect(bookPartiesOf(base)).toEqual(["p1"]);
     const why = (due: number) => {
       const q = find({ ...base, dues: new Map([["p1", due]]) }, "party:b1");
       return [sentenceText(en, q.why!.sentence), sentenceText(bn, q.why!.sentence), q.why!.verified];
@@ -295,14 +295,14 @@ describe("a name that may already be in the book", () => {
     const q = find({ ...input, dues: new Map([["p1", 280_000]]) }, "party:b1");
     expect(q.options.map((o) => sentenceText(en, o.label))).toEqual(["প্রাণ", "Pran", "No, a new supplier"]);
     expect(q.why).toBeNull();
-    expect(partiesToExplain(buildQuestions(input))).toEqual([]);
+    expect(bookPartiesOf(input)).toEqual([]);
   });
 
   test("a customer's name gets a customer's words", () => {
     const karim: KnownParty = { id: "c1", kind: "customer", name: "করিম", key: normalizePartyName("করিম")! };
     const entries = [line("e1", "b1", "Karim 300", "credit_sale", { customer: "Karim", amount: "300" }), line("e2", "b1", "ডাল ১২০", "cash_sale", { amount: "১২০" })];
     const input = inputOf(read({ blocks: [{ ...SALES, id: "b1" }], entries, date: "1/11/26" }), { parties: [karim] });
-    const [id] = partiesToExplain(buildQuestions(input));
+    const [id] = bookPartiesOf(input);
     expect(id).toBe("c1");
     const q = buildQuestions({ ...input, dues: new Map([["c1", 150_000]]) }).questions.find((x) => x.kind === "same_party")!;
     expect(q.options.map((o) => sentenceText(en, o.label))).toEqual(["Yes, the same person", "No, a new customer"]);
@@ -331,6 +331,144 @@ describe("a name that may already be in the book", () => {
     expect(soundsAlike("রহিম", "করিম")).toBe(false);
     expect(soundsAlike("মোঃ করিম ভাই", "করীম")).toBe(false); // the same key: already one party
     expect(soundsAlike("Fresh", "Pran")).toBe(false);
+  });
+});
+
+describe("the khata's due as “before” (T3)", () => {
+  // Shaped like the five-page test's second page, written for the test: Karim paid ৳200 with no
+  // "before" written, and Fresh's Kamal came with "before ২৬০০" (the khata has ৳1,600).
+  const KARIM = { id: "b1", kind: "customer_account", title: "করিম", party: "করিম", person: null, date_text: null, box: null };
+  const FRESH = { id: "b2", kind: "supplier_visit", title: "ফ্রেশের কামাল", party: "ফ্রেশ", person: "কামাল", date_text: null, box: null };
+  const LINES = [
+    line("e1", "b1", "করিম জমা ২০০", "repayment", { amount: "২০০" }),
+    line("e2", "b2", "আগের ২৬০০", "opening_balance", { amount: "২৬০০" }),
+    line("e3", "b2", "দিলাম ১০০০", "supplier_payment", { amount: "১০০০" }),
+  ];
+  const karim: KnownParty = { id: "c1", kind: "customer", name: "করিম", key: normalizePartyName("করিম")! };
+  const fresh: KnownParty = { id: "s1", kind: "supplier", name: "ফ্রেশ", key: normalizePartyName("ফ্রেশ")! };
+  const page = (dues: Array<[string, number]>, o: { blocks?: unknown[]; parties?: KnownParty[] } = {}) => ({
+    ...inputOf(read({ blocks: o.blocks ?? [KARIM, FRESH], entries: LINES, date: "2/11/26" }), { parties: o.parties ?? [karim, fresh] }),
+    dues: new Map(dues),
+  });
+
+  test("each account part's party in the book is named for its due, before anything is asked", () => {
+    expect(bookPartiesOf(page([]))).toEqual(["c1", "s1"]);
+    expect(bookPartiesOf(page([], { parties: [fresh] }))).toEqual(["s1"]);
+    expect(bookPartiesOf(page([], { parties: [] }))).toEqual([]);
+  });
+
+  test("no “before” written: the khata's ৳260 is proposed, and yes adds it as the part's first line", () => {
+    const start = page([["c1", 26_000], ["s1", 260_000]]);
+    expect(ids(start)).toEqual(["meaning:b1", "opening:b1", "meaning:b2"]);
+    const q = find(start, "opening:b1");
+    expect(sentenceText(bn, q.sentence)).toBe("খাতায় করিম-এর বাকি ৳২৬০ — এই পাতার আগে এটাই ছিল?");
+    expect(sentenceText(en, q.sentence)).toBe("The khata shows করিম owing ৳260. Was that it before this page?");
+    expect(q.proposed).toBe("book");
+    expect(q.options.map((o) => sentenceText(bn, o.label))).toEqual(["হ্যাঁ, ৳২৬০", "পরে বলব"]);
+    expect(sentenceText(en, q.input!.label!)).toBe("A different amount");
+    expect(sentenceText(bn, q.why!.sentence)).toBe("অন্য টাকা দিলে খাতা সেই টাকায় ঠিক করা হবে, আর ঠিক করাটা খাতায় দেখা যাবে।");
+    expect(q.why!.verified).toBe(false);
+
+    const yes = answer(start, "opening:b1", { option: "book" });
+    const added = yes.rows.find((r) => r.id.startsWith("new-"))!;
+    expect(added.values).toMatchObject({ type: "opening_balance", amountText: "260", block: "b1" });
+    expect(added.lineOrder).toBeLessThan(row(yes, "r1").lineOrder);
+    expect(ids(yes)).toEqual(["meaning:b1", "meaning:b2"]);
+  });
+
+  test("a different amount is his: kept as given, and not compared with the khata again", () => {
+    const start = page([["c1", 26_000]]);
+    const other = answer(start, "opening:b1", { value: "৩০০" });
+    expect(other.rows.find((r) => r.id.startsWith("new-"))!.values).toMatchObject({ type: "opening_balance", amountText: "৩০০" });
+    expect(ids(other).filter((id) => id.endsWith("b1") || id.startsWith("book_differs"))).toEqual(["meaning:b1"]);
+  });
+
+  test("nothing owed in the khata: “No, nothing” is proposed", () => {
+    const q = find(page([["c1", 0]]), "opening:b1");
+    expect(sentenceText(bn, q.sentence)).toBe("খাতায় করিম-এর কোনো বাকি নেই — এই পাতার আগেও কিছু ছিল না?");
+    expect(q.proposed).toBe("book");
+    expect(sentenceText(en, q.options[0]!.label)).toBe("No, nothing");
+    expect(q.options[0]!.changes).toMatchObject([{ op: "add", values: { amountText: "0" } }]);
+  });
+
+  test("nothing in the khata before the page, or paid ahead: asked as before T3", () => {
+    for (const dues of [[], [["c1", -5_000]]] as Array<Array<[string, number]>>) {
+      const q = find(page(dues), "opening:b1");
+      expect(sentenceText(bn, q.sentence)).toBe("এর আগে করিম-এর কোনো বাকি ছিল?");
+      expect(q.options.map((o) => o.id)).toEqual(["none", "later"]);
+      expect(q.proposed).toBeNull();
+      expect(q.why).toBeNull();
+    }
+  });
+
+  test("a written “before” equal to the khata: a ticked line on the visit's card, nothing more to ask", () => {
+    const start = page([["s1", 260_000]]);
+    const q = find(start, "meaning:b2");
+    expect(q.why).toEqual({ sentence: { key: "q.book.match", args: [{ money: 260_000 }] }, verified: true });
+    expect(sentenceText(bn, q.why!.sentence)).toBe("খাতার সাথে মিলেছে: আগের ৳২,৬০০");
+    expect(ids(start).some((id) => id.startsWith("book_differs"))).toBe(false);
+  });
+
+  test("a written “before” that differs: which is right, the page or the khata?", () => {
+    const start = page([["s1", 160_000]]);
+    expect(ids(start)).toEqual(["meaning:b1", "opening:b1", "meaning:b2", "book_differs:r2"]);
+    const q = find(start, "book_differs:r2");
+    expect(sentenceText(bn, q.sentence)).toBe("পাতায় আগের ৳২,৬০০, খাতায় ৳১,৬০০ — কোনটা ঠিক?");
+    expect(sentenceText(en, q.sentence)).toBe("The page says ৳2,600 before, the khata ৳1,600. Which is right?");
+    expect(q.options.map((o) => sentenceText(en, o.label))).toEqual(["Page: ৳2,600", "Khata: ৳1,600"]);
+    expect(sentenceText(bn, q.options[0]!.detail!)).toBe("খাতা ৳১,০০০ বাড়িয়ে ঠিক করা হবে");
+    expect(q.proposed).toBeNull(); // Scriba doesn't know which: he looks at the writing
+    expect(q).toMatchObject({ entry: "r2", field: "amount", entries: ["r2"], input: { kind: "money", target: { to: "entry", entry: "r2", field: "amount" } } });
+    expect(find(start, "meaning:b2").why).toBeNull();
+
+    // The khata's: the line becomes ৳1,600, which the visit's card then ticks.
+    const book = answer(start, "book_differs:r2", { option: "book" });
+    expect(row(book, "r2").values.amountText).toBe("1600");
+    expect(ids(book)).not.toContain("book_differs:r2");
+    expect(find(book, "meaning:b2").why?.verified).toBe(true);
+
+    // The page's: kept as written (an adjustment once confirmed), and not asked again.
+    const kept = answer(start, "book_differs:r2", { option: "page" });
+    expect(row(kept, "r2").values.amountText).toBe("২৬০০");
+    expect(row(kept, "r2").reviewFields).not.toContain("amount");
+    expect(ids(kept)).not.toContain("book_differs:r2");
+
+    // Typed: what he typed, and not asked again either.
+    const typed = answer(start, "book_differs:r2", { value: "২১০০" });
+    expect(row(typed, "r2").values.amountText).toBe("২১০০");
+    expect(ids(typed)).not.toContain("book_differs:r2");
+  });
+
+  test("a khata below the page's “before”: keeping the page brings it down", () => {
+    const q = find(page([["s1", 300_000]]), "book_differs:r2");
+    expect(sentenceText(en, q.options[0]!.detail!)).toBe("The khata is corrected down ৳400");
+  });
+
+  test("“same party?” yes: the part is then compared with the party it was matched to", () => {
+    const named = [KARIM, { ...FRESH, party: "Fresh" }];
+    const start = page([["s1", 160_000]], { blocks: named });
+    expect(bookPartiesOf(start)).toEqual(["c1", "s1"]); // s1 through the "same party?" question
+    expect(ids(start)).toContain("party:b2");
+    expect(ids(start)).not.toContain("book_differs:r2");
+    const yes = answer(answer(start, "meaning:b2", { option: "yes" }), "party:b2", { option: "party:s1" });
+    expect(yes.page.blocks?.[1]?.party).toBe("ফ্রেশ");
+    expect(ids(yes)).toContain("book_differs:r2");
+  });
+
+  test("a spelling merged into another party is in the book: its due, the khata's name, no “same party?”", () => {
+    const alias: KnownParty = { id: "c9", kind: "customer", name: "Karim", key: normalizePartyName("Karim")!, mergedInto: "c1" };
+    const start = page([["c9", 26_000]], { blocks: [{ ...KARIM, party: "Karim" }, FRESH], parties: [karim, alias, fresh] });
+    expect(bookPartiesOf(start)).toEqual(["c9", "s1"]);
+    expect(ids(start)).not.toContain("party:b1");
+    expect(sentenceText(en, find(start, "opening:b1").sentence)).toBe("The khata shows করিম owing ৳260. Was that it before this page?");
+    // Never offered as a match for a new name.
+    const other = page([], { blocks: [{ ...KARIM, party: "Kareem" }, FRESH], parties: [alias, fresh] });
+    expect(ids(other)).not.toContain("party:b1");
+  });
+
+  test("an answer is checked against the khata as it is now: a due that changed since makes it stale", () => {
+    const shown = find(page([["c1", 26_000]]), "opening:b1");
+    expect(answerQuestion(page([["c1", 30_000]]), "opening:b1", shown.fp, { option: "book" }, NOW)).toEqual({ ok: false, error: "stale" });
   });
 });
 
@@ -749,6 +887,20 @@ test("every sentence and option renders in both languages with no placeholder le
     inputOf(read({ blocks: [VISIT], entries: [PRAN_LINES[1]!, line("e3", "b1", "Now 100", "closing_balance", { amount: "100" })], date: "1/11/26" })),
   ];
   inputs[0] = { ...inputs[0]!, dues: new Map([["p1", 280_000]]) };
+  // T3: the khata's due proposed, compared and matched, in a customer's account and a visit.
+  const book = (party: string, kind: "customer" | "supplier", due: number, blockKind: string, entries: unknown[]) => ({
+    ...inputOf(read({ blocks: [{ ...VISIT, kind: blockKind, party, person: null }], entries, date: "1/11/26" }), { parties: [{ id: "b", kind, name: party, key: normalizePartyName(party)! }] }),
+    dues: new Map([["b", due]]),
+  });
+  const paid = line("e1", "b1", "দিলাম ৫০০", "supplier_payment", { amount: "৫০০" });
+  const before = line("e2", "b1", "আগের ২৬০০", "opening_balance", { amount: "২৬০০" });
+  inputs.push(
+    book("করিম", "customer", 26_000, "customer_account", [line("e1", "b1", "জমা ২০০", "repayment", { amount: "২০০" })]),
+    book("প্রাণ", "supplier", 0, "supplier_account", [paid]),
+    book("ফ্রেশ", "supplier", 160_000, "supplier_visit", [before, paid]),
+    book("ফ্রেশ", "supplier", 300_000, "supplier_visit", [before, paid]),
+    book("ফ্রেশ", "supplier", 260_000, "supplier_visit", [before, paid]),
+  );
   for (const input of inputs) {
     for (const q of buildQuestions(input).questions) {
       const sentences = [q.sentence, q.why?.sentence, ...q.options.flatMap((o) => [o.label, o.detail])].filter((s) => s != null);

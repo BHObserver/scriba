@@ -19,6 +19,9 @@
  * links the memo to its visit by name (or asks), pairs its lines with the handwritten goods, and
  * checks its sums; a price is proposed only from a memo line that is sure, read with confidence
  * and consistent with the memo's own total. He still confirms each one.
+ *
+ * T3: the khata is Scriba's memory. For a party already in the book, its due just before the page
+ * is proposed as "before" when none is written, and a written "before" is compared with it.
  */
 import type { NormalizedDoubt } from "@/lib/extraction/parse";
 import { type BlockGroup, blockPartyKind, groupByBlock, isUnpricedGoods } from "@/lib/ledger/blocks";
@@ -286,7 +289,7 @@ function visitFigures(rows: ReviewRow[]): Sentence | null {
   return null;
 }
 
-function meaningQuestion(block: BlockValues, rows: ReviewRow[], memo: BlockMemo | undefined): Question | null {
+function meaningQuestion(block: BlockValues, rows: ReviewRow[], memo: BlockMemo | undefined, bookWhy: Why | null): Question | null {
   if (block.kind === "day_sales" || block.kind === "expenses") return null;
   const party = block.party?.trim() || null;
   const person = block.person?.trim() || null;
@@ -321,7 +324,8 @@ function meaningQuestion(block: BlockValues, rows: ReviewRow[], memo: BlockMemo 
   } else {
     sentence = { key: block.kind === "supplier_account" ? "q.meaning.supplier" : "q.meaning.customer", args: [{ text: party }] };
   }
-  const why = block.kind === "supplier_visit" && memo ? memoAgreesWhy(memo, rows) : null;
+  // His own khata first: it says whether the "before" is right. Then the company's memo.
+  const why = bookWhy ?? (block.kind === "supplier_visit" && memo ? memoAgreesWhy(memo, rows) : null);
   return question({ ...base, sentence, why, options: [{ id: "yes", label: { key: "q.yes" }, changes: [] }, ...others], proposed: "yes" });
 }
 
@@ -337,7 +341,7 @@ function samePartyQuestion(
   ctx.askedParties.add(asked);
   const known = ctx.input.parties.filter((p) => p.kind === link.kind);
   if (known.some((p) => p.key === link.key)) return null;
-  const alike = known.filter((p) => soundsAlike(written, p.name)).slice(0, 3);
+  const alike = known.filter((p) => !p.mergedInto && soundsAlike(written, p.name)).slice(0, 3);
   if (alike.length === 0) return null;
 
   const rename = (p: KnownParty): Change[] =>
@@ -369,12 +373,19 @@ function samePartyQuestion(
   });
 }
 
-/** The book's parties whose last due would explain a "same party?" question: one per question with a single match. */
-export function partiesToExplain(set: QuestionSet): string[] {
-  return set.questions.flatMap((q) => {
+/**
+ * The book's parties this page's questions compare with, whose dues are loaded before asking:
+ * each account part's party already in the book (T3), and the one match of a "same party?"
+ * question, for its `why` line.
+ */
+export function bookPartiesOf(input: QuestionInput): string[] {
+  const pageTypes = input.rows.filter((r) => r.status !== "rejected").map((r) => r.values.type);
+  const ids = new Set((input.page.blocks ?? []).flatMap((b) => bookParty(input, pageTypes, b)?.party.id ?? []));
+  for (const q of buildQuestions(input).questions) {
     const matches = q.kind === "same_party" ? q.options.filter((o) => o.id.startsWith("party:")) : [];
-    return matches.length === 1 ? [matches[0]!.id.slice("party:".length)] : [];
-  });
+    if (matches.length === 1) ids.add(matches[0]!.id.slice("party:".length));
+  }
+  return [...ids];
 }
 
 /** Seven sales with no kind written are one question, not seven. */
@@ -437,8 +448,12 @@ function deliveryQuestion(ctx: Ctx, g: Group, rows: ReviewRow[]): Question | nul
   return question({ ...base, ...(memoDelivery(memo, g.block, rows, goods, target) ?? { why: memoPartialWhy(memo, goods) }) });
 }
 
-/** An account with no "due before": ask for it, so the due now can be worked out. */
-function openingQuestion(ctx: Ctx, g: Group, rows: ReviewRow[]): Question | null {
+/**
+ * An account with no "due before": ask for it, so the due now can be worked out. For a party
+ * already in the book (T3), its due just before this page is proposed; any other figure he gives
+ * becomes an adjustment of the khata when the page is confirmed, and the card says so.
+ */
+function openingQuestion(ctx: Ctx, g: Group, rows: ReviewRow[], book: BookParty | null): Question | null {
   if (!g.convention || rows.some((r) => r.values.type === "unknown")) return null;
   const f = ctx.findings.find((x) => x.ruleId === "balance_equation" && x.reason === "no_opening" && x.block === g.block?.id);
   if (!f) return null;
@@ -452,17 +467,31 @@ function openingQuestion(ctx: Ctx, g: Group, rows: ReviewRow[]): Question | null
   const opening = (amountText: string): Change[] => [
     { op: "add", after, values: { ...openingValues(blockId), amountText } },
   ];
+  const base = { id: `opening:${blockId ?? "page"}`, kind: "opening" as const, block: blockId, entry: null, field: null, entries: rows.map((r) => r.id) };
+  const target = { to: "opening" as const, block: blockId, after };
+  const due = knownDue(book);
+  if (book && due != null) {
+    const words = BOOK_OPENING[g.convention];
+    const name: SentenceArg = { text: book.name };
+    return question({
+      ...base,
+      fp: fingerprint([f.key, due]),
+      sentence: due > 0 ? { key: words.due, args: [name, { money: due }] } : { key: words.clear, args: [name] },
+      why: { sentence: { key: "q.book.opening.why" }, verified: false },
+      options: [
+        { id: "book", label: due > 0 ? { key: "q.book.opening.yes", args: [{ money: due }] } : { key: "q.opening.none" }, value: poishaText(due), changes: opening(poishaText(due)) },
+        later,
+      ],
+      proposed: "book",
+      input: { kind: "money", target, label: { key: "q.book.opening.other" } },
+    });
+  }
   return question({
-    id: `opening:${blockId ?? "page"}`,
-    kind: "opening",
+    ...base,
     fp: fingerprint([f.key]),
-    block: blockId,
-    entry: null,
-    field: null,
-    entries: rows.map((r) => r.id),
     sentence: { key: g.convention === "supplier" ? "q.opening.supplier" : "q.opening.customer", args: [who] },
     options: [{ id: "none", label: { key: "q.opening.none" }, changes: opening("0") }, later],
-    input: { kind: "money", target: { to: "opening", block: blockId, after } },
+    input: { kind: "money", target },
   });
 }
 
@@ -481,6 +510,97 @@ export function openingValues(block: string | null): EntryValues {
     crossedOut: false,
     ...(block ? { block } : {}),
   };
+}
+
+// ---------------------------------------------------------------------------
+// The khata's due (T3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The party in the book an account part is with, the name its account has in the khata (a merged
+ * spelling's is the party it was merged into), and what the khata showed just before this page.
+ */
+type BookParty = { party: KnownParty; name: string; due: number | null };
+
+/** "Karim owes ৳260 in the khata. Was that it before this page?", by the account's side. */
+const BOOK_OPENING: Record<PartyKind, { due: MessageKey; clear: MessageKey }> = {
+  customer: { due: "q.book.opening.customer", clear: "q.book.opening.clear.customer" },
+  supplier: { due: "q.book.opening.supplier", clear: "q.book.opening.clear.supplier" },
+};
+
+/**
+ * An account part's party, if it is in the book: its name as written (or a spelling merged into
+ * another party), with its due just before this page. The due is null when the book has nothing
+ * of it before the page, or the dues weren't loaded.
+ */
+function bookParty(input: QuestionInput, pageTypes: readonly TransactionType[], block: BlockValues | null): BookParty | null {
+  if (!block || !blockPartyKind(block.kind) || !block.party?.trim()) return null;
+  const link = partyLinkFor(openingValues(block.id), input.page, pageTypes);
+  const party = link ? input.parties.find((p) => p.kind === link.kind && p.key === link.key) : undefined;
+  if (!party) return null;
+  // A merged spelling's account is the party it was merged into; a cycle stops where it repeats.
+  let root = party;
+  const seen = new Set<string>();
+  while (root.mergedInto && !seen.has(root.id)) {
+    seen.add(root.id);
+    const into = root.mergedInto;
+    const next = input.parties.find((p) => p.id === into);
+    if (!next) break;
+    root = next;
+  }
+  return { party, name: root.name, due: input.dues?.get(party.id) ?? null };
+}
+
+/**
+ * The khata's due when it can stand as a "before": zero or more. A party paid ahead (below zero)
+ * is asked about as one with nothing in the book: a "before" line can't be below zero.
+ */
+const knownDue = (book: BookParty | null): number | null => (book?.due != null && book.due >= 0 ? book.due : null);
+
+/** "Matches the khata: ৳2,800 before", ticked, when the part's written "before" is the khata's due. */
+function bookMatchWhy(rows: readonly ReviewRow[], book: BookParty | null): Why | null {
+  const due = knownDue(book);
+  const opening = singleAmount(rows, "opening_balance");
+  return due != null && opening?.amount === due ? { sentence: { key: "q.book.match", args: [{ money: due }] }, verified: true } : null;
+}
+
+/**
+ * "The page says ৳2,600 before, the khata ৳1,600. Which is right?" A "before" read from the page
+ * that isn't the khata's due: a misread digit (১৬০০ read as ২৬০০), or a khata to correct.
+ * Keeping the page's figure makes it an adjustment when the page is confirmed, so no figure is
+ * dropped. A "before" he gave himself (an answer, a line he added) isn't asked about.
+ */
+function bookDiffersQuestion(g: Group, rows: readonly ReviewRow[], book: BookParty | null): Question | null {
+  const due = knownDue(book);
+  const opening = singleAmount(rows, "opening_balance");
+  if (!g.block || due == null || !opening || opening.amount === due || !opening.row.candidate) return null;
+  const { row, amount } = opening;
+  const diff = amount - due;
+  return question({
+    id: `book_differs:${row.id}`,
+    kind: "book_differs",
+    fp: fingerprint([row.values.amountText, due]),
+    block: g.block.id,
+    entry: row.id,
+    field: "amount",
+    sentence: { key: "q.book.differs", args: [{ money: amount }, { money: due }] },
+    options: [
+      {
+        id: "page",
+        label: { key: "q.book.page", args: [{ money: amount }] },
+        detail: { key: diff > 0 ? "q.book.up" : "q.book.down", args: [{ money: Math.abs(diff) }] },
+        value: row.values.amountText?.trim() || poishaText(amount),
+        changes: [{ op: "edit", entry: row.id, checked: ["amount"] }],
+      },
+      {
+        id: "book",
+        label: { key: "q.book.book", args: [{ money: due }] },
+        value: poishaText(due),
+        changes: [{ op: "edit", entry: row.id, values: { amountText: poishaText(due) }, checked: ["amount"] }],
+      },
+    ],
+    input: { kind: "money", target: { to: "entry", entry: row.id, field: "amount" } },
+  });
 }
 
 const OFF_RULES: ReadonlySet<string> = new Set(["balance_equation", "running_balance", "written_total", "qty_x_rate"]);
@@ -1292,9 +1412,10 @@ export function buildQuestions(input: QuestionInput): QuestionSet {
     if (open.length === 0) continue;
     const block = g.block;
     const blockParty = block ? blockPartyKind(block.kind) : null;
+    const book = bookParty(input, ctx.pageTypes, block);
 
     if (block) {
-      add(meaningQuestion(block, open, ctx.memos.get(block.id)));
+      add(meaningQuestion(block, open, ctx.memos.get(block.id), bookMatchWhy(open, book)));
       add(splitQuestion(ctx, g, open));
       const party = block.party?.trim();
       if (blockParty && party) {
@@ -1325,7 +1446,8 @@ export function buildQuestions(input: QuestionInput): QuestionSet {
 
     add(delivery);
     for (const q of memoExtraQuestions(ctx, g, open)) add(q);
-    add(openingQuestion(ctx, g, open));
+    add(bookDiffersQuestion(g, open, book));
+    add(openingQuestion(ctx, g, open, book));
     for (const q of memoFigureQuestions(ctx, g, open)) add(q);
     const groupId = block?.id ?? null;
     for (const f of findings) {

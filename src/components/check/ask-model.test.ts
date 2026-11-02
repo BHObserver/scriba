@@ -3,6 +3,7 @@ import type { NormalizedDoubt } from "@/lib/extraction/parse";
 import { answerQuestion } from "@/lib/questions/answer";
 import { buildQuestions, splitHereQuestion } from "@/lib/questions/engine";
 import type { Answer, Question, QuestionInput } from "@/lib/questions/types";
+import { normalizePartyName } from "@/lib/ledger/parties";
 import type { BlockValues } from "@/lib/ledger/types";
 import { acceptAnswered, acceptRest, answeredLines, blockDone, blockFigures, blockLines, blockRegion, deckItems, deckSet, isBlockReading, itemKey } from "./ask-model";
 import { type Line, reviewOf } from "./deck-fixture.test-util";
@@ -205,6 +206,18 @@ describe("ask deck", () => {
     const { after, acc } = answered(review, "doubt:r2:amount", { option: pick.id }, {}, doubts);
     expect(after.rows.find((r) => r.id === "r2")!.values.amountText).toBe("১৩০");
     expect(Object.keys(acc)).toEqual(["r2"]);
+  });
+
+  test("the page's “before” or the khata's (T3): either answer accepts that line, as its card showed both figures", () => {
+    const review = pranPage();
+    const input = { ...inputOf(review), parties: [{ id: "s1", kind: "supplier" as const, name: "প্রাণ", key: normalizePartyName("প্রাণ")! }], dues: new Map([["s1", 160_000]]) };
+    const q = buildQuestions(input).questions.find((x) => x.id === "book_differs:r3")!;
+    for (const option of ["page", "book"]) {
+      const out = answerQuestion(input, q.id, q.fp, { option }, new Date("2026-11-03T10:00:00Z"));
+      if (!out.ok) throw new Error(out.error);
+      const after = { page: { ...review.page, values: out.after.page }, rows: out.after.rows };
+      expect(Object.keys(acceptAnswered(review, after, q, { option }, {}))).toEqual(["r3"]);
+    }
   });
 
   test("a sum that doesn't come out: code's figure accepts that line; keeping it as written accepts none", () => {

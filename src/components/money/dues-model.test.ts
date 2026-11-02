@@ -8,6 +8,7 @@ import {
   dateLabel,
   duesHref,
   duesTab,
+  entryAmount,
   entryText,
   mergeOrder,
   mergeWhat,
@@ -104,10 +105,21 @@ describe("the ledger timeline", () => {
   const rice = { item: "চাল", quantityText: "2", unit: "কেজি", rateText: "60", type: "credit_sale" as const };
 
   test("a line is the verb and what was written, without the party's name", () => {
-    expect(entryText("customer", "up", rice, bn)).toBe("বাকিতে নিলেন · চাল · ২ কেজি × ৬০");
-    expect(entryText("customer", "down", { item: "জমা", quantityText: null, unit: null, rateText: null, type: "repayment" }, bn)).toBe("জমা দিলেন");
-    expect(entryText("supplier", "up", null, en)).toBe("Stock on credit");
-    expect(entryText("customer", "start", null, bn)).toBe("আগের বাকি");
+    const at = (direction: "start" | "up" | "down") => ({ direction, balancePoisha: 0 });
+    expect(entryText("customer", at("up"), rice, bn)).toBe("বাকিতে নিলেন · চাল · ২ কেজি × ৬০");
+    expect(entryText("customer", at("down"), { item: "জমা", quantityText: null, unit: null, rateText: null, type: "repayment" }, bn)).toBe("জমা দিলেন");
+    expect(entryText("supplier", at("up"), null, en)).toBe("Stock on credit");
+    expect(entryText("customer", at("start"), null, bn)).toBe("আগের বাকি");
+  });
+
+  test("an adjustment (T3) says what the page wrote, and its amount takes the difference's sign", () => {
+    const adjust = { direction: "adjust" as const, amountPoisha: -25_000, balancePoisha: 26_000 };
+    expect(entryText("customer", adjust, null, bn)).toBe("খাতা ঠিক করা: পাতায় আগের ৳২৬০ লেখা");
+    expect(entryText("supplier", adjust, null, en)).toBe("Khata corrected: the page says ৳260 before");
+    expect(entryAmount(adjust, bn)).toBe("− ৳২৫০");
+    expect(entryAmount({ ...adjust, amountPoisha: 10_000 }, en)).toBe("+ ৳100");
+    expect(entryAmount({ direction: "down", amountPoisha: 20_000 }, en)).toBe("− ৳200");
+    expect(entryAmount({ direction: "up", amountPoisha: 16_000 }, bn)).toBe("+ ৳১৬০");
   });
 
   test("the balance after a line, settled or paid ahead", () => {

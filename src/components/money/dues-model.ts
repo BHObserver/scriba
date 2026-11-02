@@ -84,24 +84,33 @@ export function mergeWhat(source: string, target: string, i18n: I18n): string {
   return i18n.t("mg.what", possessiveName(source, i18n), possessiveName(target, i18n));
 }
 
-const VERB: Record<PartyKind, Record<AccountEntry["direction"], MessageKey>> = {
+const VERB: Record<PartyKind, Record<Exclude<AccountEntry["direction"], "adjust">, MessageKey>> = {
   customer: { start: "pl.start.customer", up: "pl.up.customer", down: "pl.down.customer" },
   supplier: { start: "pl.start.supplier", up: "pl.up.supplier", down: "pl.down.supplier" },
 };
 
 /**
  * A timeline line: "বাকিতে নিলেন · চাল · ২ কেজি × ৬০". The party's own name isn't repeated, and a
- * payment or an opening balance is just its verb: no goods change hands.
+ * payment or an opening balance is just its verb: no goods change hands. An adjustment (T3) says
+ * what the page wrote: "খাতা ঠিক করা: পাতায় আগের ৳৬০ লেখা".
  */
 export function entryText(
   kind: PartyKind,
-  direction: AccountEntry["direction"],
+  entry: Pick<AccountEntry, "direction" | "balancePoisha">,
   line: { item: string | null; quantityText: string | null; unit: string | null; rateText: string | null; type: RecordType } | null,
   i18n: I18n,
 ): string {
+  const { direction } = entry;
+  if (direction === "adjust") return i18n.t("pl.adjust", i18n.money(entry.balancePoisha));
   const verb = i18n.t(VERB[kind][direction]);
   const parts = line && direction === "up" ? readingParts({ ...line, name: null }, i18n) : [];
   return [verb, ...parts].join(" · ");
+}
+
+/** What a line does to the balance: "+ ৳১৬০", "− ৳২০০"; an adjustment by its sign. */
+export function entryAmount(entry: Pick<AccountEntry, "direction" | "amountPoisha">, i18n: I18n): string {
+  const down = entry.direction === "down" || entry.amountPoisha < 0;
+  return `${down ? "−" : "+"} ${i18n.money(Math.abs(entry.amountPoisha))}`;
 }
 
 /** What the balance is after a line: "এরপর বাকি ৳১,২৪০", "এরপর কোনো বাকি নেই". */
