@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { STORAGE_BUCKET } from "@/lib/config";
 import { pageValuesOf } from "@/lib/extraction/parse";
-import type { ExtractionRepo, RunFailure, RunRecord, RunStatus, RunSuccess } from "@/lib/extraction/pipeline";
+import type { ExtractionRepo, MemoRunSuccess, RunFailure, RunRecord, RunStatus, RunSuccess } from "@/lib/extraction/pipeline";
 import { callsOfRun } from "@/lib/extraction/two-pass";
 
 type RunRow = {
@@ -52,7 +52,7 @@ export function createSupabaseExtractionRepo(opts: {
       const data = must(
         await db
           .from("ledger_documents")
-          .select("id, owner_id, sha256, storage_path, mime_type")
+          .select("id, owner_id, sha256, storage_path, mime_type, kind")
           .eq("id", documentId)
           .maybeSingle(),
       );
@@ -63,6 +63,7 @@ export function createSupabaseExtractionRepo(opts: {
         sha256: data.sha256,
         storagePath: data.storage_path,
         mimeType: data.mime_type,
+        kind: data.kind === "memo" ? "memo" : "page",
       };
     },
 
@@ -204,6 +205,36 @@ export function createSupabaseExtractionRepo(opts: {
         p_findings: findings,
       });
       if (error) throw new Error(error.message);
+    },
+
+    async completeMemoRun(runId, r: MemoRunSuccess) {
+      // A memo has no lines to review and no findings: the reading is the run's result.
+      const data = must(
+        await service
+          .from("extraction_runs")
+          .update({
+            status: "succeeded",
+            completed_at: new Date().toISOString(),
+            elapsed_ms: r.elapsedMs,
+            provider_response_id: r.providerResponseId,
+            reported_model: r.reportedModel,
+            input_tokens: r.usage?.inputTokens ?? null,
+            cached_input_tokens: r.usage?.cachedInputTokens ?? null,
+            output_tokens: r.usage?.outputTokens ?? null,
+            reasoning_tokens: r.usage?.reasoningTokens ?? null,
+            total_tokens: r.usage?.totalTokens ?? null,
+            estimated_cost_usd: r.estimatedCostUsd,
+            raw_output_text: r.rawOutputText,
+            result: r.memo,
+          })
+          .eq("id", runId)
+          .eq("owner_id", ownerId)
+          .eq("status", "pending")
+          .select("document_id")
+          .maybeSingle(),
+      );
+      if (!data) throw new Error("The memo's run is no longer pending.");
+      must(await service.from("ledger_documents").update({ status: "extracted" }).eq("id", data.document_id).eq("owner_id", ownerId).eq("status", "uploaded"));
     },
 
     async failRun(runId, f: RunFailure) {

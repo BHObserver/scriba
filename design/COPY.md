@@ -636,7 +636,7 @@ The question rows (`q.*`) are in Part 4: U2b reconciled them with U2's questions
 | `keep` | রাখুন | Keep |
 | `del` | মুছুন | Delete |
 
-## Part 4: Scriba asks, as built (U2 + U2b)
+## Part 4: Scriba asks, as built (U2 + U2b, U4)
 
 Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generated from the code in U2b. Change the strings there, not here. A question's sentence, its `why` line and each option's `detail` are rendered with `sentenceText`. `{1}` slots hold his words, money (৳, locale digits), counts or days.
 
@@ -748,6 +748,53 @@ Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generate
 | `q.date.photo` | হ্যাঁ, ছবির দিন · {1} | Yes, the photo's day · {1} |
 | `q.date.before` | আগের দিন · {1} | The day before · {1} |
 | `q.date.other` | অন্য দিন | Another day |
+
+### U4: the company memo, as built
+
+The memo questions (`memo`, `memo_extra`, `memo_differs`) and the memo forms of `delivery` and `price`, generated from the code in U4. The memo card itself (the memo photo inside the price card) is designed and built in U4's UI half, after B7.
+
+| Key | বাংলা | English |
+|---|---|---|
+| `q.memo.link` | “{1}”-এর এই মেমোটা কি {2}-এর রেখে যাওয়া? | Is this memo from “{1}” the one {2} left? |
+| `q.memo.link.unnamed` | এই মেমোটা কি {1}-এর রেখে যাওয়া? | Is this memo the one {1} left? |
+| `q.memo.link.which` | এই মেমোটা কার? | Whose visit is this memo from? |
+| `q.memo.link.why` | মেমোর কোম্পানি “{1}”-এর নাম পাতায় নেই। | The memo's company, “{1}”, isn't named on your page. |
+| `q.memo.link.why.several` | পাতার একাধিক হিসাব “{1}” হতে পারে। | More than one visit on your page could be “{1}”. |
+| `q.memo.link.why.unnamed` | মেমোতে কোম্পানির নাম পড়া গেল না। | Scriba couldn't read a company's name on the memo. |
+| `q.memo.link.yes` | হ্যাঁ, ওনাদেরই | Yes, it's theirs |
+| `q.memo.link.no` | না, অন্য কারও | No, it's from someone else |
+| `q.memo.delivery` | {1}-এর মেমোতে {2}টা মালের দাম সব মিলিয়ে {3}। মেমোর দামগুলোই ধরব? | {1}'s memo prices the {2} goods at {3} in all. Use the memo's prices? |
+| `q.memo.delivery.use` | হ্যাঁ, মেমোর দাম ধরুন | Yes, use the memo's prices |
+| `q.memo.delivery.total` | {1}-এর মেমোতে এই {3}টা মালের দাম {4} ছাড় দিয়ে {2}। সব মিলিয়ে {2} ধরব? | {1}'s memo comes to {2} for these {3} goods, after {4} off. Use {2} for them? |
+| `q.memo.total.use` | হ্যাঁ, সব মিলিয়ে {1} | Yes, {1} in all |
+| `q.memo.price` | “{1}” — মেমোতে দাম {2}। এটাই ধরব? | “{1}”: the memo prices it at {2}. Use that? |
+| `q.memo.use` | হ্যাঁ, মেমোর {1} | Yes, {1} from the memo |
+| `q.memo.line` | “{1}” · {2} | “{1}” · {2} |
+| `q.memo.from` | মেমো থেকে: “{1}”। | From the memo: “{1}”. |
+| `q.memo.sums` | মেমোর লাইনগুলো যোগ করলে মোটের সাথে মেলে। | The memo's lines add up to its total. |
+| `q.memo.due` | এই দামে তাদের কাছে দেনা হয় {1}, মেমোর বাকির সাথে মেলে। | With these prices you owe them {1}, the same due as on the memo. |
+| `q.memo.nototal` | মেমোর লাইনগুলো মোটের সাথে মিলিয়ে দেখা যায়নি। | Scriba couldn't check the memo's lines against its total. |
+| `q.memo.sums.off` | মেমোর লাইন যোগ করলে হয় {1}, কিন্তু মোট লেখা {2}। | The memo's lines add up to {1}, but its total says {2}. |
+| `q.memo.discount` | মেমোতে মোট থেকে {1} ছাড় আছে, তাই লাইনের দাম আর আপনার দেনা এক নয়। | The memo takes {1} off its total, so its line prices aren't what you owe. |
+| `q.memo.partial` | মেমোতে এদের {1}টার দাম আছে। আলাদা আলাদা দাম বললে মেমোর দাম দেখাব। | The memo has prices for {1} of them. Price each one to use them. |
+| `q.memo.none` | এই মালগুলোর কোনোটাই মেমোতে পাইনি। | None of these goods is on the memo. |
+| `q.memo.maybe` | মেমোর এই লাইনগুলোর একটা হতে পারে। একটা বেছে নিন, বা দাম বলুন। | One of these memo lines may be it. Pick one, or say the price. |
+| `q.memo.unsure` | মেমোতে দামটা মিলিয়ে দেখুন: Scriba নিশ্চিত হতে পারেনি। | Check this price on the memo: Scriba couldn't confirm it. |
+| `q.memo.extra` | মেমোতে “{1}”-ও আছে, দাম {2}। পাতায় এটা লেখা নেই। হিসাবে যোগ করব? | The memo also lists “{1}” for {2}. It isn't on your page. Add it to the visit? |
+| `q.memo.extras` | মেমোতে আরও {1}টা মাল আছে যা পাতায় লেখা নেই, সব মিলিয়ে {2}। হিসাবে যোগ করব? | The memo lists {1} more goods that aren't on your page, {2} in all. Add them to the visit? |
+| `q.memo.extra.why` | এই চালানের সাথে এসে থাকলেই যোগ করুন। | Add them only if they came with this delivery. |
+| `q.memo.extra.add` | যোগ করুন | Add it |
+| `q.memo.extra.skip` | বাদ দিন | Leave it out |
+| `q.memo.extras.add` | সবগুলো যোগ করুন | Add them all |
+| `q.memo.extras.skip` | সবগুলো বাদ দিন | Leave them out |
+| `q.memo.differs` | “{1}” — পাতায় {2}, মেমোতে {3}। কোনটা ঠিক? | “{1}”: the page says {2}, the memo says {3}. Which is right? |
+| `q.memo.differs.before` | পাতায় আগের দেনা {1}, মেমোতে {2}। কোনটা ঠিক? | Your page says you owed {1} before; the memo says {2}. Which is right? |
+| `q.memo.differs.paid` | পাতায় দিয়েছেন {1}, মেমোতে জমা {2}। কোনটা ঠিক? | Your page says you paid {1}; the memo says {2}. Which is right? |
+| `q.memo.page` | পাতার {1} | {1}, as on the page |
+| `q.memo.memo` | মেমোর {1} | {1}, as on the memo |
+| `q.memo.same.both` | মেমোতেও একই: আগের দেনা {1}, জমা {2}। | The memo shows the same: {1} before and {2} paid. |
+| `q.memo.same.before` | মেমোতেও আগের দেনা {1}। | The memo also shows {1} owed before. |
+| `q.memo.same.paid` | মেমোতেও জমা {1}। | The memo also shows {1} paid. |
 
 ## Part 5: the ask deck, as built (B7)
 

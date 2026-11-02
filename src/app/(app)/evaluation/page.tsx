@@ -37,7 +37,7 @@ export default async function EvaluationPage() {
   const [{ data: runRows }, { count: cacheHits }, { data: docRows }, { data: truths }, { data: evaluations }, profile, { t }] = await Promise.all([
     supabase.from("extraction_runs").select("status, model_id, input_tokens, cached_input_tokens, output_tokens, reasoning_tokens, elapsed_ms, estimated_cost_usd, ledger_documents(dataset_label)"),
     supabase.from("extraction_cache_hits").select("id", { count: "exact", head: true }),
-    supabase.from("ledger_documents").select("id, original_filename, sample_label, dataset_label, uploaded_at").order("uploaded_at"),
+    supabase.from("ledger_documents").select("id, original_filename, sample_label, dataset_label, uploaded_at").eq("kind", "page").order("uploaded_at"),
     supabase.from("ground_truth_annotations").select("document_id, gt_version").order("gt_version", { ascending: false }),
     supabase.from("evaluation_runs").select("id, created_at, label, model_id, prompt_version, schema_version, validator_version, metrics_version, processing_mode, sample_count, summary").order("created_at", { ascending: false }).limit(10),
     loadShopProfile(supabase),

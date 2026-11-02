@@ -523,6 +523,107 @@ describe("two-pass reading (U3): one run is at most 1 + 6 calls, each logged and
   });
 });
 
+describe("company memo (U4): read once, like a page, and never reviewed as one", () => {
+  const memoOutput = JSON.stringify({
+    memo: { company: "PRAN Agro Ltd.", person: "Selim", number: "CH-2041", date_text: "01/11/2026", legibility: "clear" },
+    lines: [
+      { id: "m1", text: "Mango Juice 250ml 1 Ctn 480 480", item: "Mango Juice 250ml", qty: "1", unit: "Ctn", rate: "480", amount: "480", crossed_out: false, review: [], box: null },
+      { id: "m2", text: "Potato Biscuit 2 Ctn 360 720", item: "Potato Biscuit", qty: "2", unit: "Ctn", rate: "360", amount: "720", crossed_out: false, review: [], box: null },
+    ],
+    totals: { subtotal: null, discount: null, total: "1,200.00", previous_due: null, paid: null, due: null },
+    warnings: [],
+  });
+  let memoId: string;
+  beforeEach(() => {
+    memoId = store.addDocument("user-a", makePng(32, 48), "memo-1", "memo").id;
+  });
+  const memoReq = (requestId: string, mode: "use_cache" | "fresh" = "use_cache") => ({ documentId: memoId, requestId, mode });
+
+  test("one call with the memo prompt; the reading and what it spent are kept on the run", async () => {
+    const inputs: Parameters<ModelCaller>[0][] = [];
+    const callModel: ModelCaller = async (input) => (inputs.push(input), success(memoOutput));
+    const out = await analyzeDocument({ repo: store.repoFor("user-a"), callModel, now: () => new Date() }, settings, memoReq("r1"));
+    expect(out.kind).toBe("completed");
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]!.memo).toBe(true);
+    const run = store.runs[0]!;
+    expect([run.promptVersion, run.schemaVersion]).toEqual(["scriba-memo-1", "scriba-memo-1"]);
+    expect(run.success).toBeUndefined();
+    expect(run.memo!.memo.lines.map((l) => l.amountPoisha)).toEqual([48000, 72000]);
+    expect(run.memo!.memo.check).toEqual({ linesSum: 120000, total: 120000, agrees: true });
+    expect(run.memo!.usage?.outputTokens).toBe(600);
+    expect(run.memo!.estimatedCostUsd).toBeGreaterThan(0);
+  });
+
+  test("never with his notes, a khata layout or two passes", async () => {
+    const inputs: Parameters<ModelCaller>[0][] = [];
+    const callModel: ModelCaller = async (input) => (inputs.push(input), success(memoOutput));
+    let asked = 0;
+    const personalize = async () => (asked++, { key: "k", text: "notes", reference: null });
+    process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-6";
+    process.env.SCRIBA_TWO_PASS = "1";
+    try {
+      const cropBlocks: BlockCropper = async () => [];
+      const out = await analyzeDocument({ repo: store.repoFor("user-a"), callModel, now: () => new Date(), personalize, cropBlocks }, settings, {
+        ...memoReq("r1"),
+        layout: "scriba_khata",
+      });
+      expect(out.kind).toBe("completed");
+    } finally {
+      delete process.env.SCRIBA_PROMPT_VERSION;
+      delete process.env.SCRIBA_TWO_PASS;
+    }
+    expect(asked).toBe(0);
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({ memo: true });
+    expect(inputs[0]!.personal).toBeUndefined();
+    expect(inputs[0]!.layout).toBeUndefined();
+    expect(inputs[0]!.pass).toBeUndefined();
+    expect(store.runs[0]!.promptVersion).toBe("scriba-memo-1");
+  });
+
+  test("a read memo is reused with zero calls; a deliberate re-read is a new run", async () => {
+    const m = countingModel([success(memoOutput), success(memoOutput)]);
+    const deps = { repo: store.repoFor("user-a"), callModel: m.caller, now: () => new Date() };
+    await analyzeDocument(deps, settings, memoReq("r1"));
+    expect((await analyzeDocument(deps, settings, memoReq("r2"))).kind).toBe("cached");
+    expect(m.calls).toHaveLength(1);
+    expect((await analyzeDocument(deps, settings, memoReq("r3", "fresh"))).kind).toBe("completed");
+    expect(m.calls).toHaveLength(2);
+  });
+
+  test("a memo read counts against the limits like a page", async () => {
+    const m = countingModel([success(), success(memoOutput)]);
+    const deps = { repo: store.repoFor("user-a"), callModel: m.caller, now: () => new Date() };
+    await analyzeDocument(deps, { ...settings, extractionsPerHour: 2 }, req("r1"));
+    expect((await analyzeDocument(deps, { ...settings, extractionsPerHour: 2 }, memoReq("r2"))).kind).toBe("completed");
+    expect((await analyzeDocument(deps, { ...settings, extractionsPerHour: 2 }, memoReq("r3", "fresh"))).kind).toBe("rate_limited");
+    expect(m.calls).toHaveLength(2);
+  });
+
+  test("a page answer to the memo prompt, or a truncated one, fails the run and keeps what it spent", async () => {
+    const m = countingModel([success(), { ...success(memoOutput), summary: { status: "incomplete", incompleteReason: "max_output_tokens", outputText: "{", refusal: null } }]);
+    const deps = { repo: store.repoFor("user-a"), callModel: m.caller, now: () => new Date() };
+    expect((await analyzeDocument(deps, settings, memoReq("r1"))).kind).toBe("unusable_output");
+    expect(store.runs[0]!.status).toBe("invalid_output");
+    expect(store.runs[0]!.failure?.usage?.outputTokens).toBe(600);
+    expect((await analyzeDocument(deps, settings, memoReq("r2"))).kind).toBe("unusable_output");
+    expect(store.runs[1]!.status).toBe("incomplete");
+    expect(m.calls).toHaveLength(2);
+  });
+
+  test("a failed call is not retried, and a failure to save is never reported as success", async () => {
+    const m = countingModel([{ ok: false, category: "timeout", httpStatus: null, message: "slow", uncertain: true, elapsedMs: 1 }, success(memoOutput)]);
+    const deps = { repo: store.repoFor("user-a"), callModel: m.caller, now: () => new Date() };
+    expect((await analyzeDocument(deps, settings, memoReq("r1"))).kind).toBe("model_failed");
+    expect(store.runs[0]!.status).toBe("uncertain");
+    store.failNextComplete = true;
+    expect((await analyzeDocument(deps, settings, memoReq("r2"))).kind).toBe("persistence_error");
+    expect(store.runs[1]!.status).toBe("failed");
+    expect(m.calls).toHaveLength(2);
+  });
+});
+
 describe("structural guarantee: only explicit paths can reach Meta", () => {
   // Editing, revalidating, reopening a document or changing a filter must never
   // be able to trigger a paid call. Enforced by the import graph: only these
@@ -533,6 +634,8 @@ describe("structural guarantee: only explicit paths can reach Meta", () => {
     "src/lib/extraction/two-pass.ts", // U3: type-only; it calls the caller the pipeline was given
     "src/lib/server/analyze.ts",
     "scripts/live-extract.ts",
+    // U4: one memo photo per run of the script, or a saved response read again for free.
+    "scripts/live-memo.ts",
     // P1: one clip per press of "stop" in the fix sheet; never retried, never chained to a model.
     "src/app/api/voice/route.ts",
     "scripts/live-voice.ts",

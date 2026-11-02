@@ -11,12 +11,14 @@
  *  - One model call per run, or (U3, two-pass) at most 1 + 6, each logged and counted in the
  *    run's usage and cost. Never retried automatically.
  *  - A stale in-flight run is marked uncertain and requires a deliberate retry.
+ *  - U4: a company memo is read the same way, in one call with the memo prompt. Its reading is
+ *    stored on its run; it has no review rows and is never confirmed.
  *
  * Storage, image preparation and the model are injected, so tests can count model
  * calls exactly.
  */
 import { sha256Hex, extractionCacheKey, type ProcessingMode } from "./cache-key";
-import { pageValuesOf, parseModelResponse, type NormalizedExtraction, type ParseFailureKind } from "./parse";
+import { type ModelResponseSummary, pageValuesOf, parseModelResponse, type NormalizedExtraction, type ParseFailureKind } from "./parse";
 import {
   type PageLayout,
   getExtractionProfile,
@@ -28,7 +30,9 @@ import {
 } from "./prompt";
 import { type BlockCropper, MAX_RUN_CALLS, type Spent, readTwoPass } from "./two-pass";
 import type { PreparedImage } from "@/lib/images/rotate";
-import type { MetaErrorCategory, ModelCaller } from "@/lib/meta/transport";
+import { type NormalizedMemo, parseMemoResponse } from "@/lib/memo/parse";
+import { MEMO_PROFILE } from "@/lib/memo/prompt";
+import type { MetaErrorCategory, ModelCallInput, ModelCaller } from "@/lib/meta/transport";
 import { estimateCostUsd, type TokenUsage } from "@/lib/pricing";
 import { type Finding, VALIDATOR_VERSION, validateLedger } from "@/lib/validation/engine";
 
@@ -40,6 +44,8 @@ export type DocumentForExtraction = {
   sha256: string;
   storagePath: string;
   mimeType: string;
+  /** U4: a company memo photographed with a page. Absent: a page. */
+  kind?: "page" | "memo";
 };
 
 export type RunRecord = {
@@ -77,6 +83,9 @@ export type RunSuccess = {
   validatorVersion: string;
 };
 
+/** U4: what a memo run records. A memo has no lines to review and no checks of the page's rules. */
+export type MemoRunSuccess = Omit<RunSuccess, "extraction" | "findings" | "validatorVersion"> & { memo: NormalizedMemo };
+
 export type RunFailure = {
   status: Exclude<RunStatus, "pending" | "succeeded">;
   errorCategory: MetaErrorCategory | ParseFailureKind | "integrity" | "preparation" | "persistence" | "stale";
@@ -104,6 +113,8 @@ export interface ExtractionRepo {
   downloadOriginal(doc: DocumentForExtraction): Promise<Uint8Array>;
   /** Must be atomic: run result, entries, review copies and findings together. */
   completeRun(runId: string, result: RunSuccess): Promise<void>;
+  /** U4: a memo's run succeeded; its reading is the run's result. */
+  completeMemoRun(runId: string, result: MemoRunSuccess): Promise<void>;
   failRun(runId: string, failure: RunFailure): Promise<void>;
   recordCacheHit(runId: string, documentId: string): Promise<void>;
 }
@@ -173,12 +184,16 @@ export async function analyzeDocument(
   const doc = await repo.getDocument(request.documentId);
   if (!doc) return { kind: "not_found" };
 
+  // A memo is read with the memo prompt alone: no writer's notes, no khata layout, one call.
+  const memo = doc.kind === "memo";
   // Personal notes only ride on prompt 4; a failure to build them means a plain reading.
-  const personalProfile = deps.personalize ? getPersonalProfile() : null;
+  const personalProfile = deps.personalize && !memo ? getPersonalProfile() : null;
   const personal = personalProfile ? await deps.personalize!(doc).catch(() => null) : null;
-  const layout = request.layout ?? layoutOfPromptVersion(await repo.latestPromptVersion(doc.id));
+  const layout = memo ? "free" : (request.layout ?? layoutOfPromptVersion(await repo.latestPromptVersion(doc.id)));
   // Two-pass rides on prompt 6 only; the khata layout and the writer's notes on prompt 4 only.
-  const { promptVersion, schemaVersion } = withTwoPass(withLayout(personal ? personalProfile! : getExtractionProfile(), layout));
+  const { promptVersion, schemaVersion } = memo
+    ? MEMO_PROFILE
+    : withTwoPass(withLayout(personal ? personalProfile! : getExtractionProfile(), layout));
   const twoPass = isTwoPassVersion(promptVersion);
 
   const cacheKey = extractionCacheKey({
@@ -314,47 +329,27 @@ export async function analyzeDocument(
     }
     read = reading;
   } else {
-    const result = await callModel({
-      ...prepared,
-      ...(personal ? { personal: { text: personal.text, reference: personal.reference } } : {}),
-      ...(layout === "free" ? {} : { layout }),
-    });
-
-    if (!result.ok) {
-      await repo.failRun(runId, {
-        status: result.uncertain ? "uncertain" : "failed",
-        errorCategory: result.category,
-        errorMessage: result.message,
-        httpStatus: result.httpStatus,
-        elapsedMs: result.elapsedMs,
-      });
-      return { kind: "model_failed", runId, category: result.category, message: result.message, uncertain: result.uncertain };
+    const called = await callOnce<{ memo: NormalizedMemo } | { extraction: NormalizedExtraction }>(
+      { repo, callModel, modelId: settings.modelId, runId },
+      {
+        ...prepared,
+        ...(personal ? { personal: { text: personal.text, reference: personal.reference } } : {}),
+        ...(layout === "free" ? {} : { layout }),
+        ...(memo ? { memo: true as const } : {}),
+      },
+      (summary) => {
+        const parsed = memo ? parseMemoResponse(summary) : parseModelResponse(summary, { promptVersion, schemaVersion });
+        if (!parsed.ok) return parsed;
+        return { ok: true, reading: "memo" in parsed ? { memo: parsed.memo } : { extraction: parsed.extraction } };
+      },
+    );
+    if (!called.ok) return called.outcome;
+    if ("memo" in called.reading) {
+      // A memo is only read here: code matches it to the page when the questions are worked out.
+      const { spent, reading } = { spent: called.spent, reading: called.reading.memo };
+      return persist(repo, runId, spent, () => repo.completeMemoRun(runId, { ...spent, rawOutputText: spent.rawOutputText ?? "", memo: reading }));
     }
-
-    const cost = estimateCostUsd(settings.modelId, result.usage);
-    const parsed = parseModelResponse(result.summary, { promptVersion, schemaVersion });
-    if (!parsed.ok) {
-      await repo.failRun(runId, {
-        status: parsed.kind === "incomplete" ? "incomplete" : "invalid_output",
-        errorCategory: parsed.kind,
-        errorMessage: parsed.detail,
-        providerResponseId: result.providerResponseId,
-        usage: result.usage,
-        estimatedCostUsd: cost,
-        elapsedMs: result.elapsedMs,
-        rawOutputText: result.summary.outputText,
-      });
-      return { kind: "unusable_output", runId, category: parsed.kind, message: parsed.detail };
-    }
-    read = {
-      extraction: parsed.extraction,
-      providerResponseId: result.providerResponseId,
-      reportedModel: result.reportedModel,
-      usage: result.usage,
-      estimatedCostUsd: cost,
-      elapsedMs: result.elapsedMs,
-      rawOutputText: result.summary.outputText,
-    };
+    read = { extraction: called.reading.extraction, ...called.spent };
   }
 
   const findings = validateLedger({
@@ -369,8 +364,8 @@ export async function analyzeDocument(
     })),
   });
 
-  try {
-    await repo.completeRun(runId, {
+  return persist(repo, runId, read, () =>
+    repo.completeRun(runId, {
       providerResponseId: read.providerResponseId,
       reportedModel: read.reportedModel,
       usage: read.usage,
@@ -381,7 +376,64 @@ export async function analyzeDocument(
       extraction: { ...read.extraction, promptVersion },
       findings,
       validatorVersion: VALIDATOR_VERSION,
+    }),
+  );
+}
+
+type Spending = Omit<Spent, "rawOutputText"> & { rawOutputText: string | null };
+type Parsed<T> = { ok: true; reading: T } | { ok: false; kind: ParseFailureKind; detail: string };
+
+/**
+ * One model call and its parse. A failed call or an unusable answer fails the run, with whatever
+ * the call spent, and is never retried.
+ */
+async function callOnce<T>(
+  ctx: { repo: ExtractionRepo; callModel: ModelCaller; modelId: string; runId: string },
+  input: ModelCallInput,
+  parse: (summary: ModelResponseSummary) => Parsed<T>,
+): Promise<{ ok: true; reading: T; spent: Spending } | { ok: false; outcome: AnalyzeOutcome }> {
+  const { repo, runId } = ctx;
+  const result = await ctx.callModel(input);
+  if (!result.ok) {
+    await repo.failRun(runId, {
+      status: result.uncertain ? "uncertain" : "failed",
+      errorCategory: result.category,
+      errorMessage: result.message,
+      httpStatus: result.httpStatus,
+      elapsedMs: result.elapsedMs,
     });
+    return { ok: false, outcome: { kind: "model_failed", runId, category: result.category, message: result.message, uncertain: result.uncertain } };
+  }
+
+  const spent: Spending = {
+    providerResponseId: result.providerResponseId,
+    reportedModel: result.reportedModel,
+    usage: result.usage,
+    estimatedCostUsd: estimateCostUsd(ctx.modelId, result.usage),
+    elapsedMs: result.elapsedMs,
+    rawOutputText: result.summary.outputText,
+  };
+  const parsed = parse(result.summary);
+  if (!parsed.ok) {
+    await repo.failRun(runId, {
+      status: parsed.kind === "incomplete" ? "incomplete" : "invalid_output",
+      errorCategory: parsed.kind,
+      errorMessage: parsed.detail,
+      providerResponseId: spent.providerResponseId,
+      usage: spent.usage,
+      estimatedCostUsd: spent.estimatedCostUsd,
+      elapsedMs: spent.elapsedMs,
+      rawOutputText: spent.rawOutputText,
+    });
+    return { ok: false, outcome: { kind: "unusable_output", runId, category: parsed.kind, message: parsed.detail } };
+  }
+  return { ok: true, reading: parsed.reading, spent };
+}
+
+/** Save what was read. A failure to save is never reported as success, and keeps what was spent. */
+async function persist(repo: ExtractionRepo, runId: string, spent: Spending, complete: () => Promise<void>): Promise<AnalyzeOutcome> {
+  try {
+    await complete();
   } catch {
     const message =
       "Meta answered, but saving the result failed, so nothing was confirmed. The raw response is kept on the run record for diagnosis where possible.";
@@ -390,11 +442,11 @@ export async function analyzeDocument(
         status: "failed",
         errorCategory: "persistence",
         errorMessage: message,
-        providerResponseId: read.providerResponseId,
-        usage: read.usage,
-        estimatedCostUsd: read.estimatedCostUsd,
-        elapsedMs: read.elapsedMs,
-        rawOutputText: read.rawOutputText,
+        providerResponseId: spent.providerResponseId,
+        usage: spent.usage,
+        estimatedCostUsd: spent.estimatedCostUsd,
+        elapsedMs: spent.elapsedMs,
+        rawOutputText: spent.rawOutputText,
       });
     } catch {
       // The run stays pending and will be reported as uncertain later.
