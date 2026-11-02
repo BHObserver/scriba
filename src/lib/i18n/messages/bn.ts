@@ -750,6 +750,7 @@ export const bn = {
   "q.meaning.customer": "এটা {1}-এর বাকির হিসাব। ঠিক বুঝেছি?",
   "q.meaning.who": "পাতার এই অংশটা কার হিসাব? নামটা বলুন।",
   "q.meaning.other": "পাতার এই অংশটা কিসের হিসাব?",
+  "q.meaning.line": "একটা লাইন ভুল",
   "q.kind.day_sales": "দিনের বিক্রি",
   "q.kind.customer_account": "কাস্টমারের বাকির হিসাব",
   "q.kind.supplier_visit": "কোম্পানির লোক এসেছিল",

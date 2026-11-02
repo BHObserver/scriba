@@ -750,6 +750,7 @@ export const en = {
   "q.meaning.customer": "This is {1}'s account, a customer who buys on credit. Did I get that right?",
   "q.meaning.who": "Whose account is this part of the page? Say the name.",
   "q.meaning.other": "What is this part of the page?",
+  "q.meaning.line": "A line is wrong",
   "q.kind.day_sales": "The day's sales",
   "q.kind.customer_account": "A customer's account",
   "q.kind.supplier_visit": "A company rep's visit",

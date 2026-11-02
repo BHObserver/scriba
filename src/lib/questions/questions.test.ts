@@ -124,7 +124,10 @@ describe("the Pran page", () => {
   test("the visit is put to him in one sentence, with one button to confirm", () => {
     const q = find(start, "meaning:b1");
     expect(q.proposed).toBe("yes");
-    expect(q.options.map((o) => o.id)).toEqual(["yes", "kind:supplier_account", "kind:customer_account"]);
+    expect(q.options.map((o) => o.id)).toEqual(["yes", "kind:supplier_account", "kind:customer_account", "line"]);
+    // T1: "A line is wrong" only opens the part's lines; the answer route refuses it.
+    expect(q.options.at(-1)!.local).toBe(true);
+    expect(answerQuestion(start, q.id, q.fp, { option: "line" }, NOW)).toEqual({ ok: false, error: "local" });
     expect(sentenceText(bn, q.sentence)).toBe("Praan কোম্পানির Selim এসেছিলেন। আগে দেনা ছিল ৳২,৮০০, এবার দিয়েছেন ৳১,৫০০। ঠিক বুঝেছি?");
     expect(sentenceText(en, q.sentence)).toBe("Selim came from Praan. You owed ৳2,800 before, and paid ৳1,500 this time. Did I get that right?");
   });

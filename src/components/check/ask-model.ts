@@ -3,10 +3,10 @@ import { blockPartyKind, groupByBlock, isUnpricedGoods, pageBlocks } from "@/lib
 import type { BlockValues, PageValues } from "@/lib/ledger/types";
 import { acceptedFindings } from "@/lib/questions/answer";
 import { parseMoney } from "@/lib/numerals";
-import type { Answer, Question, QuestionOption, QuestionSet } from "@/lib/questions/types";
+import type { Answer, Question, QuestionKind, QuestionOption, QuestionSet } from "@/lib/questions/types";
 import { ackFingerprint, assessEntry } from "@/lib/review/approval";
 import type { ReviewRow } from "@/lib/review/state";
-import { accountSign, deriveNumbers } from "@/lib/validation/engine";
+import { type Finding, type ValidationEntry, accountSign, deriveNumbers } from "@/lib/validation/engine";
 import { type Acceptances, type Review, acceptanceFor, cardStatus, checkReview, isAccepted, typedText } from "./deck-model";
 
 /**
@@ -66,6 +66,7 @@ export function blockLines(review: Review): Array<{ block: BlockValues | null; r
 export function deckItems(review: Review, set: QuestionSet, acceptances: Acceptances, seen: ReadonlySet<string>): AskItem[] {
   const { findings, entries } = checkReview(review);
   const covered = coveredLines(set);
+  const kept = acceptedFindings(review.page.values);
   const items: AskItem[] = set.questions.filter((q) => q.block == null).map((q) => ({ kind: "question", id: q.id, block: null }));
 
   for (const { block, rows } of blockLines(review)) {
@@ -76,7 +77,7 @@ export function deckItems(review: Review, set: QuestionSet, acceptances: Accepta
       else items.push(q.kind === "price" ? { kind: "prices", ids: [q.id], block: id } : { kind: "question", id: q.id, block: id });
     }
     const waiting = rows.filter((r) => r.status === "draft" && !covered.has(r.id) && !isAccepted(entries.get(r.id), findings, acceptances[r.id]));
-    const look = waiting.filter((r) => cardStatus(r, entries.get(r.id), findings, acceptances[r.id]) === "look");
+    const look = waiting.filter((r) => needsOwnCard(r, entries.get(r.id), findings, kept));
     items.push(...look.map((r): AskItem => ({ kind: "line", id: r.id, block: id })));
     const rest = waiting.filter((r) => !look.includes(r)).map((r) => r.id);
     if (rest.length > 0) items.push({ kind: "rest", ids: rest, block: id });
@@ -86,18 +87,77 @@ export function deckItems(review: Review, set: QuestionSet, acceptances: Accepta
 }
 
 /**
- * After an answer, the lines it was about are accepted as they now stand, but only a line he
- * has nothing left to decide on: no blocker, and every problem still on it one he chose to keep
- * ("it's written that way"). A line that still shows a problem comes back as its own card.
- * Checks that couldn't run (a balance waiting for a price) are accepted with it, as the card
- * that follows shows the open due.
+ * A line that needs its own card: a blocker, an unsure reading, or a failed check he hasn't
+ * kept as written through an answer. One whose problems he kept comes on the quick confirm.
  */
-export function acceptAnswered(review: Review, question: Question, acceptances: Acceptances): Acceptances {
-  const { findings, entries } = checkReview(review);
-  const kept = acceptedFindings(review.page.values);
+function needsOwnCard(row: ReviewRow, entry: ValidationEntry | undefined, findings: readonly Finding[], kept: ReadonlySet<string>): boolean {
+  return cardStatus(row, entry, findings.filter((f) => !kept.has(ackFingerprint(f))), undefined) === "look";
+}
+
+/**
+ * Which lines an answer may accept, by the question's kind (T1). A card accepts only the lines
+ * whose figures it showed, with a way to change them: "yes, it's Karim's" settles the name and
+ * the kind, never the lines, which then come on the quick confirm.
+ * - `lines`: the lines the question is about, and any line the answer added;
+ * - `changed`: only the lines whose figures the answer changed, and any it added ("use ৳…"
+ *   changes one; "it's written that way" changes none);
+ * - `added`: only a line the answer added (the "before" he gave);
+ * - `none`: no line.
+ */
+export const ANSWER_ACCEPTS = {
+  doubt: "lines",
+  price: "lines",
+  delivery: "lines",
+  direction: "lines",
+  memo_differs: "lines",
+  // Its card lists each line with its figure (the chips).
+  block_kind: "lines",
+  unbalanced: "changed",
+  opening: "added",
+  meaning: "none",
+  same_party: "none",
+  date: "none",
+  memo: "none",
+  // Its lines come from the memo, not the page, and the card can't change their figures.
+  memo_extra: "none",
+} as const satisfies Record<QuestionKind, "lines" | "changed" | "added" | "none">;
+
+const FIGURES = ["quantityText", "rateText", "amountText", "balanceText"] as const;
+
+/**
+ * The lines an answer accepts (`ANSWER_ACCEPTS`), from the review just before it and just after
+ * it. An option that changes nothing ("later", "one by one") accepts none: nothing is settled.
+ */
+export function answeredLines(before: Review, after: Review, question: Question, answer: Answer): string[] {
+  const rule = ANSWER_ACCEPTS[question.kind];
+  const option = "option" in answer ? question.options.find((o) => o.id === answer.option) : null;
+  if (rule === "none" || option?.changes.length === 0) return [];
+  const was = new Map(before.rows.map((r) => [r.id, r]));
+  const added = after.rows.filter((r) => !was.has(r.id)).map((r) => r.id);
+  if (rule === "added") return added;
+  if (rule === "changed") {
+    const changed = after.rows.filter((r) => {
+      const old = was.get(r.id);
+      return old != null && FIGURES.some((k) => old.values[k] !== r.values[k]);
+    });
+    return [...changed.map((r) => r.id), ...added];
+  }
+  return [...new Set([...question.entries, ...(question.entry ? [question.entry] : []), ...added])];
+}
+
+/**
+ * After an answer, the lines it accepts (`answeredLines`) are accepted as they now stand, but
+ * only a line he has nothing left to decide on: no blocker, and every problem still on it one he
+ * chose to keep ("it's written that way"). A line that still shows a problem comes back as its
+ * own card. Checks that couldn't run (a balance waiting for a price) are accepted with it, as
+ * the card that follows shows the open due.
+ */
+export function acceptAnswered(before: Review, after: Review, question: Question, answer: Answer, acceptances: Acceptances): Acceptances {
+  const { findings, entries } = checkReview(after);
+  const kept = acceptedFindings(after.page.values);
   const out = { ...acceptances };
-  for (const id of new Set([...question.entries, ...(question.entry ? [question.entry] : [])])) {
-    const row = review.rows.find((r) => r.id === id);
+  for (const id of answeredLines(before, after, question, answer)) {
+    const row = after.rows.find((r) => r.id === id);
     const entry = entries.get(id);
     if (!row || row.status !== "draft" || !entry) continue;
     const { blockers, needsAck } = assessEntry(entry, findings);
@@ -106,14 +166,15 @@ export function acceptAnswered(review: Review, question: Question, acceptances: 
   return out;
 }
 
-/** "All correct" on the quick confirm: each listed line that needs no decision. */
+/** "All correct" on the quick confirm: each listed line that needs no decision, or none but the problems he kept. */
 export function acceptRest(review: Review, ids: readonly string[], acceptances: Acceptances): Acceptances {
   const { findings, entries } = checkReview(review);
+  const kept = acceptedFindings(review.page.values);
   const out = { ...acceptances };
   for (const id of ids) {
     const row = review.rows.find((r) => r.id === id);
     const entry = entries.get(id);
-    if (row && entry && cardStatus(row, entry, findings, acceptances[id]) === "open") out[id] = acceptanceFor(entry, findings, "ok");
+    if (row?.status === "draft" && entry && !isAccepted(entry, findings, acceptances[id]) && !needsOwnCard(row, entry, findings, kept)) out[id] = acceptanceFor(entry, findings, "ok");
   }
   return out;
 }

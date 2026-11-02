@@ -9,6 +9,7 @@ import { pageBlocks } from "@/lib/ledger/blocks";
 import type { TransactionType } from "@/lib/ledger/types";
 import type { Answer, Question, QuestionSet } from "@/lib/questions/types";
 import { ackFingerprint, assessEntry } from "@/lib/review/approval";
+import type { ReviewRow } from "@/lib/review/state";
 import { FIELD_TO_VALUE_KEY } from "@/lib/review/values";
 import { voiceSupported } from "@/lib/voice/recorder";
 import type { AskApi } from "./ask-api";
@@ -33,6 +34,9 @@ const LEAVE_MS = 240;
 const noSubscribe = () => () => {};
 
 const without = <T,>(record: Record<string, T>, key: string) => Object.fromEntries(Object.entries(record).filter(([k]) => k !== key)) as Record<string, T>;
+
+/** The figure a tapped line opens on: its amount, or its balance when only that is written. */
+const figureField = (row: ReviewRow): FixField => (row.values.amountText == null && row.values.balanceText != null ? "balance" : "amount");
 
 /** Acceptances live in this tab's session storage, as in the line deck (`review-session.tsx`). */
 const storeKey = (runId: string) => `scriba.accept.${runId}`;
@@ -185,7 +189,7 @@ export function AskSession({
     if (!res.ok) return setProblem(failure(res.reason));
     begin();
     setSheet(null);
-    const acc = acceptAnswered(res.review, q, acceptances);
+    const acc = acceptAnswered(review, res.review, q, a, acceptances);
     advance(() => {
       setReview(res.review);
       setSet(res.set);
@@ -212,9 +216,9 @@ export function AskSession({
         failed = failure(res.reason);
         break;
       }
+      acc = acceptAnswered(r, res.review, q, a, acc);
       r = res.review;
       s = res.set;
-      acc = acceptAnswered(r, q, acc);
     }
     setBusy(false);
     begin();
@@ -485,7 +489,8 @@ export function AskSession({
           );
         }
         case "rest": {
-          const asked = passed.some((p) => p.block === item.block && (p.key.startsWith("question:") || p.key.startsWith("prices:")));
+          // "The other lines" once some of the part's lines are settled; all of them otherwise.
+          const other = blockRows.some((r) => !item.ids.includes(r.id));
           const accept = () => {
             const current = item;
             const acc = acceptRest(review, item.ids, acceptances);
@@ -496,7 +501,7 @@ export function AskSession({
           };
           return (
             <AskFrame swipe={!cardBusy} onSwipe={accept} leaving={leaving}>
-              <RestCard ids={item.ids} other={asked} block={block} rows={review.rows} photo={photo} busy={cardBusy} onFix={(id) => setFix({ id, field: rowById(id).values.amountText == null && rowById(id).values.balanceText != null ? "balance" : "amount" })} onAll={accept} />
+              <RestCard ids={item.ids} other={other} block={block} rows={review.rows} photo={photo} busy={cardBusy} onFix={(id) => setFix({ id, field: figureField(rowById(id)) })} onAll={accept} />
             </AskFrame>
           );
         }
@@ -550,7 +555,7 @@ export function AskSession({
         photo={photo}
         onFix={(id) => {
           setLines(null);
-          setFix({ id, field: "amount" });
+          setFix({ id, field: figureField(rowById(id)) });
         }}
         onClose={() => setLines(null)}
       />

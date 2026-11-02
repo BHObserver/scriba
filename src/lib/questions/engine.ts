@@ -294,7 +294,9 @@ function meaningQuestion(block: BlockValues, rows: ReviewRow[], memo: BlockMemo 
     label: { key: KIND_LABEL[kind] },
     changes: [{ op: "block", block: block.id, values: { kind } }],
   });
-  const others = OTHER_KINDS[block.kind].map(kindOption);
+  // "A line is wrong" opens the part's lines, so a figure can be fixed from this card (T1).
+  const wrongLine: QuestionOption[] = rows.length > 0 ? [{ id: "line", label: { key: "q.meaning.line" }, changes: [], local: true }] : [];
+  const others = [...OTHER_KINDS[block.kind].map(kindOption), ...wrongLine];
   const base = {
     id: `meaning:${block.id}`,
     kind: "meaning" as const,

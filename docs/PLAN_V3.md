@@ -220,6 +220,7 @@ Documents: P1 `b6a9cbba` (confirmed), P2 `157e7df4` (confirmed), P3 `b4aea1e6`, 
   - a P1-like fixture (Karim's part, 7 lines, two subtotals) puts all 7 on the rest card;
   - a doubt answer still accepts its line.
 - **Verify** in Edge at 390×844, bn and en, on `/kit/check?step=asks`: meaning yes → rest card; fix আগের from the meaning card. No live calls.
+- **Result (3 Nov):** done. `ANSWER_ACCEPTS` in `ask-model.ts` is the list. An option that changes nothing (later, one by one) accepts no line. `memo_extra` accepts none (not named above). Problems he kept as written go on the quick confirm rather than their own card. Checked in Edge in both languages, $0. See `docs/sessions/T1.md`.
 
 ### T2: split a part (Track A, with engine files)
 

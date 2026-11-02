@@ -636,9 +636,9 @@ The question rows (`q.*`) are in Part 4: U2b reconciled them with U2's questions
 | `keep` | রাখুন | Keep |
 | `del` | মুছুন | Delete |
 
-## Part 4: Scriba asks, as built (U2 + U2b, U4)
+## Part 4: Scriba asks, as built (U2 + U2b, U4, T1)
 
-Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generated from the code in U2b. Change the strings there, not here. A question's sentence, its `why` line and each option's `detail` are rendered with `sentenceText`. `{1}` slots hold his words, money (৳, locale digits), counts or days.
+Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generated from the code in U2b. Change the strings there, not here. A question's sentence, its `why` line and each option's `detail` are rendered with `sentenceText`. `{1}` slots hold his words, money (৳, locale digits), counts or days. T1 (3 Nov) added `q.meaning.line`, the meaning card's option that opens the part's lines so one can be fixed there; the plan's wording, not yet read by a Bangla reader.
 
 ### Where D5's keys went
 
@@ -673,6 +673,7 @@ Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generate
 | `q.meaning.customer` | এটা {1}-এর বাকির হিসাব। ঠিক বুঝেছি? | This is {1}'s account, a customer who buys on credit. Did I get that right? |
 | `q.meaning.who` | পাতার এই অংশটা কার হিসাব? নামটা বলুন। | Whose account is this part of the page? Say the name. |
 | `q.meaning.other` | পাতার এই অংশটা কিসের হিসাব? | What is this part of the page? |
+| `q.meaning.line` | একটা লাইন ভুল | A line is wrong |
 | `q.kind.day_sales` | দিনের বিক্রি | The day's sales |
 | `q.kind.customer_account` | কাস্টমারের বাকির হিসাব | A customer's account |
 | `q.kind.supplier_visit` | কোম্পানির লোক এসেছিল | A company rep's visit |
