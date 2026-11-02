@@ -795,3 +795,69 @@ The memo questions (`memo`, `memo_extra`, `memo_differs`) and the memo forms of 
 | `q.memo.same.both` | মেমোতেও একই: আগের দেনা {1}, জমা {2}। | The memo shows the same: {1} before and {2} paid. |
 | `q.memo.same.before` | মেমোতেও আগের দেনা {1}। | The memo also shows {1} owed before. |
 | `q.memo.same.paid` | মেমোতেও জমা {1}। | The memo also shows {1} paid. |
+
+## Part 5: the ask deck, as built (B7)
+
+Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 part 1, 2 Nov). Change the strings there, not here. They are Part 3's overview, visit card, quick confirm, stamp, page seal and voice strings, with three changes: “এবার দিয়েছেন / Paid this time” (U2b's reason: the visit isn't always today); `asks.bs.party` names the party with a colon, because a Bangla possessive (প্রাণের, ফ্রেশের) depends on the word's ending; and customer-account rows (`asks.cust.*`). New, written in B7 and not yet read by a Bangla reader: `asks.ov.title1`, `asks.ov.none`, `asks.ov.page`, `asks.back`, `asks.cust.*`, `asks.total.expenses`, `asks.total`, `asks.type`, `asks.which`, `asks.rest.all`, `asks.line.title`, `asks.bs.part`, `asks.bs.later`, `asks.bs.end`, `asks.ps.open`, `asks.ps.later`, `asks.voice.listen`, `asks.voice.none`, `asks.err.*`.
+
+| Key | বাংলা | English |
+|---|---|---|
+| `asks.kicker` | Scriba জানতে চায় | Scriba asks |
+| `asks.ov.title` | এই পাতায় {1}টা অংশ পেয়েছি | Scriba found {1} parts on this page |
+| `asks.ov.title1` | এই পাতায় একটা অংশ পেয়েছি | Scriba found one part on this page |
+| `asks.ov.sub` | {1}টা প্রশ্ন, এক মিনিটের মতো লাগবে। | {1} questions, about a minute. |
+| `asks.ov.none` | জিজ্ঞেস করার কিছু নেই। লাইনগুলো দেখে খাতায় তুলুন। | Nothing to ask. Look over the lines and add them to the khata. |
+| `asks.ov.start` | দেখা শুরু করুন | Start checking |
+| `asks.ov.q` | {1}টা প্রশ্ন | Questions: {1} |
+| `asks.ov.page` | পুরো পাতা | The whole page |
+| `asks.ov.nodate` | পাতায় তারিখ নেই | No date on the page |
+| `asks.back` | অংশগুলোয় ফিরুন | Back to the parts |
+| `asks.visit.rep` | {1} এসেছিলেন | {1} came |
+| `asks.visit.before` | আগের দেনা | Owed before |
+| `asks.visit.paid` | এবার দিয়েছেন | Paid this time |
+| `asks.visit.goods` | মাল এসেছে | Goods received |
+| `asks.visit.now` | এখন দেনা | Owed now |
+| `asks.cust.before` | আগের বাকি | Owed you before |
+| `asks.cust.paid` | জমা দিয়েছেন | Paid back |
+| `asks.cust.goods` | বাকিতে নিয়েছেন | Took on credit |
+| `asks.cust.now` | এখন বাকি | Owes you now |
+| `asks.gap` | দাম ? | price ? |
+| `asks.gapNow` | + মালের দাম | + the goods |
+| `asks.lines` | {1}টা লাইন | {1} lines |
+| `asks.total.sales` | মোট বিক্রি | Total sales |
+| `asks.total.expenses` | মোট খরচ | Total spent |
+| `asks.total` | মোট | Total |
+| `asks.yes` | ঠিক আছে | That's right |
+| `asks.no` | না, বদলাব | No, change it |
+| `asks.say` | বলে দিন | Say it |
+| `asks.type` | লিখে দিন | Type it |
+| `asks.swipe` | ডানে সরালেও ঠিক হয় | Or swipe right |
+| `asks.which` | কোনটা ঠিক? | Which is right? |
+| `asks.rest.title` | বাকি {1}টা লাইন দেখে নিন | Check the other {1} lines |
+| `asks.rest.all` | এই অংশের {1}টা লাইন দেখে নিন | Check the {1} lines of this part |
+| `asks.rest.tap` | কোনোটা ভুল হলে সেটায় চাপুন | Tap any line that's wrong |
+| `asks.rest.ok` | সব ঠিক আছে | All correct |
+| `asks.line.title` | এই লাইনটা একবার দেখুন | Have a look at this line |
+| `asks.stamp` | মিলেছে | Checked |
+| `asks.bs.party` | {1}: হিসাব হয়ে গেছে | {1}: done |
+| `asks.bs.sales` | দিনের বিক্রি মিলেছে | The day's sales are checked |
+| `asks.bs.part` | এই অংশের হিসাব হয়ে গেছে | This part is done |
+| `asks.bs.gap` | মালের দাম এখনো বাকি। দাম দিলে দেনা পুরো হবে। | The goods still have no price. The amount owed is complete once you add it. |
+| `asks.bs.later` | এই অংশের {1}টা প্রশ্ন পরে দেবেন বলেছেন। | You left {1} questions on this part for later. |
+| `asks.bs.code` | হিসাব করেছে কোড, আপনার উত্তর থেকে | Worked out by code, from your answers |
+| `asks.bs.next` | পরের অংশ | Next part |
+| `asks.bs.end` | পুরো পাতা দেখুন | See the whole page |
+| `asks.ps.title` | পুরো পাতা দেখা হয়েছে | The whole page is checked |
+| `asks.ps.open` | {1}টা প্রশ্ন পরে দেবেন বলেছেন। সেগুলোর লাইন এখন খাতায় উঠবে না। | You left {1} questions for later. Their lines won't go into the khata yet. |
+| `asks.ps.later` | এখন উত্তর দিন | Answer them now |
+| `asks.ps.confirm` | খাতায় তুলুন | Add to the khata |
+| `asks.ps.done` | খাতায় উঠেছে · আজকের হিসাবে যোগ হয়েছে | Added · it now counts in Today |
+| `asks.voice.listen` | শুনছি… বলুন | Listening… say it |
+| `asks.voice.price` | শুনছি… দামটা বলুন | Listening… say the price |
+| `asks.voice.eg` | যেমন ‘আটশো চল্লিশ’ | For example ‘eight hundred forty’ |
+| `asks.voice.heard` | শুনেছি: ‘{1}’ | Heard: ‘{1}’ |
+| `asks.voice.never` | ‘রাখুন’ চাপলে তবেই বসবে। | Nothing is saved until you tap Keep. |
+| `asks.voice.none` | বোঝা যায়নি। আবার বলুন বা লিখে দিন। | I couldn't make that out. Say it again or type it. |
+| `asks.keep` | রাখুন | Keep |
+| `asks.err.stale` | এই প্রশ্নটা এর মধ্যে বদলে গেছে। আবার খুলুন। | This question has changed. Reload to see it again. |
+| `asks.err.bad` | এটা এখানে বসানো যায় না। আবার দেখুন। | That can't be used here. Have another look. |
