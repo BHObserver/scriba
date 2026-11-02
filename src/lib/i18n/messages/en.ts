@@ -859,6 +859,8 @@ export const en = {
   "asks.which": "Which is right?",
   "asks.rest.title": "Check the other {1} lines",
   "asks.rest.all": "Check the {1} lines of this part",
+  "asks.rest.one": "Check the other line",
+  "asks.rest.allOne": "Check this part's line",
   "asks.rest.tap": "Tap any line that's wrong",
   "asks.rest.ok": "All correct",
   "asks.line.title": "Have a look at this line",
@@ -883,6 +885,8 @@ export const en = {
   "asks.voice.never": "Nothing is saved until you tap Keep.",
   "asks.voice.none": "I couldn't make that out. Say it again or type it.",
   "asks.keep": "Keep",
+  "asks.in.party": "Or type the name",
+  "asks.in.date": "Or type the day, like 2/11/2026",
   "asks.err.stale": "This question has changed. Reload to see it again.",
   "asks.err.bad": "That can't be used here. Have another look.",
 } as const satisfies Record<MessageKey, string>;

@@ -751,7 +751,7 @@ Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generate
 
 ## Part 5: the ask deck, as built (B7)
 
-Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 part 1, 2 Nov). Change the strings there, not here. They are Part 3's overview, visit card, quick confirm, stamp, page seal and voice strings, with three changes: “এবার দিয়েছেন / Paid this time” (U2b's reason: the visit isn't always today); `asks.bs.party` names the party with a colon, because a Bangla possessive (প্রাণের, ফ্রেশের) depends on the word's ending; and customer-account rows (`asks.cust.*`). New, written in B7 and not yet read by a Bangla reader: `asks.ov.title1`, `asks.ov.none`, `asks.ov.page`, `asks.back`, `asks.cust.*`, `asks.total.expenses`, `asks.total`, `asks.type`, `asks.which`, `asks.rest.all`, `asks.line.title`, `asks.bs.part`, `asks.bs.later`, `asks.bs.end`, `asks.ps.open`, `asks.ps.later`, `asks.voice.listen`, `asks.voice.none`, `asks.err.*`.
+Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 parts 1 and 2, 2 Nov). Change the strings there, not here. They are Part 3's overview, visit card, quick confirm, stamp, page seal and voice strings, with three changes: “এবার দিয়েছেন / Paid this time” (U2b's reason: the visit isn't always today); `asks.bs.party` names the party with a colon, because a Bangla possessive (প্রাণের, ফ্রেশের) depends on the word's ending; and customer-account rows (`asks.cust.*`). New, written in B7 and not yet read by a Bangla reader: `asks.ov.title1`, `asks.ov.none`, `asks.ov.page`, `asks.back`, `asks.cust.*`, `asks.total.expenses`, `asks.total`, `asks.type`, `asks.which`, `asks.rest.all`, `asks.line.title`, `asks.bs.part`, `asks.bs.later`, `asks.bs.end`, `asks.ps.open`, `asks.ps.later`, `asks.voice.listen`, `asks.voice.none`, `asks.err.*`; and from part 2, `asks.rest.one`, `asks.rest.allOne` (one line left: English needs a singular) and `asks.in.party`, `asks.in.date` (the label over a typed name or day).
 
 | Key | বাংলা | English |
 |---|---|---|
@@ -788,6 +788,8 @@ Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 pa
 | `asks.which` | কোনটা ঠিক? | Which is right? |
 | `asks.rest.title` | বাকি {1}টা লাইন দেখে নিন | Check the other {1} lines |
 | `asks.rest.all` | এই অংশের {1}টা লাইন দেখে নিন | Check the {1} lines of this part |
+| `asks.rest.one` | বাকি লাইনটা দেখে নিন | Check the other line |
+| `asks.rest.allOne` | এই অংশের লাইনটা দেখে নিন | Check this part's line |
 | `asks.rest.tap` | কোনোটা ভুল হলে সেটায় চাপুন | Tap any line that's wrong |
 | `asks.rest.ok` | সব ঠিক আছে | All correct |
 | `asks.line.title` | এই লাইনটা একবার দেখুন | Have a look at this line |
@@ -812,5 +814,7 @@ Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 pa
 | `asks.voice.never` | ‘রাখুন’ চাপলে তবেই বসবে। | Nothing is saved until you tap Keep. |
 | `asks.voice.none` | বোঝা যায়নি। আবার বলুন বা লিখে দিন। | I couldn't make that out. Say it again or type it. |
 | `asks.keep` | রাখুন | Keep |
+| `asks.in.party` | অথবা নামটা লিখুন | Or type the name |
+| `asks.in.date` | অথবা দিনটা লিখুন, যেমন ২/১১/২০২৬ | Or type the day, like 2/11/2026 |
 | `asks.err.stale` | এই প্রশ্নটা এর মধ্যে বদলে গেছে। আবার খুলুন। | This question has changed. Reload to see it again. |
 | `asks.err.bad` | এটা এখানে বসানো যায় না। আবার দেখুন। | That can't be used here. Have another look. |

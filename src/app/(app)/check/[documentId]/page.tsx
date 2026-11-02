@@ -2,10 +2,13 @@ import type { ComponentProps } from "react";
 import { notFound } from "next/navigation";
 import { readingFromRun } from "@/components/capture/problems";
 import { checkBackHref, checkHref } from "@/components/check/back-href";
+import { isBlockReading } from "@/components/check/ask-model";
 import { CheckScreen } from "@/components/check/check-screen";
 import { STORAGE_BUCKET, getLimitsConfig } from "@/lib/config";
 import { turnsForProcessingMode } from "@/lib/images/orientation";
+import { buildQuestions } from "@/lib/questions/engine";
 import { UUID_RE, requireUser } from "@/lib/server/auth";
+import { loadQuestionInput } from "@/lib/server/questions-data";
 import { RUN_SUMMARY_COLUMNS, loadRunReview, toRunSummary } from "@/lib/server/review-data";
 
 export const metadata = { title: "Check" };
@@ -31,6 +34,8 @@ async function loadCheck(supabase: Supabase, documentId: string, queue: string[]
   const succeeded = runs.find((r) => r.status === "succeeded") ?? null;
   const review = succeeded ? await loadRunReview(supabase, succeeded.id) : null;
   const latest = runs[0] ?? null;
+  // A reading with blocks (prompt 6) gets the ask deck: what Scriba asks about it, worked out now.
+  const loaded = review && succeeded && isBlockReading(review.page.values) ? await loadQuestionInput(supabase, succeeded.id, { review }) : null;
 
   const index = queue.indexOf(documentId);
   const nextId = queue[index + 1];
@@ -43,6 +48,7 @@ async function loadCheck(supabase: Supabase, documentId: string, queue: string[]
       turns: turnsForProcessingMode((succeeded ?? latest)?.processingMode),
     },
     review: review && succeeded ? { runId: succeeded.id, page: review.page, rows: review.rows } : null,
+    asks: loaded ? { set: buildQuestions(loaded.input), capturedOn: loaded.input.capturedOn } : null,
     serverReading: review ? null : readingFromRun(latest, Date.now(), getLimitsConfig().stalePendingMs),
     capturedAt: doc.uploaded_at,
     readTurns: turnsForProcessingMode(latest?.processingMode),

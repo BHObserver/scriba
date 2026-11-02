@@ -35,6 +35,15 @@ export type AskItem =
 export const itemKey = (item: AskItem): string =>
   item.kind === "question" || item.kind === "line" ? `${item.kind}:${item.id}` : item.kind === "prices" ? `prices:${item.ids[0]}` : `${item.kind}:${item.block}`;
 
+/**
+ * The questions the deck goes through. Normally the open ones; after "Answer them now" (`revisit`)
+ * the ones put off for later come back too, except those put off again on this pass (`skipped`).
+ */
+export function deckSet(set: QuestionSet, revisit: boolean, skipped: readonly string[]): QuestionSet {
+  if (!revisit) return set;
+  return { questions: [...set.later.filter((q) => !skipped.includes(q.id)), ...set.questions], later: set.later.filter((q) => skipped.includes(q.id)) };
+}
+
 /** Lines an open or set-aside question is about: the deck leaves them to that question. */
 export function coveredLines(set: QuestionSet): Set<string> {
   return new Set([...set.questions, ...set.later].flatMap((q) => [...q.entries, ...(q.entry ? [q.entry] : [])]));

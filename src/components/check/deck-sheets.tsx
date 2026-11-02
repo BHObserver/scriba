@@ -30,7 +30,7 @@ export const PICKABLE: readonly TransactionType[] = [
 ];
 
 /** The line's handwriting; a line he added has none, and the strip says so. */
-export function RowStrip({ row, photo }: { row: ReviewRow; photo: Photo }) {
+export function RowStrip({ row, photo, height, tag }: { row: ReviewRow; photo: Photo; height?: number; tag?: boolean }) {
   const { t } = useI18n();
   return (
     <LineStrip
@@ -39,6 +39,8 @@ export function RowStrip({ row, photo }: { row: ReviewRow; photo: Photo }) {
       photoWidth={photo.width}
       photoHeight={photo.height}
       turns={photo.turns}
+      height={height}
+      tag={tag}
       reading={row.values.sourceText}
       none={!photo.src ? undefined : row.candidate ? t("strip.noBox") : t("strip.added")}
     />

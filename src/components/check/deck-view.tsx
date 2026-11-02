@@ -62,7 +62,7 @@ function firstFixField(row: ReviewRow): FixField {
   return (unsure as FixField | undefined) ?? "amount";
 }
 
-function LineCard({ row, rows, findings, status, photo, lineNo, onTap }: { row: ReviewRow; rows: readonly ReviewRow[]; findings: readonly Finding[]; status: CardStatus; photo: Photo; lineNo: number; onTap: (field: FixField) => void }) {
+export function LineCard({ row, rows, findings, status, photo, lineNo, onTap }: { row: ReviewRow; rows: readonly ReviewRow[]; findings: readonly Finding[]; status: CardStatus; photo: Photo; lineNo: number; onTap: (field: FixField) => void }) {
   const i18n = useI18n();
   const { t, digits } = i18n;
   const v = row.values;
@@ -117,6 +117,75 @@ function LineCard({ row, rows, findings, status, photo, lineNo, onTap }: { row: 
   );
 }
 
+/** A line card's buttons: restore, not crossed out, pick the kind, type the amount, fix, or accept it (as written). */
+export function LineActions({ row, entry, findings, status, busy, actions, stack }: { row: ReviewRow; entry: ValidationEntry | undefined; findings: readonly Finding[]; status: CardStatus; busy: boolean; actions: Omit<DeckActions, "openMenu">; stack: boolean }) {
+  const { t } = useI18n();
+  const id = row.id;
+  const v = row.values;
+  const blocked = entry != null && !canAccept(entry, findings);
+  const noAmount = blocked && entry != null && !v.crossedOut && v.type !== "unknown";
+  if (status === "removed") {
+    return (
+      <Button variant="red" wide disabled={busy} onClick={() => actions.restore(id)}>
+        {t("dk.restore")}
+      </Button>
+    );
+  }
+  const fix = (
+    <Button variant="line" disabled={busy} onClick={() => actions.openFix(id, firstFixField(row))}>
+      {t("dk.fix")}
+    </Button>
+  );
+  if (v.crossedOut) {
+    return (
+      <ButtonRow stack={stack}>
+        <Button variant="line" disabled={busy} onClick={() => actions.notCrossed(id)}>
+          {t("dk.notCrossed")}
+        </Button>
+        <Button variant="red" disabled={busy} onClick={() => actions.remove(id)}>
+          {t("dk.remove")}
+        </Button>
+      </ButtonRow>
+    );
+  }
+  if (v.type === "unknown") {
+    return (
+      <ButtonRow stack={stack}>
+        {fix}
+        <Button variant="red" disabled={busy} onClick={() => actions.openType(id)}>
+          {t("dk.pickType")}
+        </Button>
+      </ButtonRow>
+    );
+  }
+  if (noAmount) {
+    return (
+      <ButtonRow stack={stack}>
+        <Button variant="line" disabled={busy} onClick={() => actions.remove(id)}>
+          {t("dk.remove")}
+        </Button>
+        <Button variant="red" disabled={busy} onClick={() => actions.openFix(id, "amount")}>
+          {t("dk.typeAmount")}
+        </Button>
+      </ButtonRow>
+    );
+  }
+  return (
+    <ButtonRow stack={stack && status === "look"}>
+      {fix}
+      {status === "look" ? (
+        <Button variant="red" disabled={busy} onClick={() => actions.asWritten(id)}>
+          {t("dk.asWritten")}
+        </Button>
+      ) : (
+        <Button variant="red" disabled={busy} onClick={() => actions.accept(id)}>
+          {t("dk.ok")}
+        </Button>
+      )}
+    </ButtonRow>
+  );
+}
+
 /** The check deck (DESIGN_SPEC D2 "Deck"): one card per line, problems first, progress segments, ghost cards behind. */
 export function DeckView({
   order,
@@ -157,72 +226,6 @@ export function DeckView({
   const status = statuses[index]!;
   const left = statuses.filter((s) => s === "look" || s === "open").length;
   const lineNo = rows.indexOf(row) + 1;
-
-  const v = row.values;
-  const blocked = entry != null && !canAccept(entry, findings);
-  const noAmount = blocked && entry != null && !v.crossedOut && v.type !== "unknown";
-  const buttons = (() => {
-    if (status === "removed") {
-      return (
-        <Button variant="red" wide disabled={busy} onClick={() => actions.restore(id)}>
-          {t("dk.restore")}
-        </Button>
-      );
-    }
-    const fix = (
-      <Button variant="line" disabled={busy} onClick={() => actions.openFix(id, firstFixField(row))}>
-        {t("dk.fix")}
-      </Button>
-    );
-    if (v.crossedOut) {
-      return (
-        <ButtonRow stack={stack}>
-          <Button variant="line" disabled={busy} onClick={() => actions.notCrossed(id)}>
-            {t("dk.notCrossed")}
-          </Button>
-          <Button variant="red" disabled={busy} onClick={() => actions.remove(id)}>
-            {t("dk.remove")}
-          </Button>
-        </ButtonRow>
-      );
-    }
-    if (v.type === "unknown") {
-      return (
-        <ButtonRow stack={stack}>
-          {fix}
-          <Button variant="red" disabled={busy} onClick={() => actions.openType(id)}>
-            {t("dk.pickType")}
-          </Button>
-        </ButtonRow>
-      );
-    }
-    if (noAmount) {
-      return (
-        <ButtonRow stack={stack}>
-          <Button variant="line" disabled={busy} onClick={() => actions.remove(id)}>
-            {t("dk.remove")}
-          </Button>
-          <Button variant="red" disabled={busy} onClick={() => actions.openFix(id, "amount")}>
-            {t("dk.typeAmount")}
-          </Button>
-        </ButtonRow>
-      );
-    }
-    return (
-      <ButtonRow stack={stack && status === "look"}>
-        {fix}
-        {status === "look" ? (
-          <Button variant="red" disabled={busy} onClick={() => actions.asWritten(id)}>
-            {t("dk.asWritten")}
-          </Button>
-        ) : (
-          <Button variant="red" disabled={busy} onClick={() => actions.accept(id)}>
-            {t("dk.ok")}
-          </Button>
-        )}
-      </ButtonRow>
-    );
-  })();
 
   return (
     <div className="flow column">
@@ -268,7 +271,7 @@ export function DeckView({
       </div>
       <div className="pad dk-acts">
         {notice}
-        {buttons}
+        <LineActions row={row} entry={entry} findings={findings} status={status} busy={busy} actions={actions} stack={stack} />
       </div>
     </div>
   );

@@ -10,11 +10,13 @@ import { type ReviewApi, httpReviewApi, localReviewApi } from "./review-api";
  * question out again on the server, saves what the answer changes as ordinary review edits and
  * returns the review and the questions left. Lines are still confirmed through the review API's
  * `confirm`, with its approval rules. `review` is the state the answer was given on; only the
- * dev board's in-memory version reads it (the server has its own).
+ * dev board's in-memory version reads it (the server has its own). `questions` asks again after
+ * a line was edited by hand, as an edit can raise or settle a question.
  */
 export type AskResult = { ok: true; review: Review; set: QuestionSet } | { ok: false; reason: "stale" | "bad_value" | "failed" };
 export type AskApi = ReviewApi & {
   answer: (review: Review, question: string, fingerprint: string, answer: Answer) => Promise<AskResult>;
+  questions: (review: Review) => Promise<QuestionSet | null>;
 };
 
 export function httpAskApi(runId: string): AskApi {
@@ -32,6 +34,16 @@ export function httpAskApi(runId: string): AskApi {
         return { ok: false, reason: "failed" };
       }
     },
+    async questions() {
+      try {
+        const res = await fetch(`/api/runs/${runId}/questions`);
+        if (!res.ok) return null;
+        const json = (await res.json()) as Partial<QuestionSet>;
+        return { questions: json.questions ?? [], later: json.later ?? [] };
+      } catch {
+        return null;
+      }
+    },
   };
 }
 
@@ -45,6 +57,9 @@ export function localAskApi(base: Omit<QuestionInput, "page" | "rows">): AskApi 
       if (!outcome.ok) return { ok: false, reason: outcome.error === "stale" ? "stale" : outcome.error === "bad_value" ? "bad_value" : "failed" };
       const next: Review = { page: { ...review.page, values: outcome.after.page, version: review.page.version + 1 }, rows: outcome.after.rows };
       return { ok: true, review: next, set: buildQuestions(inputOf(next)) };
+    },
+    async questions(review) {
+      return buildQuestions(inputOf(review));
     },
   };
 }

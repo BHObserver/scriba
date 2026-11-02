@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-const NAME_RE = /^S\d{2}(-upright)?\.jpg$/;
+const NAME_RE = /^(S\d{2}(-upright)?|V\d{2}(\.flat)?)\.jpg$/;
 
 /**
  * Development only: serves one of the author's private test photos to the /kit/check board. The
@@ -11,7 +11,7 @@ export async function GET(_request: Request, ctx: RouteContext<"/kit/photo/[name
   const { name } = await ctx.params;
   if (process.env.NODE_ENV === "production" || !NAME_RE.test(name)) return new Response("Not found", { status: 404 });
   try {
-    const bytes = await readFile(path.join(process.cwd(), "private-test-data", "ledger-snippets", name));
+    const bytes = await readFile(path.join(process.cwd(), "private-test-data", name.startsWith("V") ? "v3" : "ledger-snippets", name));
     return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" } });
   } catch {
     return new Response("Not found", { status: 404 });

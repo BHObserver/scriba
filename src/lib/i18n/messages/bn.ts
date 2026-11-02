@@ -859,6 +859,8 @@ export const bn = {
   "asks.which": "কোনটা ঠিক?",
   "asks.rest.title": "বাকি {1}টা লাইন দেখে নিন",
   "asks.rest.all": "এই অংশের {1}টা লাইন দেখে নিন",
+  "asks.rest.one": "বাকি লাইনটা দেখে নিন",
+  "asks.rest.allOne": "এই অংশের লাইনটা দেখে নিন",
   "asks.rest.tap": "কোনোটা ভুল হলে সেটায় চাপুন",
   "asks.rest.ok": "সব ঠিক আছে",
   "asks.line.title": "এই লাইনটা একবার দেখুন",
@@ -883,6 +885,8 @@ export const bn = {
   "asks.voice.never": "‘রাখুন’ চাপলে তবেই বসবে।",
   "asks.voice.none": "বোঝা যায়নি। আবার বলুন বা লিখে দিন।",
   "asks.keep": "রাখুন",
+  "asks.in.party": "অথবা নামটা লিখুন",
+  "asks.in.date": "অথবা দিনটা লিখুন, যেমন ২/১১/২০২৬",
   "asks.err.stale": "এই প্রশ্নটা এর মধ্যে বদলে গেছে। আবার খুলুন।",
   "asks.err.bad": "এটা এখানে বসানো যায় না। আবার দেখুন।",
 } as const;

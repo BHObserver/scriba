@@ -142,6 +142,7 @@ Order if one account does everything: C1 → U1 → D5 → C2 → U2 → U2b →
 - Build D5 into `/check/[documentId]`: block overview, then question cards in the deck, then quick confirms of the rest of each block, the block seal, the page seal.
 - The old line cards stay for prompt 4 readings.
 - Approval rules unchanged. Verify in Edge at 390×844, bn and en.
+- **Result (2 Nov):** done in two parts. The ask deck opens for every reading with blocks, checked in Edge in both languages and once live on the dev project ($0.084). Prompt 4 stays the default until the khata layout hint and personal notes work on prompt 6 (the user's call). See `docs/sessions/B7.md`.
 
 ### U3: two-pass reading (Track B)
 

@@ -19,9 +19,10 @@ import { loadShop } from "./shop-data";
 export async function loadQuestionInput(
   supabase: SupabaseClient,
   runId: string,
-  o: { dues?: boolean } = {},
+  /** `review`: the run's review, when the caller has already loaded it. */
+  o: { dues?: boolean; review?: RunReview } = {},
 ): Promise<{ review: RunReview; input: QuestionInput } | null> {
-  const review = await loadRunReview(supabase, runId);
+  const review = o.review ?? (await loadRunReview(supabase, runId));
   if (!review || review.run.status !== "succeeded") return null;
   const [{ data: parties }, { data: doc }] = await Promise.all([
     supabase.from("parties").select("id, kind, display_name, normalized_key").is("merged_into", null).limit(5000),

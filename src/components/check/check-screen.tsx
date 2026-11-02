@@ -9,7 +9,11 @@ import { type ProblemKind, RETRYABLE, type Reading } from "@/components/capture/
 import { useReadingQueue } from "@/components/capture/reading-queue";
 import { useI18n } from "@/lib/i18n/client";
 import type { QuarterTurns } from "@/lib/images/orientation";
+import type { QuestionSet } from "@/lib/questions/types";
 import type { PageState, ReviewRow } from "@/lib/review/state";
+import { type AskApi, httpAskApi } from "./ask-api";
+import { isBlockReading } from "./ask-model";
+import { AskSession } from "./ask-session";
 import { ProblemView } from "./problem-view";
 import { type Photo, ReadingView } from "./reading-view";
 import { type ReviewApi, httpReviewApi } from "./review-api";
@@ -25,6 +29,8 @@ type Props = {
   photo: Photo;
   /** The latest successful reading's review state; null until the page has been read. */
   review: { runId: string; page: PageState; rows: ReviewRow[] } | null;
+  /** For a reading with blocks: Scriba's questions and the photo's day (the ask deck). Null: the line deck. */
+  asks?: { set: QuestionSet; capturedOn: string | null } | null;
   /** The stored run's state when there is no review: being read, or a problem. Null: never read. */
   serverReading: Reading | null;
   /** When the photo was taken (ISO): the page's day when its written date can't be read. */
@@ -40,6 +46,8 @@ type Props = {
   detailsHref: string;
   /** Development only: the dev board saves and confirms in memory. */
   api?: ReviewApi;
+  /** Development only: the dev board answers in memory. */
+  askApi?: AskApi;
 };
 
 /**
@@ -47,7 +55,7 @@ type Props = {
  * started (on /capture, or "try again" here) comes from the reading queue; otherwise the stored
  * run decides. Opening this screen never sends a page to be read: only a tap does.
  */
-export function CheckScreen({ documentId, photo, review, serverReading, capturedAt, readTurns, pageNumber, pageCount, nextHref, backHref, detailsHref, api }: Props) {
+export function CheckScreen({ documentId, photo, review, asks, serverReading, capturedAt, readTurns, pageNumber, pageCount, nextHref, backHref, detailsHref, api, askApi }: Props) {
   const { t } = useI18n();
   const router = useRouter();
   const { readings, read, forget } = useReadingQueue();
@@ -85,6 +93,22 @@ export function CheckScreen({ documentId, photo, review, serverReading, captured
   const sentPhoto = !review && queued ? { ...photo, turns: queued.turns } : photo;
 
   if (review && (readOnArrival || checkShown)) {
+    if (asks && isBlockReading(review.page.values) && review.rows.some((r) => r.status !== "rejected")) {
+      return (
+        <AskSession
+          api={askApi ?? httpAskApi(review.runId)}
+          runId={review.runId}
+          initial={{ page: review.page, rows: review.rows }}
+          initialSet={asks.set}
+          photo={photo}
+          pageTitle={pageTitle}
+          capturedOn={asks.capturedOn}
+          pageNumber={pageNumber}
+          nextHref={nextHref}
+          backHref={backHref}
+        />
+      );
+    }
     return (
       <ReviewSession
         api={api ?? httpReviewApi(review.runId)}

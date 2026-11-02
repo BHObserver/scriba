@@ -3,7 +3,7 @@ import { answerQuestion } from "@/lib/questions/answer";
 import { buildQuestions } from "@/lib/questions/engine";
 import type { QuestionInput } from "@/lib/questions/types";
 import type { BlockValues } from "@/lib/ledger/types";
-import { acceptAnswered, acceptRest, blockDone, blockFigures, blockLines, blockRegion, deckItems, isBlockReading, itemKey } from "./ask-model";
+import { acceptAnswered, acceptRest, blockDone, blockFigures, blockLines, blockRegion, deckItems, deckSet, isBlockReading, itemKey } from "./ask-model";
 import { reviewOf } from "./deck-fixture.test-util";
 import type { Review } from "./deck-model";
 
@@ -107,5 +107,20 @@ describe("ask deck", () => {
     expect(set.later.map((q) => q.id)).toEqual([delivery.id]);
     expect(blockDone(review, set, acceptRest(review, ["r3", "r4"], {}), "b2")).toBe(false);
     expect(deckItems(review, set, {}, new Set()).some((i) => i.kind === "line" && (i.id === "r5" || i.id === "r6"))).toBe(false);
+  });
+
+  test("answering them now brings the later prices back, until put off again", () => {
+    let review = pranPage();
+    review = answer(review, "meaning:b2", { option: buildQuestions(inputOf(review)).questions.find((q) => q.id === "meaning:b2")!.proposed! });
+    const delivery = buildQuestions(inputOf(review)).questions.find((q) => q.kind === "delivery")!;
+    review = answer(review, delivery.id, { option: delivery.options.find((o) => o.later)!.id });
+    const set = buildQuestions(inputOf(review));
+    const acc = acceptRest(review, ["r1", "r2"], acceptAnswered(review, delivery, {}));
+    const seen = new Set(["stamp:b1"]);
+    expect(deckItems(review, deckSet(set, false, []), acc, seen).map(itemKey)).not.toContain(`question:${delivery.id}`);
+    expect(deckItems(review, deckSet(set, true, []), acc, seen).map(itemKey)).toContain(`question:${delivery.id}`);
+    const again = deckSet(set, true, [delivery.id]);
+    expect(deckItems(review, again, acc, seen).map(itemKey)).not.toContain(`question:${delivery.id}`);
+    expect(again.later.map((q) => q.id)).toEqual([delivery.id]);
   });
 });
