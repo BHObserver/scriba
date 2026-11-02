@@ -408,3 +408,58 @@ describe("data model v2: parties, shop profile, day closes, business date", () =
     });
   });
 });
+
+describe("company memos (U4)", () => {
+  const PAGE = "10000000-0000-4000-8000-000000000001";
+  const memoRow = (id: string, owner: string, memoFor: string | null, kind = "memo") =>
+    db.query(
+      `insert into public.ledger_documents (id, owner_id, storage_path, sha256, mime_type, byte_size, width, height, kind, memo_for)
+       values ($1::uuid, $2::uuid, $2::text || '/' || $1::text || '.png', $3, 'image/png', 100, 64, 64, $4, $5::uuid)`,
+      [id, owner, id.slice(-2).repeat(32), kind, memoFor],
+    );
+
+  test("the server registers a memo for one of the owner's pages; every document so far is a page", async () => {
+    await as("service_role", null, async () => {
+      await memoRow("10000000-0000-4000-8000-0000000000c1", A, PAGE);
+      const [memo] = await rows(`select kind, memo_for from public.ledger_documents where id = '10000000-0000-4000-8000-0000000000c1'`);
+      expect(memo).toEqual({ kind: "memo", memo_for: PAGE });
+      const [page] = await rows(`select kind, memo_for from public.ledger_documents where id = $1`, [PAGE]);
+      expect(page).toEqual({ kind: "page", memo_for: null });
+    });
+    await as("authenticated", A, async () => {
+      expect(await rows(`select id from public.ledger_documents where memo_for = $1`, [PAGE])).toHaveLength(1);
+    });
+    await as("authenticated", B, async () => {
+      expect(await rows(`select id from public.ledger_documents where kind = 'memo'`)).toHaveLength(0);
+    });
+  });
+
+  test("a memo belongs to a page of the same owner, never to another memo or to nothing", async () => {
+    await as("service_role", null, async () => {
+      await expectDenied(memoRow("10000000-0000-4000-8000-0000000000c2", B, PAGE), /foreign key/);
+      await expectDenied(memoRow("10000000-0000-4000-8000-0000000000c3", A, "10000000-0000-4000-8000-0000000000c1"), /must belong to a page/);
+      await expectDenied(memoRow("10000000-0000-4000-8000-0000000000c4", A, null), /check constraint/);
+      await expectDenied(memoRow("10000000-0000-4000-8000-0000000000c5", A, PAGE, "page"), /check constraint/);
+    });
+  });
+
+  test("users can neither register a memo nor turn a page into one", async () => {
+    await as("authenticated", A, async () => {
+      await expectDenied(memoRow("10000000-0000-4000-8000-0000000000c6", A, PAGE));
+      await expectDenied(db.query(`update public.ledger_documents set kind = 'memo', memo_for = $1 where id <> $1`, [PAGE]));
+      await expectDenied(db.query(`update public.ledger_documents set memo_for = null where kind = 'memo'`));
+    });
+  });
+
+  test("deleting a page deletes its memos", async () => {
+    const page = "10000000-0000-4000-8000-0000000000d1";
+    await as("service_role", null, async () => {
+      await memoRow(page, A, null, "page");
+      await memoRow("10000000-0000-4000-8000-0000000000d2", A, page);
+    });
+    await as("authenticated", A, async () => {
+      expect((await db.query(`delete from public.ledger_documents where id = $1`, [page])).affectedRows).toBe(1);
+      expect(await rows(`select id from public.ledger_documents where id = '10000000-0000-4000-8000-0000000000d2'`)).toHaveLength(0);
+    });
+  });
+});

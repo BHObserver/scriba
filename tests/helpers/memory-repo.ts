@@ -7,6 +7,7 @@ import { sha256Hex } from "@/lib/extraction/cache-key";
 import type {
   DocumentForExtraction,
   ExtractionRepo,
+  MemoRunSuccess,
   NewRun,
   RunFailure,
   RunRecord,
@@ -14,7 +15,7 @@ import type {
 } from "@/lib/extraction/pipeline";
 import { callsOfRun } from "@/lib/extraction/two-pass";
 
-export type StoredRun = RunRecord & NewRun & { success?: RunSuccess; failure?: RunFailure };
+export type StoredRun = RunRecord & NewRun & { success?: RunSuccess; memo?: MemoRunSuccess; failure?: RunFailure };
 
 export class MemoryStore {
   documents = new Map<string, DocumentForExtraction>();
@@ -24,13 +25,14 @@ export class MemoryStore {
   failNextComplete = false;
   clock = () => new Date();
 
-  addDocument(ownerId: string, bytes: Uint8Array, id = `doc-${this.documents.size + 1}`) {
+  addDocument(ownerId: string, bytes: Uint8Array, id = `doc-${this.documents.size + 1}`, kind?: DocumentForExtraction["kind"]) {
     const doc: DocumentForExtraction = {
       id,
       ownerId,
       sha256: sha256Hex(bytes),
       storagePath: `${ownerId}/${id}.png`,
       mimeType: "image/png",
+      ...(kind ? { kind } : {}),
     };
     this.documents.set(id, doc);
     this.objects.set(doc.storagePath, bytes);
@@ -94,6 +96,15 @@ export class MemoryStore {
         const r = store.runs.find((x) => x.id === runId)!;
         r.status = "succeeded";
         r.success = result;
+      },
+      async completeMemoRun(runId, result) {
+        if (store.failNextComplete) {
+          store.failNextComplete = false;
+          throw new Error("db down");
+        }
+        const r = store.runs.find((x) => x.id === runId)!;
+        r.status = "succeeded";
+        r.memo = result;
       },
       async failRun(runId, failure) {
         const r = store.runs.find((x) => x.id === runId)!;

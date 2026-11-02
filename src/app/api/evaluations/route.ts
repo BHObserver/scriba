@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   if (!body.success) return jsonError("Invalid request.", 400);
   const modelId = getMetaConfig().modelId;
 
-  let docsQuery = supabase.from("ledger_documents").select("id, sha256, dataset_label, sample_label");
+  let docsQuery = supabase.from("ledger_documents").select("id, sha256, dataset_label, sample_label").eq("kind", "page");
   if (body.data.datasetLabel) docsQuery = docsQuery.eq("dataset_label", body.data.datasetLabel);
   const [{ data: docs }, { data: truths }, { data: runs }, { data: reviews }, { data: confirmations }] = await Promise.all([
     docsQuery,

@@ -37,6 +37,8 @@ Printed Scriba khata pages (P4): when the user ticks "Scriba খাতার ছ
 
 Page finder (C2): the phone finds the page and flattens it before upload, all on the device (a web worker; nothing is sent anywhere to find the page). The flattened page is a new JPEG without EXIF, so it carries no GPS; it is what Meta reads. The camera's own photo is uploaded after it to the same private bucket, under the user's folder, as evidence (`ledger_documents.camera_path`, migration 20261102120000). It is kept as taken, so it may include GPS metadata (the camera screen warns, as before) and more of the surroundings than the page. The server checks its checksum and format like the page's; it is never sent to Meta, and deleting the page deletes it too.
 
+Company memos (U4): a memo the user photographs with a page is uploaded and checked like a page (the same private bucket, under the user's folder) and is sent to Meta only when it is read, like a page, with the fixed memo prompt (`store: false`). It may show the shop's name and the rep's; nothing else about the user is added. Deleting the page deletes its memos and their photos.
+
 For any real shop data later: get consent from the shopkeeper, minimize names in the photo, and re-check Meta's data policies first.
 
 ## Known limitations

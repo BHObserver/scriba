@@ -15,7 +15,7 @@ import { parseQuantity } from "@/lib/numerals";
 import { lineOrderAfter } from "@/lib/review/line-order";
 import type { ReviewRow } from "@/lib/review/state";
 import { EMPTY_ENTRY, FIELD_TO_VALUE_KEY, MAX_ANSWERS, remainingReviewFields } from "@/lib/review/values";
-import { buildQuestions, readsAsNumber } from "./engine";
+import { buildQuestions, deliveryChanges, readsAsNumber } from "./engine";
 import type { Answer, Change, Question, QuestionInput } from "./types";
 
 export type ReviewState = { page: PageValues; rows: ReviewRow[] };
@@ -24,7 +24,6 @@ export type ReviewState = { page: PageValues; rows: ReviewRow[] };
 export const NEW_ROW_PREFIX = "new-";
 
 const MAX_TEXT = 200;
-const MAX_SOURCE = 600;
 
 function editRow(row: ReviewRow, values: Partial<EntryValues> | undefined, checked: readonly ReviewableField[] | undefined): ReviewRow {
   const next = values ? { ...row.values, ...values } : row.values;
@@ -139,16 +138,9 @@ function valueChanges(q: Question, raw: string, rows: readonly ReviewRow[], capt
     case "opening":
       return ok([{ op: "add", after: target.after, values: { ...EMPTY_ENTRY, type: "opening_balance", amountText: value, ...(target.block ? { block: target.block } : {}) } }]);
     case "delivery": {
-      // One line for the delivery, carrying every item as written; the unpriced lines it replaces
-      // are rejected (kept in the audit trail), so nothing is counted twice or left at zero.
       const goods = target.entries.map((id) => rows.find((r) => r.id === id)).filter((r): r is ReviewRow => r != null);
       if (goods.length !== target.entries.length) return { ok: false, error: "stale" };
-      const sourceText = goods.map((r) => r.values.sourceText.trim()).filter(Boolean).join(" + ").slice(0, MAX_SOURCE);
-      const item = goods.map((r) => r.values.item?.trim()).filter(Boolean).join(", ").slice(0, MAX_TEXT) || null;
-      return ok([
-        { op: "add", after: target.after, values: { ...EMPTY_ENTRY, sourceText, type: target.type, item, amountText: value, block: target.block } },
-        ...goods.map((r) => ({ op: "reject" as const, entry: r.id })),
-      ]);
+      return ok(deliveryChanges(goods, target, value));
     }
   }
 }

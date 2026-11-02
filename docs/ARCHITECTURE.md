@@ -44,6 +44,7 @@ review screen (client)
 | `src/lib/validation/engine.ts` | Rules A–E plus reading checks; finding diffs | numerals |
 | `src/lib/review/approval.ts` | Safety rules for approval; acknowledgement fingerprints | engine |
 | `src/lib/extraction/{prompt,schema,parse,cache-key}.ts` | Versioned prompt, JSON Schema + zod mirror, response parsing and normalization | numerals |
+| `src/lib/memo/*` | U4: the company memo's prompt, schema and parser (its own sums checked by code), and matching it to a visit and its goods | numerals, questions' `romanize` |
 | `src/lib/meta/transport.ts` | **The only code that calls Meta.** One request, no retries, error normalization | OpenAI SDK |
 | `src/lib/extraction/pipeline.ts` | Credit-control orchestration with an injected repository and model caller | all of the above (types only for Meta) |
 | `src/lib/server/*` | Supabase repository, auth helpers, review loader | Supabase |

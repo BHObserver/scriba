@@ -79,7 +79,8 @@ export type Shop = {
 export async function loadShop(supabase: Supabase): Promise<Shop> {
   const [profile, documents, records, parties, closes, runs, drafts] = await Promise.all([
     loadShopProfile(supabase),
-    selectAll<DocumentRow>((a, b) => supabase.from("ledger_documents").select(DOCUMENT_COLUMNS).order("id").range(a, b)),
+    // Pages only: a company memo (U4) is read for its page, never shown as one.
+    selectAll<DocumentRow>((a, b) => supabase.from("ledger_documents").select(DOCUMENT_COLUMNS).eq("kind", "page").order("id").range(a, b)),
     selectAll<RecordRow>((a, b) => supabase.from("confirmed_records").select(RECORD_COLUMNS).order("id").range(a, b)),
     selectAll<PartyRow>((a, b) => supabase.from("parties").select("id, kind, display_name, normalized_key, merged_into").order("id").range(a, b)),
     selectAll<DayCloseRow>((a, b) =>

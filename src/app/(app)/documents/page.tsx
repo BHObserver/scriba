@@ -27,6 +27,7 @@ export default async function DocumentsPage({ searchParams }: PageProps<"/docume
     supabase
       .from("ledger_documents")
       .select("id, original_filename, byte_size, width, height, uploaded_at, business_date, status, sample_label, dataset_label, extraction_runs(processing_mode, started_at)")
+      .eq("kind", "page")
       .order("uploaded_at", { ascending: false })
       .limit(100),
     loadShopProfile(supabase),

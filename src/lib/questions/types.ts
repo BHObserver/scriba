@@ -6,6 +6,7 @@ import type { MessageKey } from "@/lib/i18n/messages";
 import type { PartyKind } from "@/lib/ledger/parties";
 import type { BlockValues, EntryValues, PageValues, ReviewableField } from "@/lib/ledger/types";
 import type { NormalizedDoubt } from "@/lib/extraction/parse";
+import type { MemoForPage } from "@/lib/memo/match";
 import type { ReviewRow } from "@/lib/review/state";
 
 export const QUESTION_KINDS = [
@@ -29,6 +30,12 @@ export const QUESTION_KINDS = [
   "unbalanced",
   /** A page with no date. */
   "date",
+  /** U4: which visit a company's memo belongs to, when its name doesn't say. */
+  "memo",
+  /** U4: goods on the memo that aren't on the page. */
+  "memo_extra",
+  /** U4: a figure on the page that the memo gives differently. */
+  "memo_differs",
 ] as const;
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 
@@ -97,7 +104,12 @@ export type Question = {
   proposed: string | null;
   /** A keypad, voice or typed answer, when one is possible. */
   input: AnswerInput | null;
+  /** U4: the company memo behind the question's figures (show its lines beside the page's). */
+  memo?: MemoRef;
 };
+
+/** U4: the memo a question takes its figures from, and the memo lines it shows. */
+export type MemoRef = { document: string; run: string; lines: string[] };
 
 export type QuestionSet = {
   /** In the order to ask them: block by block down the page, then the page itself. */
@@ -124,6 +136,8 @@ export type QuestionInput = {
    * `partiesToExplain` names; absent when not loaded.
    */
   dues?: ReadonlyMap<string, number>;
+  /** U4: the company memos photographed with the page, with their latest readings. */
+  memos?: readonly MemoForPage[];
 };
 
 /** An answer from the check screen: a chosen option, or a typed or spoken value. */

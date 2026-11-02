@@ -58,6 +58,15 @@ A page is a list of **blocks**: writing that belongs together wherever it sits (
 
 Where blocks are stored (no migration): the reading (with boxes and doubts) in `extraction_runs.result`; the editable blocks in `page_reviews.page_values.blocks`; each line's block in `entry_reviews.entry_values.block`. Edits to both are audited by the existing triggers. A confirmed record gets its party from its block (`party_id`, so the kind too). The rep is reached through `entry_review_id` → `entry_values.block` → `page_values.blocks`.
 
+## Company memos (U4, `20261102180000_scriba_memos.sql`, not yet on the hosted project)
+
+| Addition | What it holds | Who writes it |
+|---|---|---|
+| `ledger_documents.kind` (`page` default, or `memo`) | A memo is a photo like a page, read on its own; never reviewed or confirmed | Server, at registration (`POST /api/documents` with `memoFor`) |
+| `ledger_documents.memo_for` | The page the memo was photographed with: same owner (composite foreign key), always a page (trigger), deleted with it | Server, at registration |
+
+A memo's run records prompt and schema `scriba-memo-1`; its `result` is the reading (`NormalizedMemo`, `src/lib/memo/parse.ts`): `company`, `person`, `number`, `dateText`, `lines[]` (text, item, qty, unit, rate, amount as written, their poisha and thousandths, `multiplies`, `review`, `box`), `totals` (subtotal, discount, total, previous due, paid, due: text and poisha) and `check` (`linesSum`, `total`, `agrees`, worked out by code). It has no `extracted_entries`, `entry_reviews`, `page_reviews` or findings. What the memo changes on the page goes through the page's own answers (`page_values.answers`) and review rows.
+
 ## Versions recorded with every result
 
 `model_id`, `prompt_version` (`scriba-prompt-4`; `scriba-prompt-3` or `scriba-prompt-6` via `SCRIBA_PROMPT_VERSION`), `schema_version` (`scriba-extraction-2`; `-1` with prompt 3, `-3` with prompt 6), `processing_mode` (`baseline_original`, or `rotate_90` / `rotate_180` / `rotate_270` when the user turned the photo upright before analysis), `validator_version` (`scriba-validator-3`: balance, total and running-balance rules per block), `metrics_version` (`scriba-metrics-1`), ground-truth version.

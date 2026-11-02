@@ -14,6 +14,11 @@
  * Order: block by block down the page, as the check screen walks it. In each block, what it is
  * first (it decides the party and the checks), then line by line, then its sums; the page's date
  * last.
+ *
+ * U4: a company memo photographed with the page proposes the prices of the visit's goods. Code
+ * links the memo to its visit by name (or asks), pairs its lines with the handwritten goods, and
+ * checks its sums; a price is proposed only from a memo line that is sure, read with confidence
+ * and consistent with the memo's own total. He still confirms each one.
  */
 import type { NormalizedDoubt } from "@/lib/extraction/parse";
 import { type BlockGroup, blockPartyKind, groupByBlock, isUnpricedGoods } from "@/lib/ledger/blocks";
@@ -28,13 +33,15 @@ import {
   MARKER_TYPES,
 } from "@/lib/ledger/types";
 import type { MessageKey } from "@/lib/i18n/messages";
-import { parseMoney, parseQuantity, parseRate } from "@/lib/numerals";
+import { type MemoForPage, blocksNamedOnMemo, pairLines } from "@/lib/memo/match";
+import type { MemoLine } from "@/lib/memo/parse";
+import { formatTaka, parseMoney, parseQuantity, parseRate } from "@/lib/numerals";
 import { ackFingerprint } from "@/lib/review/approval";
 import { type ReviewRow, toValidationInput } from "@/lib/review/state";
-import { FIELD_TO_VALUE_KEY } from "@/lib/review/values";
+import { EMPTY_ENTRY, FIELD_TO_VALUE_KEY } from "@/lib/review/values";
 import { type Finding, accountSign, deriveNumbers, validateLedger } from "@/lib/validation/engine";
 import { soundsAlike } from "./similar";
-import type { Change, KnownParty, Question, QuestionInput, QuestionOption, QuestionSet, Sentence, SentenceArg, Why } from "./types";
+import type { Change, KnownParty, MemoRef, Question, QuestionInput, QuestionOption, QuestionSet, Sentence, SentenceArg, Why } from "./types";
 
 /** FNV-1a over the parts: a short, stable fingerprint of what a question is about. */
 export function fingerprint(parts: ReadonlyArray<string | number | null | undefined>): string {
@@ -169,6 +176,8 @@ type Ctx = {
   pageTypes: TransactionType[];
   doubts: Map<string, NormalizedDoubt>;
   askedParties: Set<string>;
+  /** U4: the memo linked to each visit block. */
+  memos: Map<string, BlockMemo>;
 };
 
 const isOpen = (r: ReviewRow) => r.status === "draft" && !r.values.crossedOut;
@@ -235,6 +244,28 @@ const amountOf = (r: ReviewRow): number | null => {
   return n?.ok ? n.value : null;
 };
 
+const quantityOf = (r: ReviewRow): number | null => {
+  const n = deriveNumbers(r.values).quantity;
+  return n?.ok ? n.value : null;
+};
+
+const MAX_TEXT = 200;
+const MAX_SOURCE = 600;
+
+/**
+ * A delivery priced as one total: one line for it, carrying every item as written, and the
+ * unpriced lines it replaces rejected (kept in the audit trail), so nothing is counted twice or
+ * left at zero.
+ */
+export function deliveryChanges(goods: readonly ReviewRow[], target: { block: string; after: string; type: TransactionType }, amountText: string): Change[] {
+  const sourceText = goods.map((r) => r.values.sourceText.trim()).filter(Boolean).join(" + ").slice(0, MAX_SOURCE);
+  const item = goods.map((r) => r.values.item?.trim()).filter(Boolean).join(", ").slice(0, MAX_TEXT) || null;
+  return [
+    { op: "add", after: target.after, values: { ...EMPTY_ENTRY, sourceText, type: target.type, item, amountText, block: target.block } },
+    ...goods.map((r) => ({ op: "reject" as const, entry: r.id })),
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Block questions
 // ---------------------------------------------------------------------------
@@ -254,7 +285,7 @@ function visitFigures(rows: ReviewRow[]): Sentence | null {
   return null;
 }
 
-function meaningQuestion(block: BlockValues, rows: ReviewRow[]): Question | null {
+function meaningQuestion(block: BlockValues, rows: ReviewRow[], memo: BlockMemo | undefined): Question | null {
   if (block.kind === "day_sales" || block.kind === "expenses") return null;
   const party = block.party?.trim() || null;
   const person = block.person?.trim() || null;
@@ -287,7 +318,8 @@ function meaningQuestion(block: BlockValues, rows: ReviewRow[]): Question | null
   } else {
     sentence = { key: block.kind === "supplier_account" ? "q.meaning.supplier" : "q.meaning.customer", args: [{ text: party }] };
   }
-  return question({ ...base, sentence, options: [{ id: "yes", label: { key: "q.yes" }, changes: [] }, ...others], proposed: "yes" });
+  const why = block.kind === "supplier_visit" && memo ? memoAgreesWhy(memo, rows) : null;
+  return question({ ...base, sentence, why, options: [{ id: "yes", label: { key: "q.yes" }, changes: [] }, ...others], proposed: "yes" });
 }
 
 /** "Praan" may be প্রাণ, already in the book. Asked once per new name on the page. */
@@ -372,7 +404,10 @@ function blockKindQuestion(ctx: Ctx, block: BlockValues, rows: ReviewRow[]): Que
   });
 }
 
-/** Several goods from one company with no price: one total for the delivery, or each priced. */
+/**
+ * Several goods from one company with no price: one total for the delivery, or each priced. With
+ * the company's memo pricing every one of them, the memo's prices are proposed instead.
+ */
 function deliveryQuestion(ctx: Ctx, g: Group, rows: ReviewRow[]): Question | null {
   if (!g.block || g.convention !== "supplier") return null;
   const goods = rows.filter((r) => isUnpricedGoods(r.values) && (r.values.type === "credit_purchase" || r.values.type === "purchase"));
@@ -380,22 +415,23 @@ function deliveryQuestion(ctx: Ctx, g: Group, rows: ReviewRow[]): Question | nul
   const id = `delivery:${g.block.id}`;
   if (ctx.answers.get(id)?.a === "each") return null;
   const who = whoOf(g.block) ?? { text: g.block.title ?? "" };
-  return question({
+  const target = { block: g.block.id, after: goods[goods.length - 1]!.id, type: goods[0]!.values.type };
+  const base = {
     id,
-    kind: "delivery",
+    kind: "delivery" as const,
     fp: fingerprint(goods.map((r) => r.id)),
     block: g.block.id,
     entry: null,
-    field: "amount",
+    field: "amount" as const,
     entries: goods.map((r) => r.id),
-    sentence: { key: "q.delivery", args: [who, { count: goods.length }] },
+    sentence: { key: "q.delivery", args: [who, { count: goods.length }] } satisfies Sentence,
     why: PRICE_WHY,
-    options: [{ id: "each", label: { key: "q.delivery.each" }, changes: [] }, priceLater],
-    input: {
-      kind: "money",
-      target: { to: "delivery", block: g.block.id, entries: goods.map((r) => r.id), after: goods[goods.length - 1]!.id, type: goods[0]!.values.type },
-    },
-  });
+    options: [{ id: "each", label: { key: "q.delivery.each" }, changes: [] }, priceLater] satisfies QuestionOption[],
+    input: { kind: "money" as const, target: { to: "delivery" as const, entries: goods.map((r) => r.id), ...target } },
+  };
+  const memo = ctx.memos.get(g.block.id);
+  if (!memo) return question(base);
+  return question({ ...base, ...(memoDelivery(memo, g.block, rows, goods, target) ?? { why: memoPartialWhy(memo, goods) }) });
 }
 
 /** An account with no "due before": ask for it, so the due now can be worked out. */
@@ -591,20 +627,432 @@ function doubtQuestions(ctx: Ctx, row: ReviewRow, g: Group): Question[] {
   return out;
 }
 
-function priceQuestion(row: ReviewRow, g: Group): Question | null {
+function priceQuestion(ctx: Ctx, row: ReviewRow, g: Group): Question | null {
   if (!isUnpricedGoods(row.values) || row.values.type === "unknown") return null;
-  return question({
+  const base = {
     id: `price:${row.id}`,
-    kind: "price",
+    kind: "price" as const,
     fp: fingerprint([row.values.item, row.values.quantityText, row.values.unit]),
     block: g.block?.id ?? null,
     entry: row.id,
-    field: "amount",
-    sentence: { key: "q.price", args: [quote(row)] },
+    field: "amount" as const,
+    sentence: { key: "q.price", args: [quote(row)] } satisfies Sentence,
     why: PRICE_WHY,
     options: [priceLater],
-    input: { kind: "money", target: { to: "entry", entry: row.id, field: "amount" } },
+    input: { kind: "money" as const, target: { to: "entry" as const, entry: row.id, field: "amount" as const } },
+  };
+  const memo = g.block ? ctx.memos.get(g.block.id) : undefined;
+  return question({ ...base, ...(memo ? memoPrice(memo, row, g.entries.filter(isOpen)) : {}) });
+}
+
+// ---------------------------------------------------------------------------
+// The company's memo (U4)
+// ---------------------------------------------------------------------------
+
+/** A memo linked to a visit block: its lines paired with the block's goods. */
+type BlockMemo = {
+  memo: MemoForPage;
+  /** A goods line's memo line, when each is the other's best match. */
+  sure: Map<string, MemoLine>;
+  /** Goods lines with no sure match, and the memo lines they may be. */
+  maybe: Map<string, MemoLine[]>;
+  /** Priced memo lines that none of the block's goods may be. */
+  extras: MemoLine[];
+};
+
+const GOODS_TYPES: ReadonlySet<TransactionType> = new Set(["credit_purchase", "purchase", "unknown"]);
+/** Goods a memo line may be: an item is written, bought or of no kind yet. */
+const isGoods = (r: ReviewRow) => (r.values.item?.trim().length ?? 0) > 0 && GOODS_TYPES.has(r.values.type);
+
+/** Nothing on the memo contradicts its sums: its lines agree with what it prints, or it prints none. */
+const memoAgrees = (m: MemoForPage) => m.memo.check.agrees !== false;
+/** A memo line whose price may be proposed: it reads as a number, the model was sure of it, and qty × rate doesn't say otherwise. */
+const priceable = (l: MemoLine) => l.amountPoisha != null && !l.review.includes("amount") && l.multiplies !== false;
+
+/** What the memo takes off its lines (a discount), so that its line prices aren't what he owes. Null: nothing. */
+function discountOf(m: MemoForPage): number | null {
+  const { total, linesSum } = m.memo.check;
+  return total != null && linesSum != null && total !== linesSum ? linesSum - total : null;
+}
+
+const memoRef = (m: MemoForPage, lines: readonly MemoLine[]): MemoRef => ({ document: m.documentId, run: m.runId, lines: lines.map((l) => l.id) });
+
+/** The amount of the block's one line of this kind; null when there is none, or more than one. */
+function singleAmount(rows: readonly ReviewRow[], type: TransactionType): { row: ReviewRow; amount: number } | null {
+  const of = rows.filter((r) => r.values.type === type);
+  const amount = of.length === 1 ? amountOf(of[0]!) : null;
+  return amount == null ? null : { row: of[0]!, amount };
+}
+
+/** He priced the block's goods as one total (typed, or the memo's): their line is no single memo line. */
+const pricedAsTotal = (ctx: Ctx, block: string) => ["value", "memo_total"].includes(ctx.answers.get(`delivery:${block}`)?.a ?? "");
+
+function memoBlock(ctx: Ctx, m: MemoForPage, g: Group): BlockMemo {
+  if (pricedAsTotal(ctx, g.block!.id)) return { memo: m, sure: new Map(), maybe: new Map(), extras: [] };
+  const goods = g.entries.filter((r) => isOpen(r) && isGoods(r));
+  const pairing = pairLines(goods.map((r) => ({ id: r.id, item: r.values.item, quantityMilli: quantityOf(r) })), m.memo);
+  const byId = new Map(m.memo.lines.map((l) => [l.id, l]));
+  const sure = new Map<string, MemoLine>();
+  const maybe = new Map<string, MemoLine[]>();
+  for (const p of pairing.pairs) {
+    const line = byId.get(p.line)!;
+    if (p.sure) sure.set(p.goods, line);
+    else maybe.set(p.goods, [...(maybe.get(p.goods) ?? []), line]);
+  }
+  const extras = pairing.unmatched.map((id) => byId.get(id)!).filter((l) => l.amountPoisha != null && l.amountPoisha > 0);
+  return { memo: m, sure, maybe, extras };
+}
+
+/**
+ * Which visit each memo belongs to. A memo that names one visit's company or rep is that visit's.
+ * Otherwise Scriba asks, at the first visit it may be, and his answer links it. A visit takes one
+ * memo: the first that is its. Returns the questions to ask, by block.
+ */
+function linkMemos(ctx: Ctx, groups: readonly Group[]): Map<string, Question[]> {
+  const asks = new Map<string, Question[]>();
+  const visits = groups.filter((g) => g.block && g.convention === "supplier" && g.entries.some(isOpen));
+  for (const m of ctx.input.memos ?? []) {
+    const free = visits.filter((g) => !ctx.memos.has(g.block!.id));
+    if (free.length === 0) continue;
+    const named = blocksNamedOnMemo(m.memo, free.map((g) => ({ block: g.block!.id, party: g.block!.party, person: g.block!.person })));
+    let home = named.length === 1 ? free.find((g) => g.block!.id === named[0]) : undefined;
+    if (!home) {
+      const may = named.length > 1 ? free.filter((g) => named.includes(g.block!.id)) : free;
+      const q = memoLinkQuestion(m, may, named.length > 1);
+      const answered = ctx.answers.get(q.id);
+      if (answered?.fp === q.fp) home = may.find((g) => answered.a === `block:${g.block!.id}`);
+      const at = may[0]!.block!.id;
+      asks.set(at, [...(asks.get(at) ?? []), q]);
+    }
+    if (home) ctx.memos.set(home.block!.id, memoBlock(ctx, m, home));
+  }
+  return asks;
+}
+
+/** "Is this memo from “PRAN Agro Ltd.” the one Selim (Praan) left?" */
+function memoLinkQuestion(m: MemoForPage, groups: readonly Group[], several: boolean): Question {
+  const { company } = m.memo;
+  const from = company ?? m.memo.person;
+  const single = groups.length === 1;
+  const who = (b: BlockValues): SentenceArg => whoOf(b) ?? { text: b.title ?? "" };
+  const first = groups[0]!.block!;
+  const sentence: Sentence = !single
+    ? { key: "q.memo.link.which" }
+    : from
+      ? { key: "q.memo.link", args: [{ text: from }, who(first)] }
+      : { key: "q.memo.link.unnamed", args: [who(first)] };
+  const why: Why = {
+    sentence: !company ? { key: "q.memo.link.why.unnamed" } : { key: several ? "q.memo.link.why.several" : "q.memo.link.why", args: [{ text: company }] },
+    verified: false,
+  };
+  return question({
+    id: `memo:${m.documentId}`,
+    kind: "memo",
+    fp: fingerprint([m.runId, ...groups.map((g) => g.block!.id)]),
+    block: single ? first.id : null,
+    entry: null,
+    field: null,
+    entries: groups.flatMap((g) => g.entries.filter(isOpen).map((r) => r.id)),
+    sentence,
+    why,
+    options: [
+      ...groups.map((g) => ({
+        id: `block:${g.block!.id}`,
+        label: single ? { key: "q.memo.link.yes" as const } : { key: "q.value" as const, args: [who(g.block!)] },
+        changes: [],
+      })),
+      { id: "no", label: { key: "q.memo.link.no" }, changes: [] },
+      later,
+    ],
+    memo: memoRef(m, []),
   });
+}
+
+/** The memo's price on a goods line, and its rate too when he wrote the quantity the memo charges for. */
+function memoPriceChanges(row: ReviewRow, l: MemoLine): Change[] {
+  const values: Partial<EntryValues> = { amountText: poishaText(l.amountPoisha!) };
+  const qty = quantityOf(row);
+  if (l.multiplies === true && l.ratePoisha != null && qty != null && qty === l.quantityMilli && !row.values.rateText?.trim()) {
+    values.rateText = poishaText(l.ratePoisha);
+  }
+  return [{ op: "edit", entry: row.id, values, checked: ["amount"] }];
+}
+
+/**
+ * What the shop would owe the company after the visit with these prices, worked out by code from
+ * the block's lines: due before, + goods on credit, − payments. Null when a line's effect or amount
+ * isn't known, or there is no single "before".
+ */
+function supplierDueAfter(rows: readonly ReviewRow[], prices: ReadonlyMap<string, number>): number | null {
+  const before = singleAmount(rows, "opening_balance");
+  if (!before) return null;
+  let due = before.amount;
+  for (const r of rows) {
+    const type = r.values.type;
+    if (r === before.row || type === "closing_balance" || type === "subtotal" || type === "purchase") continue;
+    const sign = accountSign("supplier", type);
+    const amount = prices.get(r.id) ?? amountOf(r);
+    if (sign == null || amount == null) return null;
+    due += sign * amount;
+  }
+  return due;
+}
+
+/**
+ * Why the memo's prices can be taken. Best: with them the page comes to the due the memo prints,
+ * two records agreeing. Else its lines add up to its total (code checked), or it prints no total.
+ */
+function memoPricesWhy(m: MemoForPage, rows: readonly ReviewRow[], prices: ReadonlyMap<string, number>): Why {
+  const due = m.memo.totals.due.poisha;
+  if (due != null && supplierDueAfter(rows, prices) === due) return { sentence: { key: "q.memo.due", args: [{ money: due }] }, verified: true };
+  return m.memo.check.agrees === true ? { sentence: { key: "q.memo.sums" }, verified: true } : { sentence: { key: "q.memo.nototal" }, verified: false };
+}
+
+/** Why the memo proposes nothing: its sums don't agree, or it has some of the goods only. */
+function memoPartialWhy(bm: BlockMemo, goods: readonly ReviewRow[]): Why {
+  const { linesSum, total } = bm.memo.memo.check;
+  if (!memoAgrees(bm.memo) && linesSum != null && total != null) {
+    return { sentence: { key: "q.memo.sums.off", args: [{ money: linesSum }, { money: total }] }, verified: false };
+  }
+  const found = goods.filter((r) => bm.sure.has(r.id) || bm.maybe.has(r.id)).length;
+  return { sentence: found > 0 ? { key: "q.memo.partial", args: [{ count: found }] } : { key: "q.memo.none" }, verified: false };
+}
+
+/**
+ * The delivery card when the memo prices every unpriced good: its prices one by one, or, after a
+ * discount, its total for them all (then only when its lines are exactly these goods). Null: the
+ * memo can't propose, and the plain delivery question is asked.
+ */
+function memoDelivery(
+  bm: BlockMemo,
+  block: BlockValues,
+  rows: readonly ReviewRow[],
+  goods: readonly ReviewRow[],
+  target: { block: string; after: string; type: TransactionType },
+): Partial<Question> | null {
+  const m = bm.memo;
+  const lines = goods.map((r) => bm.sure.get(r.id));
+  if (!memoAgrees(m) || lines.some((l) => !l || !priceable(l))) return null;
+  const paired = lines as MemoLine[];
+  const company: SentenceArg = { text: block.party?.trim() || m.memo.company || "" };
+  const fp = fingerprint([...goods.map((r) => r.id), m.runId, ...paired.map((l) => `${l.id}:${l.amountPoisha}`)]);
+  const each: QuestionOption = { id: "each", label: { key: "q.delivery.each" }, changes: [] };
+  const off = discountOf(m);
+  if (off == null) {
+    const sum = paired.reduce((s, l) => s + l.amountPoisha!, 0);
+    return {
+      fp,
+      sentence: { key: "q.memo.delivery", args: [company, { count: goods.length }, { money: sum }] },
+      why: memoPricesWhy(m, rows, new Map(goods.map((r, i) => [r.id, paired[i]!.amountPoisha!]))),
+      options: [
+        {
+          id: "memo",
+          label: { key: "q.memo.delivery.use" },
+          detail: { key: "q.value", args: [{ text: paired.map((l) => formatTaka(l.amountPoisha)).join(" + ") }] },
+          changes: goods.flatMap((r, i) => memoPriceChanges(r, paired[i]!)),
+        },
+        each,
+        priceLater,
+      ],
+      proposed: "memo",
+      memo: memoRef(m, paired),
+    };
+  }
+  const priced = m.memo.lines.filter((l) => !l.crossedOut && l.amountText != null);
+  if (priced.length !== paired.length || priced.some((l) => !paired.includes(l))) return null;
+  const total = m.memo.check.total!;
+  // As one line: the goods' rows count the total between them (the first carries it, the rest nothing).
+  const asTotal = new Map(goods.map((r, i) => [r.id, i === 0 ? total : 0]));
+  return {
+    fp,
+    sentence: { key: "q.memo.delivery.total", args: [company, { money: total }, { count: goods.length }, { money: off }] },
+    why: memoPricesWhy(m, rows, asTotal),
+    options: [
+      { id: "memo_total", label: { key: "q.memo.total.use", args: [{ money: total }] }, value: poishaText(total), changes: deliveryChanges(goods, target, poishaText(total)) },
+      each,
+      priceLater,
+    ],
+    proposed: "memo_total",
+    memo: memoRef(m, paired),
+  };
+}
+
+/**
+ * A goods line the memo prices: proposed when its memo line is sure, read with confidence and the
+ * memo's sums agree (and take nothing off). Otherwise the memo lines it may be are options to pick.
+ */
+function memoPrice(bm: BlockMemo, row: ReviewRow, rows: readonly ReviewRow[]): Partial<Question> {
+  const m = bm.memo;
+  const option = (l: MemoLine, label: Sentence): QuestionOption => ({ id: `memo:${l.id}`, label, value: poishaText(l.amountPoisha!), changes: memoPriceChanges(row, l) });
+  const fpOf = (lines: readonly MemoLine[]) =>
+    fingerprint([row.values.item, row.values.quantityText, row.values.unit, m.runId, ...lines.map((l) => `${l.id}:${l.amountPoisha}`)]);
+  const sure = bm.sure.get(row.id);
+  if (sure && priceable(sure) && memoAgrees(m) && discountOf(m) == null) {
+    return {
+      fp: fpOf([sure]),
+      sentence: { key: "q.memo.price", args: [quote(row), { money: sure.amountPoisha! }] },
+      why: priceWhy(m, sure, row, rows),
+      options: [option(sure, { key: "q.memo.use", args: [{ money: sure.amountPoisha! }] }), priceLater],
+      proposed: `memo:${sure.id}`,
+      memo: memoRef(m, [sure]),
+    };
+  }
+  const lines = (sure ? [sure] : (bm.maybe.get(row.id) ?? [])).filter((l) => l.amountPoisha != null);
+  if (lines.length === 0) return {};
+  const off = discountOf(m);
+  const { linesSum, total } = m.memo.check;
+  const why: Why =
+    off != null
+      ? { sentence: { key: "q.memo.discount", args: [{ money: off }] }, verified: false }
+      : !memoAgrees(m) && linesSum != null && total != null
+        ? { sentence: { key: "q.memo.sums.off", args: [{ money: linesSum }, { money: total }] }, verified: false }
+        : { sentence: { key: sure ? "q.memo.unsure" : "q.memo.maybe" }, verified: false };
+  return {
+    fp: fpOf(lines),
+    why,
+    options: [...lines.map((l) => option(l, { key: "q.memo.line", args: [{ text: l.item ?? l.text }, { money: l.amountPoisha! }] })), priceLater],
+    memo: memoRef(m, lines),
+  };
+}
+
+/** Why one memo price can be taken: the page then comes to the memo's due, or the memo line itself (ticked when its sums check out). */
+function priceWhy(m: MemoForPage, l: MemoLine, row: ReviewRow, rows: readonly ReviewRow[]): Why {
+  const due = m.memo.totals.due.poisha;
+  if (due != null && supplierDueAfter(rows, new Map([[row.id, l.amountPoisha!]])) === due) return { sentence: { key: "q.memo.due", args: [{ money: due }] }, verified: true };
+  return { sentence: { key: "q.memo.from", args: [{ text: l.text }] }, verified: l.multiplies === true && m.memo.check.agrees === true };
+}
+
+/** "The page says ৳450, the memo says ৳480": a figure to look at again, on the page or the memo. */
+function differsQuestion(m: MemoForPage, row: ReviewRow, pageAmount: number, memoAmount: number, sentence: Sentence, lines: readonly MemoLine[]): Question {
+  return question({
+    id: `memo_differs:${row.id}`,
+    kind: "memo_differs",
+    fp: fingerprint([row.values.amountText, m.runId, memoAmount]),
+    block: row.values.block ?? null,
+    entry: row.id,
+    field: "amount",
+    sentence,
+    options: [
+      { id: "page", label: { key: "q.memo.page", args: [{ money: pageAmount }] }, changes: [{ op: "edit", entry: row.id, checked: ["amount"] }] },
+      {
+        id: "memo",
+        label: { key: "q.memo.memo", args: [{ money: memoAmount }] },
+        value: poishaText(memoAmount),
+        changes: [{ op: "edit", entry: row.id, values: { amountText: poishaText(memoAmount) }, checked: ["amount"] }],
+      },
+    ],
+    memo: memoRef(m, lines),
+  });
+}
+
+/** A priced goods line that its memo line prices differently. */
+function memoDiffersQuestion(ctx: Ctx, row: ReviewRow, g: Group): Question | null {
+  const bm = g.block ? ctx.memos.get(g.block.id) : undefined;
+  const l = bm?.sure.get(row.id);
+  const amount = amountOf(row);
+  if (!bm || !l || !priceable(l) || !memoAgrees(bm.memo) || amount == null || amount === l.amountPoisha) return null;
+  return differsQuestion(bm.memo, row, amount, l.amountPoisha!, { key: "q.memo.differs", args: [quote(row), { money: amount }, { money: l.amountPoisha! }] }, [l]);
+}
+
+/** The visit's "before" or payment, when the memo prints it differently. */
+function memoFigureQuestions(ctx: Ctx, g: Group, rows: readonly ReviewRow[]): Question[] {
+  const bm = g.block?.kind === "supplier_visit" ? ctx.memos.get(g.block.id) : undefined;
+  if (!bm) return [];
+  const t = bm.memo.memo.totals;
+  const out: Question[] = [];
+  const check = (type: TransactionType, memoAmount: number | null, key: MessageKey) => {
+    const page = singleAmount(rows, type);
+    if (page && memoAmount != null && page.amount !== memoAmount) {
+      out.push(differsQuestion(bm.memo, page.row, page.amount, memoAmount, { key, args: [{ money: page.amount }, { money: memoAmount }] }, []));
+    }
+  };
+  check("opening_balance", t.previousDue.poisha, "q.memo.differs.before");
+  check("supplier_payment", t.paid.poisha, "q.memo.differs.paid");
+  return out;
+}
+
+/** "The memo shows the same: ৳2,800 before and ৳1,500 paid." Only when nothing on it differs. */
+function memoAgreesWhy(bm: BlockMemo, rows: readonly ReviewRow[]): Why | null {
+  const t = bm.memo.memo.totals;
+  const before = singleAmount(rows, "opening_balance")?.amount ?? null;
+  const paid = singleAmount(rows, "supplier_payment")?.amount ?? null;
+  const same = (page: number | null, memo: number | null) => (page == null || memo == null ? null : page === memo);
+  const b = same(before, t.previousDue.poisha);
+  const p = same(paid, t.paid.poisha);
+  if (b === false || p === false) return null;
+  if (b && p) return { sentence: { key: "q.memo.same.both", args: [{ money: before! }, { money: paid! }] }, verified: true };
+  if (b) return { sentence: { key: "q.memo.same.before", args: [{ money: before! }] }, verified: true };
+  if (p) return { sentence: { key: "q.memo.same.paid", args: [{ money: paid! }] }, verified: true };
+  return null;
+}
+
+/** Goods the memo lists that aren't on the page: add them to the visit, or leave them out. */
+function memoExtraQuestions(ctx: Ctx, g: Group, rows: readonly ReviewRow[]): Question[] {
+  const block = g.block;
+  const bm = block ? ctx.memos.get(block.id) : undefined;
+  // A delivery priced as one total has no extras: it already counts everything that came.
+  if (!block || !bm || bm.extras.length === 0 || rows.length === 0) return [];
+  const m = bm.memo;
+  const type = rows.find((r) => r.values.type === "credit_purchase" || r.values.type === "purchase")?.values.type ?? "credit_purchase";
+  const after = rows[rows.length - 1]!.id;
+  const add = (l: MemoLine): Change => ({
+    op: "add",
+    after,
+    values: {
+      ...EMPTY_ENTRY,
+      type,
+      item: (l.item ?? l.text).slice(0, MAX_TEXT),
+      quantityText: l.quantityText,
+      unit: l.unit,
+      rateText: l.multiplies === true && l.ratePoisha != null ? poishaText(l.ratePoisha) : null,
+      amountText: poishaText(l.amountPoisha!),
+      block: block.id,
+    },
+  });
+  // Each is added just after the block's last line, so adding them in reverse keeps the memo's order.
+  const addAll = (lines: readonly MemoLine[]) => [...lines].reverse().map(add);
+  const why: Why = { sentence: { key: "q.memo.extra.why" }, verified: false };
+
+  const groupId = `memo_extras:${m.documentId}`;
+  if (bm.extras.length >= 2 && ctx.answers.get(groupId)?.a !== "each") {
+    return [
+      question({
+        id: groupId,
+        kind: "memo_extra",
+        fp: fingerprint([m.runId, ...bm.extras.map((l) => `${l.id}:${l.amountPoisha}`)]),
+        block: block.id,
+        entry: null,
+        field: null,
+        sentence: { key: "q.memo.extras", args: [{ count: bm.extras.length }, { money: bm.extras.reduce((s, l) => s + l.amountPoisha!, 0) }] },
+        why,
+        options: [
+          { id: "all", label: { key: "q.memo.extras.add" }, changes: addAll(bm.extras) },
+          { id: "each", label: { key: "q.each" }, changes: [] },
+          { id: "none", label: { key: "q.memo.extras.skip" }, changes: [] },
+          later,
+        ],
+        memo: memoRef(m, bm.extras),
+      }),
+    ];
+  }
+  return bm.extras.map((l) =>
+    question({
+      id: `memo_extra:${m.documentId}:${l.id}`,
+      kind: "memo_extra",
+      fp: fingerprint([m.runId, l.id, l.amountPoisha]),
+      block: block.id,
+      entry: null,
+      field: null,
+      sentence: { key: "q.memo.extra", args: [{ text: l.text }, { money: l.amountPoisha! }] },
+      why,
+      options: [
+        { id: "add", label: { key: "q.memo.extra.add" }, changes: addAll([l]) },
+        { id: "skip", label: { key: "q.memo.extra.skip" }, changes: [] },
+        later,
+      ],
+      memo: memoRef(m, [l]),
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -676,6 +1124,7 @@ export function buildQuestions(input: QuestionInput): QuestionSet {
     pageTypes: rows.filter((r) => r.status !== "rejected").map((r) => r.values.type),
     doubts,
     askedParties: new Set(),
+    memos: new Map(),
   };
 
   const questions: Question[] = [];
@@ -697,6 +1146,7 @@ export function buildQuestions(input: QuestionInput): QuestionSet {
     for (const r of g.entries) groupOfRow.set(r.id, g.block?.id ?? null);
     return { ...g, convention: conventionOf(g.block, inBlocks, page.ledgerType) };
   });
+  const memoLinks = linkMemos(ctx, groups);
 
   for (const g of groups) {
     const open = g.entries.filter(isOpen);
@@ -705,12 +1155,13 @@ export function buildQuestions(input: QuestionInput): QuestionSet {
     const blockParty = block ? blockPartyKind(block.kind) : null;
 
     if (block) {
-      add(meaningQuestion(block, open));
+      add(meaningQuestion(block, open, ctx.memos.get(block.id)));
       const party = block.party?.trim();
       if (blockParty && party) {
         const link = partyLinkFor({ ...open[0]!.values, type: "opening_balance" }, page, ctx.pageTypes);
         if (link) add(samePartyQuestion(ctx, link, party, { block: block.id, rows: open }));
       }
+      for (const q of memoLinks.get(block.id) ?? []) add(q);
     }
     const kindQuestion = block ? blockKindQuestion(ctx, block, open) : null;
     add(kindQuestion);
@@ -728,11 +1179,14 @@ export function buildQuestions(input: QuestionInput): QuestionSet {
           add(samePartyQuestion(ctx, link, written, { block: null, rows: named }));
         }
       }
-      if (!priced.has(row.id)) add(priceQuestion(row, g));
+      if (!priced.has(row.id)) add(priceQuestion(ctx, row, g));
+      add(memoDiffersQuestion(ctx, row, g));
     }
 
     add(delivery);
+    for (const q of memoExtraQuestions(ctx, g, open)) add(q);
     add(openingQuestion(ctx, g, open));
+    for (const q of memoFigureQuestions(ctx, g, open)) add(q);
     const groupId = block?.id ?? null;
     for (const f of findings) {
       if (f.status !== "fail" || !OFF_RULES.has(f.ruleId)) continue;

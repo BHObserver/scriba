@@ -25,6 +25,7 @@ import {
   withLayout,
 } from "@/lib/extraction/prompt";
 import type { ModelResponseSummary } from "@/lib/extraction/parse";
+import { MEMO_PROFILE, MEMO_USER_TEXT } from "@/lib/memo/prompt";
 
 export type ModelCallInput = {
   imageBytes: Uint8Array;
@@ -38,6 +39,8 @@ export type ModelCallInput = {
    * one block's crop, with what the layout step found for it. Absent: the whole page in one call.
    */
   pass?: { kind: "layout" } | { kind: "block"; hint: string };
+  /** U4: a company memo photographed with a page, read with the memo prompt. */
+  memo?: true;
 };
 
 export type MetaErrorCategory =
@@ -85,26 +88,29 @@ export function toDataUrl(bytes: Uint8Array, mimeType: string): string {
 
 /** The exact request body sent to POST /v1/responses (minus the image bytes in tests). */
 export function buildExtractionRequest(config: Pick<MetaConfig, "modelId" | "reasoningEffort" | "maxOutputTokens">, input: ModelCallInput) {
-  const personal = input.personal && !input.pass ? getPersonalProfile() : null;
-  const profile =
-    input.pass?.kind === "layout"
+  const personal = input.personal && !input.pass && !input.memo ? getPersonalProfile() : null;
+  const profile = input.memo
+    ? MEMO_PROFILE
+    : input.pass?.kind === "layout"
       ? LAYOUT_PROFILE
       : input.pass?.kind === "block"
         ? BLOCK_PROFILE
         : withLayout(personal ?? getExtractionProfile(), input.layout ?? "free");
   const page = { type: "input_image" as const, image_url: toDataUrl(input.imageBytes, input.mimeType) };
-  const content = input.pass
-    ? [{ type: "input_text" as const, text: input.pass.kind === "layout" ? LAYOUT_USER_TEXT : input.pass.hint }, page]
-    : personal && input.personal
-      ? [
-          { type: "input_text" as const, text: input.personal.text },
-          ...(input.personal.reference
-            ? [{ type: "input_image" as const, image_url: toDataUrl(input.personal.reference.imageBytes, input.personal.reference.mimeType) }]
-            : []),
-          { type: "input_text" as const, text: PERSONAL_PAGE_TEXT },
-          page,
-        ]
-      : [{ type: "input_text" as const, text: EXTRACTION_USER_TEXT }, page];
+  const content = input.memo
+    ? [{ type: "input_text" as const, text: MEMO_USER_TEXT }, page]
+    : input.pass
+      ? [{ type: "input_text" as const, text: input.pass.kind === "layout" ? LAYOUT_USER_TEXT : input.pass.hint }, page]
+      : personal && input.personal
+        ? [
+            { type: "input_text" as const, text: input.personal.text },
+            ...(input.personal.reference
+              ? [{ type: "input_image" as const, image_url: toDataUrl(input.personal.reference.imageBytes, input.personal.reference.mimeType) }]
+              : []),
+            { type: "input_text" as const, text: PERSONAL_PAGE_TEXT },
+            page,
+          ]
+        : [{ type: "input_text" as const, text: EXTRACTION_USER_TEXT }, page];
   return {
     model: config.modelId,
     instructions: profile.instructions,
