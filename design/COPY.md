@@ -796,6 +796,28 @@ The memo questions (`memo`, `memo_extra`, `memo_differs`) and the memo forms of 
 | `q.memo.same.before` | মেমোতেও আগের দেনা {1}। | The memo also shows {1} owed before. |
 | `q.memo.same.paid` | মেমোতেও জমা {1}। | The memo also shows {1} paid. |
 
+### The page's company memos (U4 UI, details screen)
+
+| Key | বাংলা | English |
+|---|---|---|
+| `dt.memo.title` | কোম্পানির মেমো | Company memos |
+| `dt.memo.sub` | মালের সাথে আসা চালান বা ক্যাশ মেমো। Scriba একবার পড়ে, প্রশ্নে এর দাম কাজে লাগায়। | The challan or cash memo that came with the goods. Scriba reads it once and uses its prices in its questions. |
+| `dt.memo.add` | কোম্পানির মেমো যোগ করুন | Add the company memo |
+| `dt.memo.sending` | মেমো পাঠানো হচ্ছে… | Sending the memo… |
+| `dt.memo.reading` | মেমো পড়া হচ্ছে… | Reading the memo… |
+| `dt.memo.unread` | এখনো পড়া হয়নি | Not read yet |
+| `dt.memo.failed` | পড়া যায়নি | Couldn't read it |
+| `dt.memo.company` | কোম্পানির মেমো | Company memo |
+| `dt.memo.total` | মোট {1} | Total {1} |
+| `dt.memo.noTotal` | মোট পড়া যায়নি | No total read |
+| `dt.memo.read` | পড়ুন | Read it |
+| `dt.memo.again` | আবার পড়ুন | Read again |
+| `dt.memo.max` | একটা পাতায় {1}টার বেশি মেমো রাখা যায় না। | A page can have at most {1} memos. |
+| `dt.memo.err.file` | ছবিটা খোলা যাচ্ছে না। অন্য একটা ছবি দিন। | That photo can't be opened. Try another one. |
+| `dt.memo.err.taken` | এই ছবিটা আগেই Scriba-তে আছে। | This photo is already in Scriba. |
+| `dt.memo.err.send` | মেমোটা পাঠানো যায়নি। আবার চেষ্টা করুন। | The memo couldn't be sent. Try again. |
+| `dt.memo.err.read` | মেমোটা পড়া যায়নি। পরে আবার চেষ্টা করুন। | The memo couldn't be read. Try again later. |
+
 ## Part 5: the ask deck, as built (B7)
 
 Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 parts 1 and 2, 2 Nov). Change the strings there, not here. They are Part 3's overview, visit card, quick confirm, stamp, page seal and voice strings, with three changes: “এবার দিয়েছেন / Paid this time” (U2b's reason: the visit isn't always today); `asks.bs.party` names the party with a colon, because a Bangla possessive (প্রাণের, ফ্রেশের) depends on the word's ending; and customer-account rows (`asks.cust.*`). New, written in B7 and not yet read by a Bangla reader: `asks.ov.title1`, `asks.ov.none`, `asks.ov.page`, `asks.back`, `asks.cust.*`, `asks.total.expenses`, `asks.total`, `asks.type`, `asks.which`, `asks.rest.all`, `asks.line.title`, `asks.bs.part`, `asks.bs.later`, `asks.bs.end`, `asks.ps.open`, `asks.ps.later`, `asks.voice.listen`, `asks.voice.none`, `asks.err.*`; and from part 2, `asks.rest.one`, `asks.rest.allOne` (one line left: English needs a singular) and `asks.in.party`, `asks.in.date` (the label over a typed name or day).

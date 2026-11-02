@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { readingFromRun } from "@/components/capture/problems";
 import { checkBackHref, checkHref } from "@/components/check/back-href";
 import { isBlockReading } from "@/components/check/ask-model";
@@ -23,8 +23,10 @@ function pageQueue(param: string | string[] | undefined, documentId: string): st
 
 /** Everything the screen needs, read through the user's own client (RLS). Reads only. */
 async function loadCheck(supabase: Supabase, documentId: string, queue: string[], backHref: string): Promise<ComponentProps<typeof CheckScreen> | null> {
-  const { data: doc } = await supabase.from("ledger_documents").select("id, storage_path, width, height, uploaded_at").eq("id", documentId).maybeSingle();
+  const { data: doc } = await supabase.from("ledger_documents").select("id, storage_path, width, height, uploaded_at, kind, memo_for").eq("id", documentId).maybeSingle();
   if (!doc) return null;
+  // A company memo (U4) is checked with its page.
+  if (doc.kind === "memo" && doc.memo_for) redirect(`/check/${doc.memo_for}`);
 
   const [{ data: signed }, { data: runRows }] = await Promise.all([
     supabase.storage.from(STORAGE_BUCKET).createSignedUrl(doc.storage_path, 600),

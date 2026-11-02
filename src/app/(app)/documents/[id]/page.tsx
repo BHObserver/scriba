@@ -1,15 +1,17 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { AnalyzePanel } from "@/components/analyze-panel";
 import { DetailsTop } from "@/components/details/details-top";
 import { DeleteDocumentButton } from "@/components/delete-document-button";
+import { type MemoSummary, MemoPanel } from "@/components/details/memo-panel";
 import { OrientationProvider, PhotoPreview } from "@/components/photo-orientation";
 import { ReviewWorkspace } from "@/components/review-workspace";
 import { Card, CardHeader, Notice, Pill, formatBytes, formatDateTime } from "@/components/ui";
-import { STORAGE_BUCKET } from "@/lib/config";
+import { STORAGE_BUCKET, getLimitsConfig } from "@/lib/config";
 import { getI18n } from "@/lib/i18n/server";
 import { describeTurns, turnsForProcessingMode } from "@/lib/images/orientation";
 import { dhakaDate } from "@/lib/ledger/dates";
+import { storedMemo } from "@/lib/memo/parse";
 import { UUID_RE, requireUser } from "@/lib/server/auth";
 import { RUN_SUMMARY_COLUMNS, loadRunReview, toRunSummary } from "@/lib/server/review-data";
 import { loadShopProfile } from "@/lib/server/shop-data";
@@ -26,26 +28,52 @@ const RUN_TONE: Record<string, "pass" | "fail" | "warn" | "neutral"> = {
   pending: "neutral",
 };
 
+/** A page's company memos (U4), oldest first, each with what its latest reading says. */
+async function loadMemoSummaries(supabase: Awaited<ReturnType<typeof requireUser>>["supabase"], pageId: string): Promise<MemoSummary[]> {
+  const { data: docs } = await supabase.from("ledger_documents").select("id").eq("memo_for", pageId).order("uploaded_at");
+  if (!docs || docs.length === 0) return [];
+  const { data: runs } = await supabase
+    .from("extraction_runs")
+    .select("document_id, status, result")
+    .in("document_id", docs.map((d) => d.id as string))
+    .order("started_at", { ascending: false });
+  return docs.map((d) => {
+    const own = (runs ?? []).filter((r) => r.document_id === d.id);
+    const memo = storedMemo(own.find((r) => r.status === "succeeded")?.result);
+    const latest = own[0]?.status;
+    return {
+      id: d.id as string,
+      company: memo?.company ?? null,
+      totalPoisha: memo?.check.total ?? null,
+      read: memo != null,
+      failed: memo == null && latest != null && latest !== "pending",
+    };
+  });
+}
+
 /** Opening this page only reads stored data. It never triggers an extraction. */
 export default async function DocumentPage({ params, searchParams }: PageProps<"/documents/[id]">) {
   const { id } = await params;
   const { run: runParam, duplicate } = await searchParams;
   if (!UUID_RE.test(id)) notFound();
-  const { supabase } = await requireUser(`/documents/${id}`);
+  const { supabase, user } = await requireUser(`/documents/${id}`);
 
   const { data: doc } = await supabase
     .from("ledger_documents")
-    .select("id, storage_path, sha256, original_filename, mime_type, byte_size, width, height, has_gps_metadata, uploaded_at, business_date, status, sample_label, dataset_label")
+    .select("id, storage_path, sha256, original_filename, mime_type, byte_size, width, height, has_gps_metadata, uploaded_at, business_date, status, sample_label, dataset_label, kind, memo_for")
     .eq("id", id)
     .maybeSingle();
   if (!doc) notFound();
+  // A company memo (U4) is shown with its page.
+  if (doc.kind === "memo" && doc.memo_for) redirect(`/documents/${doc.memo_for}`);
 
   const photo = hasPhoto(doc);
-  const [{ data: signed }, { data: runRows }, profile, i18n] = await Promise.all([
+  const [{ data: signed }, { data: runRows }, profile, i18n, memos] = await Promise.all([
     photo ? supabase.storage.from(STORAGE_BUCKET).createSignedUrl(doc.storage_path, 600) : Promise.resolve({ data: null }),
     supabase.from("extraction_runs").select(RUN_SUMMARY_COLUMNS).eq("document_id", id).order("started_at", { ascending: false }),
     loadShopProfile(supabase),
     getI18n(),
+    photo ? loadMemoSummaries(supabase, id) : Promise.resolve([]),
   ]);
   const { t } = i18n;
   const runs = (runRows ?? []).map(toRunSummary);
@@ -118,6 +146,13 @@ export default async function DocumentPage({ params, searchParams }: PageProps<"
                 <AnalyzePanel documentId={doc.id} hasSuccessfulRun={succeeded.length > 0} lastRunFailed={lastFailure} />
               </div>
             </Card>
+
+            {photo ? (
+              <Card>
+                <CardHeader title={t("dt.memo.title")} subtitle={t("dt.memo.sub")} />
+                <MemoPanel pageId={doc.id} userId={user.id} memos={memos} maxUploadBytes={getLimitsConfig().maxUploadBytes} />
+              </Card>
+            ) : null}
 
             {runs.length > 0 ? (
               <Card>

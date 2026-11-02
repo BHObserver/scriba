@@ -9,6 +9,9 @@ import { z } from "zod";
 import { LEGIBILITY } from "@/lib/extraction/schema";
 
 export const MEMO_SCHEMA_VERSION = "scriba-memo-1";
+/** A page can carry this many company memos (the documents route enforces it; the details screen hides "add"). */
+export const MAX_MEMOS_PER_PAGE = 6;
+
 export const MEMO_SCHEMA_NAME = "scriba_company_memo_v1";
 
 /** The fields of a memo line the model may be unsure of. */

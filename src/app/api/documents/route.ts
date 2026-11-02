@@ -3,6 +3,7 @@ import { z } from "zod";
 import { STORAGE_BUCKET, getLimitsConfig } from "@/lib/config";
 import { sha256Hex } from "@/lib/extraction/cache-key";
 import { inspectImage } from "@/lib/images/inspect";
+import { MAX_MEMOS_PER_PAGE } from "@/lib/memo/schema";
 import { UUID_RE, apiUser, jsonError } from "@/lib/server/auth";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
@@ -15,7 +16,6 @@ const bodySchema = z.object({
 });
 
 /** More memos than this on one page is a mistake, not a delivery. */
-const MAX_MEMOS_PER_PAGE = 6;
 
 /**
  * Register an original photograph after the browser has uploaded it to the

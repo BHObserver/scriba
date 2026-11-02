@@ -37,6 +37,7 @@ export class UploadError extends Error {
   constructor(
     readonly problem: ProblemKind,
     message: string,
+    readonly status?: number,
   ) {
     super(message);
   }
@@ -56,12 +57,14 @@ export type PageUpload = {
 
 /**
  * Store one page's original and register it as a document. The server re-reads the stored bytes
- * and must find the same checksum. A photo uploaded before opens its existing document.
+ * and must find the same checksum. A photo uploaded before opens its existing document. With
+ * `memoFor` (U4) the photo is a company memo of that page.
  */
 export async function uploadPage(
   page: PageUpload,
   userId: string,
   onProgress: (fraction: number) => void,
+  memoFor?: string,
 ): Promise<{ documentId: string; duplicate: boolean }> {
   const supabase = createBrowserSupabase();
   const { data } = await supabase.auth.getSession();
@@ -81,7 +84,7 @@ export async function uploadPage(
     res = await fetch("/api/documents", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storagePath, originalFilename: page.filename, clientSha256: page.sha256 }),
+      body: JSON.stringify({ storagePath, originalFilename: page.filename, clientSha256: page.sha256, memoFor }),
     });
   } catch {
     throw new UploadError("offline", "Network error while recording the upload.");
@@ -90,7 +93,7 @@ export async function uploadPage(
   if (!res.ok || !body.documentId) {
     const problem: ProblemKind =
       res.status === 413 ? "file" : res.status === 415 ? (body.reason === "too_small" ? "small" : "file") : "sendFailed";
-    throw new UploadError(problem, body.error ?? "Upload could not be recorded.");
+    throw new UploadError(problem, body.error ?? "Upload could not be recorded.", res.status);
   }
   return { documentId: body.documentId, duplicate: Boolean(body.duplicate) };
 }
