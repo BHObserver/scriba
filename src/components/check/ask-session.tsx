@@ -12,8 +12,9 @@ import { ackFingerprint, assessEntry } from "@/lib/review/approval";
 import { FIELD_TO_VALUE_KEY } from "@/lib/review/values";
 import { voiceSupported } from "@/lib/voice/recorder";
 import type { AskApi } from "./ask-api";
-import { AskFrame, PricesCard, QuestionCard, RestCard, StampCard, draftPoisha } from "./ask-cards";
-import { type AskItem, acceptAnswered, acceptRest, blockDone, blockFigures, blockLines, blockTone, deckItems, deckSet, itemKey, questionCounts } from "./ask-model";
+import { AskFrame, PricesCard, QuestionCard, RestCard, StampCard } from "./ask-cards";
+import { type MemoView, memoOf } from "./ask-memo";
+import { type AskItem, acceptAnswered, acceptRest, blockDone, blockFigures, blockLines, blockTone, deckItems, deckSet, itemKey, questionCounts, slotAnswer, slotText } from "./ask-model";
 import { Kicker } from "./ask-parts";
 import { AskSheet, type AskSheetTarget, LinesSheet } from "./ask-sheet";
 import { DeckFrame, OverviewView, PageSealView } from "./ask-views";
@@ -66,6 +67,7 @@ export function AskSession({
   photo,
   pageTitle,
   capturedOn,
+  memos,
   pageNumber,
   nextHref,
   backHref,
@@ -78,6 +80,8 @@ export function AskSession({
   pageTitle: string;
   /** The photo's day (YYYY-MM-DD, Bangladesh): the date tile on "no date on the page". */
   capturedOn: string | null;
+  /** U4: the company memos read with the page, shown beside the questions that use them. */
+  memos: readonly MemoView[];
   pageNumber: number;
   nextHref: string | null;
   backHref: string;
@@ -230,11 +234,8 @@ export function AskSession({
     });
   }
 
-  const savePrices = (ids: readonly string[]) =>
-    answerEach(ids, (q) => {
-      const typed = q.entry ? drafts[q.entry] : undefined;
-      return typed && draftPoisha(typed) != null ? { value: typedText(typed, sample) } : null;
-    });
+  // A slot left at the memo's price sends the memo's option, so the answer says where the price came from.
+  const savePrices = (ids: readonly string[]) => answerEach(ids, (q) => slotAnswer(q, slotText(q, drafts), sample));
 
   function pricesLater(ids: readonly string[]) {
     if (revisit) {
@@ -435,6 +436,7 @@ export function AskSession({
                 rows={review.rows}
                 photo={photo}
                 capturedOn={capturedOn}
+                memo={memoOf(q, memos)}
                 busy={cardBusy}
                 voice={voice}
                 actions={{
@@ -456,6 +458,7 @@ export function AskSession({
                 block={block}
                 rows={blockRows}
                 photo={photo}
+                memo={qs.map((q) => memoOf(q, memos)).find((m) => m != null) ?? null}
                 drafts={drafts}
                 busy={cardBusy}
                 onSlot={(question, row) => setSheet({ kind: "price", question, row, start: drafts[row.id] ?? "", listen: false })}

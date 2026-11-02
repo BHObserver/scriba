@@ -10,6 +10,7 @@ import { spokenAnswer } from "@/lib/questions/speech";
 import { sentenceText } from "@/lib/questions/text";
 import type { Answer, AnswerInput, Question, QuestionOption } from "@/lib/questions/types";
 import type { ReviewRow } from "@/lib/review/state";
+import { draftPoisha, priceOptions } from "./ask-model";
 import { RowStrip } from "./deck-sheets";
 import { fieldLabel } from "./sentences";
 import type { Photo } from "./reading-view";
@@ -48,7 +49,7 @@ export function AskSheet({ target, photo, busy, onAnswer, onPrice, onClose }: { 
 
 function SheetBody({ target, photo, busy, onAnswer, onPrice, onClose }: { target: AskSheetTarget; photo: Photo; busy: boolean; onAnswer: (q: Question, a: Answer) => void; onPrice: (rowId: string, typed: string) => void; onClose: () => void }) {
   const i18n = useI18n();
-  const { t, digits } = i18n;
+  const { t, digits, money } = i18n;
   const q = target.question;
   const input: AnswerInput | null = target.kind === "price" ? { kind: "money", target: { to: "entry", entry: target.row.id, field: "amount" } } : q.input;
   const keypad = input?.kind === "money" || input?.kind === "quantity";
@@ -124,6 +125,8 @@ function SheetBody({ target, photo, busy, onAnswer, onPrice, onClose }: { target
 
   const options = target.kind === "answer" ? target.options : [];
   const row = target.kind === "price" ? target.row : null;
+  // U4: a price slot can take the memo's price (or one of the memo lines it may be) with one tap.
+  const memoPrices = target.kind === "price" ? priceOptions(q) : [];
   const message = (() => {
     if (sending) return t("fx.sending");
     if (voice.state.s === "error") return t(VOICE_ERROR[voice.state.error]);
@@ -150,6 +153,16 @@ function SheetBody({ target, photo, busy, onAnswer, onPrice, onClose }: { target
         </button>
       </div>
       {row ? <RowStrip row={row} photo={photo} /> : options.length > 0 ? <p className="t-body">{sentenceText(i18n, q.sentence)}</p> : null}
+      {row && memoPrices.length > 0 ? (
+        <div className="as-opts">
+          {memoPrices.map((o) => (
+            <button key={o.id} type="button" className="as-opt" disabled={busy} onClick={() => onPrice(row.id, o.value!)}>
+              <b className="as-num">{money(draftPoisha(o.value) ?? 0)}</b>
+              <span>{o.id === q.proposed ? t("asks.memo.from") : sentenceText(i18n, o.label)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       {options.length > 0 ? (
         <div className="as-opts">
           {options.map((o) => (

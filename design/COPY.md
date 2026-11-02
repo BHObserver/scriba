@@ -820,7 +820,7 @@ The memo questions (`memo`, `memo_extra`, `memo_differs`) and the memo forms of 
 
 ## Part 5: the ask deck, as built (B7)
 
-Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 parts 1 and 2, 2 Nov). Change the strings there, not here. They are Part 3's overview, visit card, quick confirm, stamp, page seal and voice strings, with three changes: “এবার দিয়েছেন / Paid this time” (U2b's reason: the visit isn't always today); `asks.bs.party` names the party with a colon, because a Bangla possessive (প্রাণের, ফ্রেশের) depends on the word's ending; and customer-account rows (`asks.cust.*`). New, written in B7 and not yet read by a Bangla reader: `asks.ov.title1`, `asks.ov.none`, `asks.ov.page`, `asks.back`, `asks.cust.*`, `asks.total.expenses`, `asks.total`, `asks.type`, `asks.which`, `asks.rest.all`, `asks.line.title`, `asks.bs.part`, `asks.bs.later`, `asks.bs.end`, `asks.ps.open`, `asks.ps.later`, `asks.voice.listen`, `asks.voice.none`, `asks.err.*`; and from part 2, `asks.rest.one`, `asks.rest.allOne` (one line left: English needs a singular) and `asks.in.party`, `asks.in.date` (the label over a typed name or day).
+Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 parts 1 and 2, 2 Nov). Change the strings there, not here. They are Part 3's overview, visit card, quick confirm, stamp, page seal and voice strings, with three changes: “এবার দিয়েছেন / Paid this time” (U2b's reason: the visit isn't always today); `asks.bs.party` names the party with a colon, because a Bangla possessive (প্রাণের, ফ্রেশের) depends on the word's ending; and customer-account rows (`asks.cust.*`). New, written in B7 and not yet read by a Bangla reader: `asks.ov.title1`, `asks.ov.none`, `asks.ov.page`, `asks.back`, `asks.cust.*`, `asks.total.expenses`, `asks.total`, `asks.type`, `asks.which`, `asks.rest.all`, `asks.line.title`, `asks.bs.part`, `asks.bs.later`, `asks.bs.end`, `asks.ps.open`, `asks.ps.later`, `asks.voice.listen`, `asks.voice.none`, `asks.err.*`; and from part 2, `asks.rest.one`, `asks.rest.allOne` (one line left: English needs a singular) and `asks.in.party`, `asks.in.date` (the label over a typed name or day). From U4's UI (2 Nov): `asks.memo` (over the memo strip) and `asks.memo.from` (under a price taken from the memo).
 
 | Key | বাংলা | English |
 |---|---|---|
@@ -887,3 +887,5 @@ Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 pa
 | `asks.in.date` | অথবা দিনটা লিখুন, যেমন ২/১১/২০২৬ | Or type the day, like 2/11/2026 |
 | `asks.err.stale` | এই প্রশ্নটা এর মধ্যে বদলে গেছে। আবার খুলুন। | This question has changed. Reload to see it again. |
 | `asks.err.bad` | এটা এখানে বসানো যায় না। আবার দেখুন। | That can't be used here. Have another look. |
+| `asks.memo` | কোম্পানির মেমো | Company memo |
+| `asks.memo.from` | মেমো থেকে | from the memo |

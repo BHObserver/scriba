@@ -948,4 +948,6 @@ export const en = {
   "asks.in.date": "Or type the day, like 2/11/2026",
   "asks.err.stale": "This question has changed. Reload to see it again.",
   "asks.err.bad": "That can't be used here. Have another look.",
+  "asks.memo": "Company memo",
+  "asks.memo.from": "from the memo",
 } as const satisfies Record<MessageKey, string>;

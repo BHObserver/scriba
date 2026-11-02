@@ -9,9 +9,9 @@ import type { BlockValues } from "@/lib/ledger/types";
 import { sentenceText } from "@/lib/questions/text";
 import type { Question, QuestionOption } from "@/lib/questions/types";
 import type { ReviewRow } from "@/lib/review/state";
-import { parseMoney } from "@/lib/numerals";
-import { blockFigures } from "./ask-model";
-import { BlockCard, BlockCrop, DateTile, Kicker, nowLabel } from "./ask-parts";
+import { type MemoView, pricesWhy, proposedPrices } from "./ask-memo";
+import { blockFigures, draftPoisha, slotOption, slotText } from "./ask-model";
+import { BlockCard, BlockCrop, DateTile, Kicker, MemoStrip, nowLabel } from "./ask-parts";
 import { RowStrip } from "./deck-sheets";
 import type { Photo } from "./reading-view";
 
@@ -52,13 +52,13 @@ export function AskFrame({ swipe, onSwipe, leaving, children }: { swipe: boolean
   );
 }
 
-function Why({ q }: { q: Question }) {
+function Why({ why }: { why: Question["why"] }) {
   const i18n = useI18n();
-  if (!q.why) return null;
+  if (!why) return null;
   return (
     <p className="as-why">
-      {q.why.verified ? <StatusMark kind="ok" /> : null}
-      <span>{sentenceText(i18n, q.why.sentence)}</span>
+      {why.verified ? <StatusMark kind="ok" /> : null}
+      <span>{sentenceText(i18n, why.sentence)}</span>
     </p>
   );
 }
@@ -66,10 +66,21 @@ function Why({ q }: { q: Question }) {
 const lineText = (row: ReviewRow, typeLabel: string) => row.values.item ?? typeLabel;
 
 /** What the card shows above the sentence, by what the question is about. */
-function Visual({ q, rows, photo, capturedOn }: { q: Question; rows: readonly ReviewRow[]; photo: Photo; capturedOn: string | null }) {
+function Visual({ q, rows, photo, capturedOn, memo }: { q: Question; rows: readonly ReviewRow[]; photo: Photo; capturedOn: string | null; memo: MemoView | null }) {
   const { t, digits } = useI18n();
   const of = (ids: readonly string[]) => ids.map((id) => rows.find((r) => r.id === id)).filter((r): r is ReviewRow => r != null);
   if (q.kind === "date") return capturedOn ? <div className="as-vis"><DateTile day={capturedOn} /></div> : null;
+  // U4: the memo's lines (or its letterhead), under the page's line when the two differ.
+  if (memo && q.memo) {
+    const row = q.entry ? rows.find((r) => r.id === q.entry) : undefined;
+    return (
+      <div className="as-crop as-pair">
+        {row ? <RowStrip row={row} photo={photo} height={64} /> : null}
+        {/* With no line named, the letterhead says whose memo it is: it gets more room. */}
+        <MemoStrip memo={memo} lines={q.memo.lines} height={q.memo.lines.length > 0 ? 92 : 150} />
+      </div>
+    );
+  }
   if (q.kind === "block_kind") {
     return (
       <div className="as-chips">
@@ -114,11 +125,34 @@ export type QuestionCardActions = {
  * a proposed answer is one red button (and swipe right); two or three readings are big tiles with
  * code's per-unit detail; other choices are 64 px tiles; a value opens the keypad, typing or voice.
  */
-export function QuestionCard({ q, block, rows, photo, capturedOn, busy, voice, actions }: { q: Question; block: BlockValues | null; rows: readonly ReviewRow[]; photo: Photo; capturedOn: string | null; busy: boolean; voice: boolean; actions: QuestionCardActions }) {
+export function QuestionCard({
+  q,
+  block,
+  rows,
+  photo,
+  capturedOn,
+  memo,
+  busy,
+  voice,
+  actions,
+}: {
+  q: Question;
+  block: BlockValues | null;
+  rows: readonly ReviewRow[];
+  photo: Photo;
+  capturedOn: string | null;
+  /** U4: the company memo the question takes its figures from. */
+  memo: MemoView | null;
+  busy: boolean;
+  voice: boolean;
+  actions: QuestionCardActions;
+}) {
   const i18n = useI18n();
   const { t } = i18n;
   const [picked, setPicked] = useState<string | null>(null);
   const { proposed, rest, later, local } = split(q);
+  // The memo's price for each of the goods, when the card proposes them (U4).
+  const memoPrices = proposedPrices(q);
   const pick = (id: string) => {
     setPicked(id);
     actions.answer(q, id);
@@ -145,27 +179,29 @@ export function QuestionCard({ q, block, rows, photo, capturedOn, busy, voice, a
   return (
     <>
       <Kicker block={block} />
-      {delivery ? null : <Visual q={q} rows={rows} photo={photo} capturedOn={capturedOn} />}
+      {delivery ? null : <Visual q={q} rows={rows} photo={photo} capturedOn={capturedOn} memo={memo} />}
       <p className="as-q">{sentenceText(i18n, q.sentence)}</p>
-      <Why q={q} />
+      <Why why={q.why} />
       {delivery ? (
         <div className="as-goods">
           {q.entries.map((id) => {
             const row = rows.find((r) => r.id === id);
             if (!row) return null;
+            const price = draftPoisha(memoPrices.get(id));
             return (
-              <div key={id} className="as-good">
+              <div key={id} className={cx("as-good", price != null && "memo")}>
                 <RowStrip row={row} photo={photo} height={50} tag={false} />
                 <span className="as-good-t">
                   {i18n.digits(row.values.item ?? row.values.sourceText)}
                   <small>{i18n.digits([row.values.quantityText, row.values.unit].filter(Boolean).join(" "))}</small>
                 </span>
-                <span className="as-gap">{t("asks.gap")}</span>
+                {price != null ? <SlotPrice poisha={price} memo /> : <span className="as-gap">{t("asks.gap")}</span>}
               </div>
             );
           })}
         </div>
       ) : null}
+      {delivery && memo && q.memo ? <MemoStrip memo={memo} lines={q.memo.lines} height={76} /> : null}
       {proposed ? (
         <div className="as-acts">
           <Button variant="red" wide disabled={busy} onClick={() => pick(proposed.id)}>
@@ -212,50 +248,83 @@ export function QuestionCard({ q, block, rows, photo, capturedOn, busy, voice, a
   );
 }
 
-/** A typed price as poisha, or null while it isn't a whole number yet. */
-export function draftPoisha(text: string | undefined): number | null {
-  if (!text) return null;
-  const n = parseMoney(text.replace(/\.$/, ""));
-  return n.ok ? n.value : null;
+/** A price in a goods slot; `memo`: it is the company memo's price (U4), not one he typed. */
+function SlotPrice({ poisha, memo }: { poisha: number; memo: boolean }) {
+  const { t, money } = useI18n();
+  return (
+    <span className="as-slot-v">
+      <b className="as-num">{money(poisha)}</b>
+      {memo ? <small className="as-from">{t("asks.memo.from")}</small> : null}
+    </span>
+  );
 }
 
 /**
  * The prices card (D5 "Type"): one slot per unpriced item of one block. Tapping a slot opens the
  * keypad; nothing is saved until "Save the prices", which posts one answer per filled slot. The
- * block's "owed now" follows the slots as they fill. "Later" leaves the gaps open.
+ * block's "owed now" follows the slots as they fill. "Later" leaves the gaps open. With the
+ * company's memo (U4), a slot starts with the price the memo proposes and says so, and the memo's
+ * lines show under the slots.
  */
-export function PricesCard({ questions, block, rows, photo, drafts, busy, onSlot, onSave, onLater }: { questions: Question[]; block: BlockValues | null; rows: readonly ReviewRow[]; photo: Photo; drafts: Readonly<Record<string, string>>; busy: boolean; onSlot: (q: Question, row: ReviewRow) => void; onSave: () => void; onLater: () => void }) {
+export function PricesCard({
+  questions,
+  block,
+  rows,
+  photo,
+  memo,
+  drafts,
+  busy,
+  onSlot,
+  onSave,
+  onLater,
+}: {
+  questions: Question[];
+  block: BlockValues | null;
+  rows: readonly ReviewRow[];
+  photo: Photo;
+  memo: MemoView | null;
+  drafts: Readonly<Record<string, string>>;
+  busy: boolean;
+  onSlot: (q: Question, row: ReviewRow) => void;
+  onSave: () => void;
+  onLater: () => void;
+}) {
   const i18n = useI18n();
   const { t, money, digits } = i18n;
   const first = questions[0]!;
+  const slots = new Map(questions.flatMap((q) => (q.entry ? [[q.entry, slotText(q, drafts)] as const] : [])));
   const priced = rows.map((r) => {
-    const typed = draftPoisha(drafts[r.id]);
-    return typed == null ? r : { ...r, values: { ...r.values, amountText: String(typed / 100) } };
+    const p = draftPoisha(slots.get(r.id));
+    return p == null ? r : { ...r, values: { ...r.values, amountText: String(p / 100) } };
   });
   const figures = blockFigures(block, priced);
-  const filled = questions.some((q) => q.entry && draftPoisha(drafts[q.entry]) != null);
+  const filled = [...slots.values()].some((text) => draftPoisha(text) != null);
+  const memoLines = [...new Set(questions.flatMap((q) => q.memo?.lines ?? []))];
   return (
     <>
       <Kicker block={block} />
       <p className="as-q">{questions.length === 1 ? sentenceText(i18n, first.sentence) : t("q.prices", questions.length)}</p>
-      <Why q={first} />
+      <Why why={pricesWhy(questions, memo, figures.kind === "account" ? figures.now : null)} />
       <div className="as-goods">
         {questions.map((q) => {
           const row = rows.find((r) => r.id === q.entry);
           if (!row) return null;
-          const typed = draftPoisha(drafts[row.id]);
+          const text = slots.get(row.id);
+          const price = draftPoisha(text);
+          const fromMemo = slotOption(q, text) != null;
           return (
-            <button key={q.id} type="button" className={cx("as-good", typed != null && "set")} disabled={busy} onClick={() => onSlot(q, row)}>
+            <button key={q.id} type="button" className={cx("as-good", price != null && (fromMemo ? "memo" : "set"))} disabled={busy} onClick={() => onSlot(q, row)}>
               <RowStrip row={row} photo={photo} height={50} tag={false} />
               <span className="as-good-t">
                 {digits(row.values.item ?? row.values.sourceText)}
                 <small>{digits([row.values.quantityText, row.values.unit].filter(Boolean).join(" "))}</small>
               </span>
-              {typed != null ? <b className="as-num">{money(typed)}</b> : <span className="as-gap">{t("q.price.slot")}</span>}
+              {price != null ? <SlotPrice poisha={price} memo={fromMemo} /> : <span className="as-gap">{t("q.price.slot")}</span>}
             </button>
           );
         })}
       </div>
+      {memo && memoLines.length > 0 ? <MemoStrip memo={memo} lines={memoLines} height={76} /> : null}
       {figures.kind === "account" ? (
         <div className="as-live">
           <span>{t(nowLabel(figures))}</span>

@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { partyAccount } from "@/lib/insights/accounts";
+import { type QuarterTurns, turnsForProcessingMode } from "@/lib/images/orientation";
 import { dhakaDate } from "@/lib/ledger/dates";
 import type { PartyKind } from "@/lib/ledger/parties";
 import type { MemoForPage } from "@/lib/memo/match";
@@ -24,15 +25,16 @@ export async function loadQuestionInput(
   runId: string,
   /** `review`: the run's review, when the caller has already loaded it. */
   o: { dues?: boolean; review?: RunReview } = {},
-): Promise<{ review: RunReview; input: QuestionInput } | null> {
+): Promise<{ review: RunReview; input: QuestionInput; memos: PageMemo[] } | null> {
   const review = o.review ?? (await loadRunReview(supabase, runId));
   if (!review || review.run.status !== "succeeded") return null;
-  const [{ data: parties }, { data: doc }, memos] = await Promise.all([
+  const [{ data: parties }, { data: doc }, pageMemos] = await Promise.all([
     supabase.from("parties").select("id, kind, display_name, normalized_key").is("merged_into", null).limit(5000),
     supabase.from("ledger_documents").select("uploaded_at").eq("id", review.run.documentId).maybeSingle(),
     loadMemos(supabase, review.run.documentId),
   ]);
   const known: KnownParty[] = (parties ?? []).map((p) => ({ id: p.id as string, kind: p.kind as PartyKind, name: p.display_name as string, key: p.normalized_key as string }));
+  const memos = pageMemos.map((m) => m.memo);
   const input: QuestionInput = {
     page: review.page.values,
     rows: review.rows,
@@ -43,25 +45,30 @@ export async function loadQuestionInput(
   };
   const explain = o.dues === false ? [] : partiesToExplain(buildQuestions(input));
   if (explain.length > 0) input.dues = await lastDues(supabase, explain, input.capturedOn ?? dhakaDate(new Date()));
-  return { review, input };
+  return { review, input, memos: pageMemos };
 }
 
+/** A company memo of the page with where its photo is, for the check screen's memo strip. */
+export type PageMemo = { memo: MemoForPage; photo: { storagePath: string; width: number; height: number; turns: QuarterTurns } };
+
 /** The company memos photographed with a page, oldest first, each with its latest reading. A memo not read yet is left out. */
-async function loadMemos(supabase: SupabaseClient, documentId: string): Promise<MemoForPage[]> {
-  const { data: docs } = await supabase.from("ledger_documents").select("id").eq("memo_for", documentId).order("uploaded_at").limit(20);
+async function loadMemos(supabase: SupabaseClient, documentId: string): Promise<PageMemo[]> {
+  const { data: docs } = await supabase.from("ledger_documents").select("id, storage_path, width, height").eq("memo_for", documentId).order("uploaded_at").limit(20);
   if (!docs || docs.length === 0) return [];
   const { data: runs } = await supabase
     .from("extraction_runs")
-    .select("id, document_id, result")
+    .select("id, document_id, result, processing_mode")
     .in("document_id", docs.map((d) => d.id as string))
     .eq("status", "succeeded")
     .order("started_at", { ascending: false });
-  const latest = new Map<string, { id: string; result: unknown }>();
-  for (const r of runs ?? []) if (!latest.has(r.document_id as string)) latest.set(r.document_id as string, { id: r.id as string, result: r.result });
+  const latest = new Map<string, { id: string; result: unknown; mode: string | null }>();
+  for (const r of runs ?? []) if (!latest.has(r.document_id as string)) latest.set(r.document_id as string, { id: r.id as string, result: r.result, mode: r.processing_mode as string | null });
   return docs.flatMap((d) => {
     const run = latest.get(d.id as string);
     const memo = run ? storedMemo(run.result) : null;
-    return run && memo ? [{ documentId: d.id as string, runId: run.id, memo }] : [];
+    if (!run || !memo) return [];
+    const photo = { storagePath: d.storage_path as string, width: d.width as number, height: d.height as number, turns: turnsForProcessingMode(run.mode) };
+    return [{ memo: { documentId: d.id as string, runId: run.id, memo }, photo }];
   });
 }
 

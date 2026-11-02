@@ -7,14 +7,18 @@ import { ReadingQueueProvider } from "@/components/capture/reading-queue";
 import { CheckScreen } from "@/components/check/check-screen";
 import { type Photo, ReadingView } from "@/components/check/reading-view";
 import { localAskApi } from "@/components/check/ask-api";
+import type { MemoView } from "@/components/check/ask-memo";
 import { localReviewApi } from "@/components/check/review-api";
 import type { NormalizedDoubt } from "@/lib/extraction/parse";
 import { useI18n } from "@/lib/i18n/client";
+import type { MemoForPage } from "@/lib/memo/match";
 import { buildQuestions } from "@/lib/questions/engine";
 import type { KnownParty } from "@/lib/questions/types";
 import type { PageState, ReviewRow } from "@/lib/review/state";
 
 export type Fixture = { photo: Photo; page: PageState; rows: ReviewRow[]; doubts: NormalizedDoubt[]; source: string };
+/** A company memo's stored reading (U4): what the engine reads, and what the card shows. */
+export type KitMemo = { memo: MemoForPage; view: MemoView };
 
 const DOC = "00000000-0000-4000-8000-000000000000";
 const API = localReviewApi();
@@ -24,12 +28,12 @@ const DUES = new Map([["demo-pran", 280000]]);
 const CAPTURED_ON = "2026-11-01";
 
 /** Renders one step of the real screens on fixture data. Buttons that would upload or read are live: don't press them. */
-export function CheckBoard({ step, fixture }: { step: string; fixture: Fixture }) {
+export function CheckBoard({ step, fixture, memos }: { step: string; fixture: Fixture; memos: KitMemo[] }) {
   const { t } = useI18n();
   const ask = useMemo(() => {
-    const base = { doubts: fixture.doubts, parties: PARTIES, capturedOn: CAPTURED_ON, dues: DUES };
+    const base = { doubts: fixture.doubts, parties: PARTIES, capturedOn: CAPTURED_ON, dues: DUES, ...(memos.length > 0 ? { memos: memos.map((m) => m.memo) } : {}) };
     return { api: localAskApi(base), set: buildQuestions({ ...base, page: fixture.page.values, rows: fixture.rows }) };
-  }, [fixture]);
+  }, [fixture, memos]);
   const common = { documentId: DOC, photo: fixture.photo, readTurns: fixture.photo.turns, pageNumber: 1, pageCount: 2, detailsHref: "/kit", nextHref: null, backHref: "/kit", api: API, capturedAt: "2026-10-31T09:30:00Z" };
   const body = (() => {
     switch (step) {
@@ -44,7 +48,7 @@ export function CheckBoard({ step, fixture }: { step: string; fixture: Fixture }
       case "reveal":
         return <CheckScreen {...common} nextHref="/kit/check?step=unread" review={{ runId: DOC, page: fixture.page, rows: fixture.rows }} serverReading={null} />;
       case "asks":
-        return <CheckScreen {...common} askApi={ask.api} asks={{ set: ask.set, capturedOn: CAPTURED_ON }} review={{ runId: DOC, page: fixture.page, rows: fixture.rows }} serverReading={null} />;
+        return <CheckScreen {...common} askApi={ask.api} asks={{ set: ask.set, capturedOn: CAPTURED_ON, memos: memos.map((m) => m.view) }} review={{ runId: DOC, page: fixture.page, rows: fixture.rows }} serverReading={null} />;
       case "nothing":
         return <CheckScreen {...common} review={{ runId: DOC, page: fixture.page, rows: [] }} serverReading={null} />;
       case "unread":

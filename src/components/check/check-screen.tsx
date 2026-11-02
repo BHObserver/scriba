@@ -12,6 +12,7 @@ import type { QuarterTurns } from "@/lib/images/orientation";
 import type { QuestionSet } from "@/lib/questions/types";
 import type { PageState, ReviewRow } from "@/lib/review/state";
 import { type AskApi, httpAskApi } from "./ask-api";
+import type { MemoView } from "./ask-memo";
 import { isBlockReading } from "./ask-model";
 import { AskSession } from "./ask-session";
 import { ProblemView } from "./problem-view";
@@ -29,8 +30,8 @@ type Props = {
   photo: Photo;
   /** The latest successful reading's review state; null until the page has been read. */
   review: { runId: string; page: PageState; rows: ReviewRow[] } | null;
-  /** For a reading with blocks: Scriba's questions and the photo's day (the ask deck). Null: the line deck. */
-  asks?: { set: QuestionSet; capturedOn: string | null } | null;
+  /** For a reading with blocks: Scriba's questions, the photo's day and the company memos read with the page (the ask deck). Null: the line deck. */
+  asks?: { set: QuestionSet; capturedOn: string | null; memos?: MemoView[] } | null;
   /** The stored run's state when there is no review: being read, or a problem. Null: never read. */
   serverReading: Reading | null;
   /** When the photo was taken (ISO): the page's day when its written date can't be read. */
@@ -103,6 +104,7 @@ export function CheckScreen({ documentId, photo, review, asks, serverReading, ca
           photo={photo}
           pageTitle={pageTitle}
           capturedOn={asks.capturedOn}
+          memos={asks.memos ?? []}
           pageNumber={pageNumber}
           nextHref={nextHref}
           backHref={backHref}

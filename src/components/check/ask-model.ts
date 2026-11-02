@@ -2,11 +2,12 @@ import type { GridBox } from "@/components/kit/strip-geometry";
 import { blockPartyKind, groupByBlock, isUnpricedGoods, pageBlocks } from "@/lib/ledger/blocks";
 import type { BlockValues, PageValues } from "@/lib/ledger/types";
 import { acceptedFindings } from "@/lib/questions/answer";
-import type { Question, QuestionSet } from "@/lib/questions/types";
+import { parseMoney } from "@/lib/numerals";
+import type { Answer, Question, QuestionOption, QuestionSet } from "@/lib/questions/types";
 import { ackFingerprint, assessEntry } from "@/lib/review/approval";
 import type { ReviewRow } from "@/lib/review/state";
 import { accountSign, deriveNumbers } from "@/lib/validation/engine";
-import { type Acceptances, type Review, acceptanceFor, cardStatus, checkReview, isAccepted } from "./deck-model";
+import { type Acceptances, type Review, acceptanceFor, cardStatus, checkReview, isAccepted, typedText } from "./deck-model";
 
 /**
  * The "Scriba asks" deck (B7, DESIGN_SPEC D5) over a reading with blocks, kept pure so it is
@@ -117,6 +118,39 @@ export function acceptRest(review: Review, ids: readonly string[], acceptances: 
   return out;
 }
 
+/** A typed price as poisha, or null while it isn't a whole number yet. */
+export function draftPoisha(text: string | undefined): number | null {
+  if (!text) return null;
+  const n = parseMoney(text.replace(/\.$/, ""));
+  return n.ok ? n.value : null;
+}
+
+/** The memo's prices a price slot can take (U4): the question's options with a value, not "later". */
+export const priceOptions = (q: Question): QuestionOption[] => q.options.filter((o) => !o.later && !o.local && o.value != null);
+
+/** What a price slot holds: what he typed, else the price the company's memo proposes (U4), else nothing. */
+export function slotText(q: Question, drafts: Readonly<Record<string, string>>): string | undefined {
+  const typed = q.entry ? drafts[q.entry] : undefined;
+  return typed ?? priceOptions(q).find((o) => o.id === q.proposed)?.value;
+}
+
+/** The memo option whose price the slot holds, if any: the slot says where its price came from. */
+export function slotOption(q: Question, text: string | undefined): QuestionOption | null {
+  const p = draftPoisha(text);
+  return p == null ? null : (priceOptions(q).find((o) => draftPoisha(o.value) === p) ?? null);
+}
+
+/**
+ * What "Save the prices" sends for one slot: the memo's option while the slot holds its price, so
+ * the answer records that the price came from the memo (and the memo's rate goes in with it),
+ * else the typed value, written like the page's figures (`sample`). Null: the slot is empty.
+ */
+export function slotAnswer(q: Question, text: string | undefined, sample: string | null): Answer | null {
+  if (draftPoisha(text) == null) return null;
+  const memo = slotOption(q, text);
+  return memo ? { option: memo.id } : { value: typedText(text!, sample) };
+}
+
 export type GoodsLine = { id: string; amount: number | null };
 
 /**
@@ -160,7 +194,12 @@ export function blockFigures(block: BlockValues | null, rows: readonly ReviewRow
 
 /** The part of the page a block covers: the box round its lines' boxes (blocks keep none of their own). */
 export function blockRegion(rows: readonly ReviewRow[]): GridBox | null {
-  const boxes = rows.map((r) => r.candidate?.bbox).filter((b): b is NonNullable<typeof b> => b != null);
+  return unionBox(rows.map((r) => r.candidate?.bbox));
+}
+
+/** The box round several boxes; null when there are none. */
+export function unionBox(all: ReadonlyArray<GridBox | null | undefined>): GridBox | null {
+  const boxes = all.filter((b): b is GridBox => b != null);
   if (boxes.length === 0) return null;
   return {
     x_min: Math.min(...boxes.map((b) => b.x_min)),

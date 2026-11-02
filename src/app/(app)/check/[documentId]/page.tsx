@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import { notFound, redirect } from "next/navigation";
 import { readingFromRun } from "@/components/capture/problems";
 import { checkBackHref, checkHref } from "@/components/check/back-href";
+import { memoView } from "@/components/check/ask-memo";
 import { isBlockReading } from "@/components/check/ask-model";
 import { CheckScreen } from "@/components/check/check-screen";
 import { STORAGE_BUCKET, getLimitsConfig } from "@/lib/config";
@@ -38,6 +39,12 @@ async function loadCheck(supabase: Supabase, documentId: string, queue: string[]
   const latest = runs[0] ?? null;
   // A reading with blocks (prompt 6) gets the ask deck: what Scriba asks about it, worked out now.
   const loaded = review && succeeded && isBlockReading(review.page.values) ? await loadQuestionInput(supabase, succeeded.id, { review }) : null;
+  // The company memos (U4), for the strip beside the questions that use their figures.
+  const memoPaths = loaded?.memos.map((m) => m.photo.storagePath) ?? [];
+  const { data: memoUrls } = memoPaths.length > 0 ? await supabase.storage.from(STORAGE_BUCKET).createSignedUrls(memoPaths, 600) : { data: [] };
+  const memos = (loaded?.memos ?? []).map(({ memo, photo: { storagePath, ...rest } }) =>
+    memoView(memo, { src: memoUrls?.find((u) => u.path === storagePath)?.signedUrl ?? null, ...rest }),
+  );
 
   const index = queue.indexOf(documentId);
   const nextId = queue[index + 1];
@@ -50,7 +57,7 @@ async function loadCheck(supabase: Supabase, documentId: string, queue: string[]
       turns: turnsForProcessingMode((succeeded ?? latest)?.processingMode),
     },
     review: review && succeeded ? { runId: succeeded.id, page: review.page, rows: review.rows } : null,
-    asks: loaded ? { set: buildQuestions(loaded.input), capturedOn: loaded.input.capturedOn } : null,
+    asks: loaded ? { set: buildQuestions(loaded.input), capturedOn: loaded.input.capturedOn, memos } : null,
     serverReading: review ? null : readingFromRun(latest, Date.now(), getLimitsConfig().stalePendingMs),
     capturedAt: doc.uploaded_at,
     readTurns: turnsForProcessingMode(latest?.processingMode),

@@ -158,7 +158,8 @@ Order if one account does everything: C1 → U1 → D5 → C2 → U2 → U2b →
 - Company reps leave a printed memo (challan) with items, quantities and prices.
 - **Photograph it with the page**, read it, and match its items to the visit block's goods. It proposes the prices; he confirms them with U2's questions.
 - **Live**: ≤ $1.
-- **Engine half done (2 Nov)**, the UI half after B7 (the user's split): memo prompt and schema, one call under the page's credit rules, a `kind`/`memo_for` migration (written and tested, **not applied** to the hosted project yet), linking and line matching, memo-proposed prices on `delivery` and `price`, and questions for memo goods not on the page and figures that differ. Live $0.077 on two synthetic memos. See `docs/sessions/U4.md`.
+- **Engine half done (2 Nov)**, the UI half after B7 (the user's split): memo prompt and schema, one call under the page's credit rules, a `kind`/`memo_for` migration (applied to the hosted dev project on 2 Nov, UI half part 1), linking and line matching, memo-proposed prices on `delivery` and `price`, and questions for memo goods not on the page and figures that differ. Live $0.077 on two synthetic memos. See `docs/sessions/U4.md`.
+- **UI half done (2 Nov)**, in three parts: the memo is added on the page's details screen and read once; in the ask deck the price slots start with the memo's prices (saved as the memo's answer), and a strip shows the memo's printed lines beside the question. Checked in Edge and once live with M01 on V01 ($0.116). **U4 is done.**
 
 ## Open questions for the user
 

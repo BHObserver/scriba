@@ -1,5 +1,6 @@
 "use client";
 
+import { ReceiptText } from "lucide-react";
 import type { ReactNode } from "react";
 import { LineStrip } from "@/components/kit";
 import { OrientedImage } from "@/components/photo-orientation";
@@ -8,6 +9,7 @@ import { useI18n } from "@/lib/i18n/client";
 import type { I18n } from "@/lib/i18n/format";
 import type { BlockValues } from "@/lib/ledger/types";
 import type { ReviewRow } from "@/lib/review/state";
+import { type MemoView, memoRegion } from "./ask-memo";
 import { type AccountFigures, blockFigures, blockRegion, blockTone } from "./ask-model";
 import type { Photo } from "./reading-view";
 
@@ -50,6 +52,26 @@ export function BlockCrop({ rows, photo, height = 112 }: { rows: readonly Review
     <div className="as-crop">
       <LineStrip src={photo.src} box={box} photoWidth={photo.width} photoHeight={photo.height} turns={photo.turns} height={height} />
     </div>
+  );
+}
+
+/**
+ * U4: the company's memo beside a question that takes its figures from it: the printed lines the
+ * question names (or the letterhead, when it names none), under whose memo it is.
+ */
+export function MemoStrip({ memo, lines, height = 92 }: { memo: MemoView; lines: readonly string[]; height?: number }) {
+  const { t, digits } = useI18n();
+  if (!memo.photo.src) return null;
+  const { src, width, height: photoHeight, turns } = memo.photo;
+  return (
+    <figure className="as-memo">
+      <figcaption className="as-memo-h">
+        <ReceiptText size={16} aria-hidden="true" />
+        <span>{t("asks.memo")}</span>
+        {memo.company ? <b>{digits(memo.company)}</b> : null}
+      </figcaption>
+      <LineStrip src={src} box={memoRegion(memo, lines)} photoWidth={width} photoHeight={photoHeight} turns={turns} height={height} tag={false} />
+    </figure>
   );
 }
 
