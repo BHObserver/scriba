@@ -636,9 +636,9 @@ The question rows (`q.*`) are in Part 4: U2b reconciled them with U2's questions
 | `keep` | রাখুন | Keep |
 | `del` | মুছুন | Delete |
 
-## Part 4: Scriba asks, as built (U2 + U2b, U4, T1)
+## Part 4: Scriba asks, as built (U2 + U2b, U4, T1, T2)
 
-Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generated from the code in U2b. Change the strings there, not here. A question's sentence, its `why` line and each option's `detail` are rendered with `sentenceText`. `{1}` slots hold his words, money (৳, locale digits), counts or days. T1 (3 Nov) added `q.meaning.line`, the meaning card's option that opens the part's lines so one can be fixed there; the plan's wording, not yet read by a Bangla reader.
+Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generated from the code in U2b. Change the strings there, not here. A question's sentence, its `why` line and each option's `detail` are rendered with `sentenceText`. `{1}` slots hold his words, money (৳, locale digits), counts or days. T1 (3 Nov) added `q.meaning.line`, the meaning card's option that opens the part's lines so one can be fixed there; the plan's wording, not yet read by a Bangla reader. T2 (3 Nov) added the `q.split.*` rows: the question "are the lines after the first total Karim's too?" and the sheet behind "a separate part from here". The plan's wording where it gave one (`q.split`, `q.split.sale`, `q.split.other.customer`); the rest written in T2. Not yet read by a Bangla reader. `{4}-এরই` attaches to the name the same way `{1}-এর` does in `q.meaning.customer`.
 
 ### Where D5's keys went
 
@@ -680,6 +680,17 @@ Source: the `q.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts`, generate
 | `q.kind.supplier_account` | মহাজনের হিসাব | A supplier's account |
 | `q.kind.expenses` | দোকানের খরচ | Shop expenses |
 | `q.kind.other` | অন্য কিছু | Something else |
+| `q.split` | “{1}”-এর পরের {2}টা লাইন ({3}) কি {4}-এরই? | Are the {2} lines after “{1}” ({3}) {4}'s too? |
+| `q.split.nosum` | “{1}”-এর পরের {2}টা লাইন কি {3}-এরই? | Are the {2} lines after “{1}” {3}'s too? |
+| `q.split.why` | এখানে একাধিক মোট লেখা, আর প্রথম মোটের পরের লাইনগুলোতে কারো নাম নেই। | More than one total is written, and the lines after the first one name no one. |
+| `q.split.yes` | হ্যাঁ, {1}-এরই | Yes, {1}'s too |
+| `q.split.sale` | না, আলাদা বিক্রি | No, a separate sale |
+| `q.split.sale.cash` | খাতায় নগদ বিক্রি হিসেবে উঠবে | Goes in the khata as cash sales |
+| `q.split.purchase` | না, আলাদা কেনা | No, a separate purchase |
+| `q.split.purchase.cash` | খাতায় নগদে কেনা হিসেবে উঠবে | Goes in the khata as cash purchases |
+| `q.split.other.customer` | অন্য কারো বাকি | Someone else's account |
+| `q.split.other.supplier` | অন্য মহাজনের হিসাব | Another supplier's account |
+| `q.split.here` | এখান থেকে নিচের {1}টা লাইন কী? | What are the {1} lines from here down? |
 | `q.same` | “{1}” কি আপনার খাতার “{2}”? | Is “{1}” the “{2}” in your khata? |
 | `q.same.which` | “{1}” কি খাতার আগের কেউ? | Is “{1}” someone already in your khata? |
 | `q.same.yes.supplier` | হ্যাঁ, একই কোম্পানি | Yes, the same company |
@@ -821,7 +832,7 @@ The memo questions (`memo`, `memo_extra`, `memo_differs`) and the memo forms of 
 
 ## Part 5: the ask deck, as built (B7)
 
-Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 parts 1 and 2, 2 Nov). Change the strings there, not here. They are Part 3's overview, visit card, quick confirm, stamp, page seal and voice strings, with three changes: “এবার দিয়েছেন / Paid this time” (U2b's reason: the visit isn't always today); `asks.bs.party` names the party with a colon, because a Bangla possessive (প্রাণের, ফ্রেশের) depends on the word's ending; and customer-account rows (`asks.cust.*`). New, written in B7 and not yet read by a Bangla reader: `asks.ov.title1`, `asks.ov.none`, `asks.ov.page`, `asks.back`, `asks.cust.*`, `asks.total.expenses`, `asks.total`, `asks.type`, `asks.which`, `asks.rest.all`, `asks.line.title`, `asks.bs.part`, `asks.bs.later`, `asks.bs.end`, `asks.ps.open`, `asks.ps.later`, `asks.voice.listen`, `asks.voice.none`, `asks.err.*`; and from part 2, `asks.rest.one`, `asks.rest.allOne` (one line left: English needs a singular) and `asks.in.party`, `asks.in.date` (the label over a typed name or day). From U4's UI (2 Nov): `asks.memo` (over the memo strip) and `asks.memo.from` (under a price taken from the memo).
+Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 parts 1 and 2, 2 Nov). Change the strings there, not here. They are Part 3's overview, visit card, quick confirm, stamp, page seal and voice strings, with three changes: “এবার দিয়েছেন / Paid this time” (U2b's reason: the visit isn't always today); `asks.bs.party` names the party with a colon, because a Bangla possessive (প্রাণের, ফ্রেশের) depends on the word's ending; and customer-account rows (`asks.cust.*`). New, written in B7 and not yet read by a Bangla reader: `asks.ov.title1`, `asks.ov.none`, `asks.ov.page`, `asks.back`, `asks.cust.*`, `asks.total.expenses`, `asks.total`, `asks.type`, `asks.which`, `asks.rest.all`, `asks.line.title`, `asks.bs.part`, `asks.bs.later`, `asks.bs.end`, `asks.ps.open`, `asks.ps.later`, `asks.voice.listen`, `asks.voice.none`, `asks.err.*`; and from part 2, `asks.rest.one`, `asks.rest.allOne` (one line left: English needs a singular) and `asks.in.party`, `asks.in.date` (the label over a typed name or day). From U4's UI (2 Nov): `asks.memo` (over the memo strip) and `asks.memo.from` (under a price taken from the memo). From T2 (3 Nov): `asks.split` (on a line's fix sheet) and `asks.in.split` (over the name in the split sheet).
 
 | Key | বাংলা | English |
 |---|---|---|
@@ -862,6 +873,7 @@ Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 pa
 | `asks.rest.allOne` | এই অংশের লাইনটা দেখে নিন | Check this part's line |
 | `asks.rest.tap` | কোনোটা ভুল হলে সেটায় চাপুন | Tap any line that's wrong |
 | `asks.rest.ok` | সব ঠিক আছে | All correct |
+| `asks.split` | এখান থেকে আলাদা হিসাব | A separate part from here |
 | `asks.line.title` | এই লাইনটা একবার দেখুন | Have a look at this line |
 | `asks.stamp` | মিলেছে | Checked |
 | `asks.bs.party` | {1}: হিসাব হয়ে গেছে | {1}: done |
@@ -885,6 +897,7 @@ Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 pa
 | `asks.voice.none` | বোঝা যায়নি। আবার বলুন বা লিখে দিন। | I couldn't make that out. Say it again or type it. |
 | `asks.keep` | রাখুন | Keep |
 | `asks.in.party` | অথবা নামটা লিখুন | Or type the name |
+| `asks.in.split` | অন্য কারো হিসাব হলে, নামটা লিখুন | If it's someone else's account, type the name |
 | `asks.in.date` | অথবা দিনটা লিখুন, যেমন ২/১১/২০২৬ | Or type the day, like 2/11/2026 |
 | `asks.err.stale` | এই প্রশ্নটা এর মধ্যে বদলে গেছে। আবার খুলুন। | This question has changed. Reload to see it again. |
 | `asks.err.bad` | এটা এখানে বসানো যায় না। আবার দেখুন। | That can't be used here. Have another look. |

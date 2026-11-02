@@ -25,7 +25,7 @@ import { keepAnswers, pageValuesSchema } from "@/lib/review/values";
 import { validateLedger } from "@/lib/validation/engine";
 import { readYesNo } from "@/lib/voice/answer-words";
 import { acceptedFindings, answerQuestion, applyChanges } from "./answer";
-import { buildQuestions, partiesToExplain, writtenDay } from "./engine";
+import { buildQuestions, partiesToExplain, splitHereQuestion, writtenDay } from "./engine";
 import { romanize, soundsAlike } from "./similar";
 import { spokenAnswer } from "./speech";
 import { sentenceText } from "./text";
@@ -450,6 +450,162 @@ describe("a company visit read wrong", () => {
     expect(next.page.blocks?.[0]?.kind).toBe("customer_account");
     expect(ids(next)).not.toContain("meaning:b1");
     expect(ids(next)).toContain("direction:r2"); // a payment to a supplier in a customer's account
+  });
+});
+
+describe("a part that may be two (T2)", () => {
+  // Shaped like the five-page test's first page (written for the test, not his data): Karim's
+  // account with its total, then a separate sale just below with its own, read as one part; and
+  // the day's sales after it. Each total checks, so the sums can't show it.
+  const KARIM = { id: "b1", kind: "customer_account", title: "করিম বাকি", party: "করিম", person: null, date_text: "২/১১", box: null };
+  const DAY = { ...SALES, id: "b2" };
+  const lines = [
+    line("e1", "b1", "চাল ১৬০", "credit_sale", { item: "চাল", amount: "১৬০" }),
+    line("e2", "b1", "ডাল ১০০", "credit_sale", { item: "ডাল", amount: "১০০" }),
+    line("e3", "b1", "মোট ২৬০", "subtotal", { amount: "২৬০" }),
+    line("e4", "b1", "আটা ১২০", "credit_sale", { item: "আটা", amount: "১২০" }),
+    line("e5", "b1", "লবণ ৩০", "credit_sale", { item: "লবণ", amount: "৩০" }),
+    line("e6", "b1", "ডিম ১০০", "credit_sale", { item: "ডিম", amount: "১০০" }),
+    line("e7", "b1", "মোট ২৫০", "subtotal", { amount: "২৫০" }),
+    line("e8", "b2", "চা ২০", "cash_sale", { item: "চা", amount: "২০" }),
+  ];
+  const start = inputOf(read({ blocks: [KARIM, DAY], entries: lines, date: "2/11/26" }));
+  const blockOf = (input: QuestionInput) => Object.fromEntries(input.rows.map((r) => [r.id, r.values.block]));
+  const total = (input: QuestionInput, id: string) => findings(input).find((f) => f.ruleId === "written_total" && f.entryIds.includes(id));
+
+  test("code asks right after the part's meaning, with the count and the sum it worked out", () => {
+    expect(ids(start).slice(0, 2)).toEqual(["meaning:b1", "split:b1"]);
+    const q = find(start, "split:b1");
+    expect(sentenceText(bn, q.sentence)).toBe("“মোট ২৬০”-এর পরের ৩টা লাইন (৳২৫০) কি করিম-এরই?");
+    expect(sentenceText(en, q.sentence)).toBe("Are the 3 lines after “মোট 260” (৳250) করিম's too?");
+    expect(q.options.map((o) => o.id)).toEqual(["yes", "apart"]);
+    expect(q.options[1]!.detail).toEqual({ key: "q.split.sale.cash" });
+    expect(q.proposed).toBeNull(); // he chooses: Scriba doesn't know
+    expect(q.input?.label).toEqual({ key: "q.split.other.customer" });
+    expect(q.entries).toEqual(["r3", "r4", "r5", "r6", "r7"]); // the first total, and the lines after it
+  });
+
+  test("“a separate sale”: Karim's part keeps 3 lines, and the new day's sales part checks", () => {
+    const next = answer(start, "split:b1", { option: "apart" });
+    expect(next.page.blocks?.map((b) => [b.id, b.kind])).toEqual([
+      ["b1", "customer_account"],
+      ["b3", "day_sales"],
+      ["b2", "day_sales"],
+    ]);
+    expect(next.page.blocks?.[1]).toMatchObject({ party: null, title: null, dateText: "২/১১" });
+    expect(blockOf(next)).toMatchObject({ r1: "b1", r2: "b1", r3: "b1", r4: "b3", r5: "b3", r6: "b3", r7: "b3", r8: "b2" });
+    // A sale on nobody's account was paid then and there.
+    expect(["r4", "r5", "r6"].map((id) => row(next, id).values.type)).toEqual(["cash_sale", "cash_sale", "cash_sale"]);
+    expect(total(next, "r7")).toMatchObject({ status: "pass", block: "b3" });
+    expect(total(next, "r3")).toMatchObject({ status: "pass" });
+    expect(ids(next)).not.toContain("split:b1");
+    expect(next.page.answers?.find((a) => a.q === "split:b1")?.a).toBe("apart");
+  });
+
+  test("“yes, Karim's” changes nothing and isn't asked again", () => {
+    const next = answer(start, "split:b1", { option: "yes" });
+    expect(next.rows).toEqual(start.rows);
+    expect(next.page.blocks).toEqual(start.page.blocks);
+    expect(ids(next)).not.toContain("split:b1");
+  });
+
+  test("someone else's account: the name he gives makes their part, and Scriba asks what it is as usual", () => {
+    const next = answer(start, "split:b1", { value: "রহিম" });
+    expect(next.page.blocks?.[1]).toMatchObject({ id: "b3", kind: "customer_account", party: "রহিম" });
+    expect(row(next, "r4").values.type).toBe("credit_sale");
+    expect(ids(next)).toContain("meaning:b3");
+    expect(ids(next)).toContain("opening:b3");
+  });
+
+  test("not asked with one total, when the lines after it name someone, or on a company visit", () => {
+    const one = inputOf(read({ blocks: [KARIM, DAY], entries: lines.slice(0, 6).concat(lines[7]!), date: "2/11/26" }));
+    expect(ids(one)).not.toContain("split:b1");
+    const named = inputOf(read({ blocks: [KARIM, DAY], entries: lines.map((l) => (l.id === "e5" ? { ...l, customer: "করিম" } : l)), date: "2/11/26" }));
+    expect(ids(named)).not.toContain("split:b1");
+    const visit = inputOf(read({ blocks: [{ ...VISIT, id: "b1" }, DAY], entries: lines.map((l) => (l.type === "credit_sale" ? { ...l, type: "credit_purchase" } : l)), date: "2/11/26" }));
+    expect(ids(visit)).not.toContain("split:b1");
+  });
+
+  test("a supplier's account gets a supplier's words: a separate purchase goes in as bought for cash", () => {
+    const supplier = inputOf(
+      read({
+        blocks: [{ ...KARIM, kind: "supplier_account", title: "মামুন", party: "মামুন" }, DAY],
+        entries: lines.map((l) => (l.type === "credit_sale" ? { ...l, type: "credit_purchase" } : l)),
+        date: "2/11/26",
+      }),
+    );
+    const q = find(supplier, "split:b1");
+    expect(q.options.map((o) => sentenceText(bn, o.label))).toEqual(["হ্যাঁ, মামুন-এরই", "না, আলাদা কেনা"]);
+    const next = answer(supplier, "split:b1", { option: "apart" });
+    expect(next.page.blocks?.[1]?.kind).toBe("expenses");
+    expect(row(next, "r4").values.type).toBe("purchase");
+  });
+
+  test("a separate part from any line but its part's first, through the same answers", () => {
+    const q = splitHereQuestion(start, "r5")!;
+    expect(q.id).toBe("split:b1:r5");
+    expect(q.options.map((o) => o.id)).toEqual(["kind:day_sales", "kind:expenses", "kind:other"]);
+    expect(sentenceText(bn, q.sentence)).toBe("এখান থেকে নিচের ৩টা লাইন কী?");
+    expect(buildQuestions(start).questions.some((x) => x.id === q.id)).toBe(false); // never put to him unasked
+
+    const other = answerQuestion(start, q.id, q.fp, { option: "kind:other" }, NOW);
+    if (!other.ok) throw new Error(other.error);
+    expect(blockOf({ ...start, ...other.after })).toMatchObject({ r4: "b1", r5: "b3", r6: "b3", r7: "b3", r8: "b2" });
+    expect(row({ ...start, ...other.after }, "r5").values.type).toBe("credit_sale"); // "something else" keeps the kinds
+    expect(other.after.page.answers?.at(-1)).toMatchObject({ q: "split:b1:r5", a: "kind:other" });
+
+    const named = answerQuestion(start, q.id, q.fp, { value: "রহিম" }, NOW);
+    if (!named.ok) throw new Error(named.error);
+    expect(named.after.page.blocks?.[1]).toMatchObject({ kind: "customer_account", party: "রহিম" });
+
+    // From where code asks, it's the same split as code's "a separate sale".
+    const here = splitHereQuestion(start, "r4")!;
+    const manual = answerQuestion(start, here.id, here.fp, { option: "kind:day_sales" }, NOW);
+    const asked = answer(start, "split:b1", { option: "apart" });
+    if (!manual.ok) throw new Error(manual.error);
+    expect(manual.after.rows).toEqual(asked.rows);
+    expect(manual.after.page.blocks).toEqual(asked.page.blocks);
+  });
+
+  test("refused at a part's first line, for another part's id, and over a line already in the khata", () => {
+    expect(splitHereQuestion(start, "r1")).toBeNull();
+    expect(splitHereQuestion(start, "r8")).toBeNull(); // the only line of its part
+    // A "before" an answer added on top isn't the part's first written line.
+    const opened = answer(start, "opening:b1", { option: "none" });
+    expect(opened.rows[0]?.id).toBe("new-1");
+    expect(splitHereQuestion(opened, "r1")).toBeNull();
+    expect(splitHereQuestion(opened, "r2")?.entries).toEqual(["r2", "r3", "r4", "r5", "r6", "r7"]);
+    expect(answerQuestion(start, "split:b1:r1", "00000000", { option: "kind:day_sales" }, NOW)).toEqual({ ok: false, error: "stale" });
+    const q = splitHereQuestion(start, "r5")!;
+    expect(answerQuestion(start, "split:b2:r5", q.fp, { option: "kind:day_sales" }, NOW)).toEqual({ ok: false, error: "stale" });
+    const confirmed = { ...start, rows: start.rows.map((r) => (r.id === "r7" ? { ...r, status: "confirmed" as const } : r)) };
+    expect(splitHereQuestion(confirmed, "r5")).toBeNull();
+    expect(ids(confirmed)).not.toContain("split:b1");
+    expect(answerQuestion(confirmed, q.id, q.fp, { option: "kind:day_sales" }, NOW)).toEqual({ ok: false, error: "stale" });
+    // A rejected line stays where it was, and doesn't count as the part's first.
+    const rejected = { ...start, rows: start.rows.map((r) => (r.id === "r1" ? { ...r, status: "rejected" as const } : r)) };
+    expect(splitHereQuestion(rejected, "r2")).toBeNull();
+    const full = { ...start, page: { ...start.page, blocks: [...start.page.blocks!, ...Array.from({ length: 28 }, (_, i) => ({ ...start.page.blocks![1]!, id: `x${i}` }))] } };
+    expect(splitHereQuestion(full, "r5")).toBeNull();
+    expect(ids(full)).not.toContain("split:b1");
+  });
+
+  test("a new part's id is one past the page's highest", () => {
+    const page = { ...start.page, blocks: [...start.page.blocks!, { ...start.page.blocks![1]!, id: "b9" }] };
+    const after = applyChanges({ page, rows: start.rows }, [{ op: "split", block: "b1", from: "r4", values: { kind: "other" } }]);
+    expect(after.page.blocks?.map((b) => b.id)).toEqual(["b1", "b10", "b2", "b9"]);
+    expect(pageValuesSchema.safeParse(after.page).success).toBe(true);
+  });
+
+  test("its sentences and options render in both languages", () => {
+    const supplier = { ...start, page: { ...start.page, blocks: start.page.blocks!.map((b) => (b.id === "b1" ? { ...b, kind: "supplier_account" as const } : b)) } };
+    const unread = { ...start, rows: start.rows.map((r) => (r.id === "r5" ? { ...r, values: { ...r.values, amountText: "?" } } : r)) };
+    const qs = [find(start, "split:b1"), find(supplier, "split:b1"), find(unread, "split:b1"), splitHereQuestion(start, "r5")!];
+    expect(sentenceText(en, qs[2]!.sentence)).toBe("Are the 3 lines after “মোট 260” করিম's too?");
+    for (const q of qs) {
+      const sentences = [q.sentence, q.why?.sentence, q.input?.label, ...q.options.flatMap((o) => [o.label, o.detail])].filter((s) => s != null);
+      for (const i18n of [bn, en]) for (const s of sentences) expect(sentenceText(i18n, s)).not.toMatch(/\{\d\}|undefined|NaN/);
+    }
   });
 });
 

@@ -11,6 +11,7 @@ import { sentenceText } from "@/lib/questions/text";
 import type { Answer, AnswerInput, Question, QuestionOption } from "@/lib/questions/types";
 import type { ReviewRow } from "@/lib/review/state";
 import { draftPoisha, priceOptions } from "./ask-model";
+import { BlockCrop } from "./ask-parts";
 import { RowStrip } from "./deck-sheets";
 import { fieldLabel } from "./sentences";
 import type { Photo } from "./reading-view";
@@ -37,17 +38,34 @@ const VOICE_ERROR: Record<VoiceError, MessageKey> = {
  * as tiles (one tap answers), then its value on the keypad or typed, with the microphone. What is
  * heard goes into the field (turmeric) or picks an option; only "Keep" saves it.
  */
-export function AskSheet({ target, photo, busy, onAnswer, onPrice, onClose }: { target: AskSheetTarget | null; photo: Photo; busy: boolean; onAnswer: (q: Question, a: Answer) => void; onPrice: (rowId: string, typed: string) => void; onClose: () => void }) {
+export function AskSheet({
+  target,
+  rows,
+  photo,
+  busy,
+  onAnswer,
+  onPrice,
+  onClose,
+}: {
+  target: AskSheetTarget | null;
+  /** The page's lines, for the part a split would make (T2). */
+  rows: readonly ReviewRow[];
+  photo: Photo;
+  busy: boolean;
+  onAnswer: (q: Question, a: Answer) => void;
+  onPrice: (rowId: string, typed: string) => void;
+  onClose: () => void;
+}) {
   const { t } = useI18n();
   const label = target?.kind === "answer" ? t("asks.which") : target ? t("q.price.slot") : "";
   return (
     <Sheet open={target != null} onClose={onClose} label={label}>
-      {target ? <SheetBody key={`${target.kind}:${target.question.id}:${target.kind === "price" ? target.row.id : ""}`} target={target} photo={photo} busy={busy} onAnswer={onAnswer} onPrice={onPrice} onClose={onClose} /> : null}
+      {target ? <SheetBody key={`${target.kind}:${target.question.id}:${target.kind === "price" ? target.row.id : ""}`} target={target} rows={rows} photo={photo} busy={busy} onAnswer={onAnswer} onPrice={onPrice} onClose={onClose} /> : null}
     </Sheet>
   );
 }
 
-function SheetBody({ target, photo, busy, onAnswer, onPrice, onClose }: { target: AskSheetTarget; photo: Photo; busy: boolean; onAnswer: (q: Question, a: Answer) => void; onPrice: (rowId: string, typed: string) => void; onClose: () => void }) {
+function SheetBody({ target, rows, photo, busy, onAnswer, onPrice, onClose }: { target: AskSheetTarget; rows: readonly ReviewRow[]; photo: Photo; busy: boolean; onAnswer: (q: Question, a: Answer) => void; onPrice: (rowId: string, typed: string) => void; onClose: () => void }) {
   const i18n = useI18n();
   const { t, digits, money } = i18n;
   const q = target.question;
@@ -125,6 +143,8 @@ function SheetBody({ target, photo, busy, onAnswer, onPrice, onClose }: { target
 
   const options = target.kind === "answer" ? target.options : [];
   const row = target.kind === "price" ? target.row : null;
+  // T2: the lines a split would put in a part of their own, so he sees which ones go.
+  const moving = q.kind === "split" ? q.entries.map((id) => rows.find((r) => r.id === id)).filter((r): r is ReviewRow => r != null) : [];
   // U4: a price slot can take the memo's price (or one of the memo lines it may be) with one tap.
   const memoPrices = target.kind === "price" ? priceOptions(q) : [];
   const message = (() => {
@@ -139,6 +159,7 @@ function SheetBody({ target, photo, busy, onAnswer, onPrice, onClose }: { target
   const inputLabel = (() => {
     if (!input || keypad) return null;
     if (input.target.to === "party") return t("asks.in.party");
+    if (input.target.to === "split") return t("asks.in.split");
     if (input.target.to === "date") return t("asks.in.date");
     return input.target.to === "entry" ? fieldLabel(i18n, input.target.field) : null;
   })();
@@ -152,6 +173,7 @@ function SheetBody({ target, photo, busy, onAnswer, onPrice, onClose }: { target
           <X size={24} aria-hidden="true" />
         </button>
       </div>
+      {moving.length > 0 ? <BlockCrop rows={moving} photo={photo} /> : null}
       {row ? <RowStrip row={row} photo={photo} /> : options.length > 0 ? <p className="t-body">{sentenceText(i18n, q.sentence)}</p> : null}
       {row && memoPrices.length > 0 ? (
         <div className="as-opts">

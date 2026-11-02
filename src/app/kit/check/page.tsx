@@ -3,6 +3,7 @@ import path from "node:path";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CheckBoard, type Fixture, type KitMemo } from "./check-board";
+import { karimFixture } from "./karim-fixture";
 import { memoView } from "@/components/check/ask-memo";
 import { pageValuesOf, parseModelResponse } from "@/lib/extraction/parse";
 import { inspectImage } from "@/lib/images/inspect";
@@ -94,7 +95,8 @@ async function loadMemo(photo: string): Promise<KitMemo | null> {
 /**
  * Development only: the check flow's screens on a stored reading of a private test photo (S04 by
  * default, `&photo=S01.jpg` for another; the ask deck on V01.flat by default, `&photo=V02.flat.jpg`;
- * `&memo=M01.jpg` adds a company memo's stored reading, as if photographed with the page),
+ * `&memo=M01.jpg` adds a company memo's stored reading, as if photographed with the page;
+ * `&photo=karim` is a drawn page shaped like the five-page test's first, for splitting a part),
  * for screenshots without an account or a paid call.
  */
 export default async function KitCheckPage({ searchParams }: PageProps<"/kit/check">) {
@@ -118,7 +120,7 @@ export default async function KitCheckPage({ searchParams }: PageProps<"/kit/che
       </main>
     );
   }
-  const fixture = await loadFixture(name);
+  const fixture = photo === "karim" ? karimFixture() : await loadFixture(name);
   if (!fixture) return <main className="app-main pad">No stored reading for {name} in private-test-data.</main>;
   const kitMemo = typeof memo === "string" && MEMO_RE.test(memo) ? await loadMemo(memo) : null;
   if (memo && !kitMemo) return <main className="app-main pad">No stored memo reading for {String(memo)} in private-test-data.</main>;

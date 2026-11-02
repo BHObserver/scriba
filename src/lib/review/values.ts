@@ -35,6 +35,8 @@ export const blockValuesSchema = z.object({
 
 /** At most this many answers are kept per page: the latest per question, oldest dropped first. */
 export const MAX_ANSWERS = 300;
+/** At most this many blocks on a page: as read, and after he splits parts (T2). */
+export const MAX_BLOCKS = 30;
 
 export const answerRecordSchema = z.object({
   q: z.string().min(1).max(120),
@@ -50,7 +52,7 @@ export const pageValuesSchema = z.object({
   accountName: shortText,
   blocks: z
     .array(blockValuesSchema)
-    .max(30)
+    .max(MAX_BLOCKS)
     .refine((blocks) => new Set(blocks.map((b) => b.id)).size === blocks.length, "Block ids must be unique.")
     .optional(),
   answers: z.array(answerRecordSchema).max(MAX_ANSWERS).optional(),

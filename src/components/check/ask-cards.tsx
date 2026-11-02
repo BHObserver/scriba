@@ -167,7 +167,7 @@ export function QuestionCard({
   ) : null;
   const type = q.input ? (
     <button type="button" className="as-pill" disabled={busy} onClick={() => actions.open(q, [], false)}>
-      {t("asks.type")}
+      {q.input.label ? sentenceText(i18n, q.input.label) : t("asks.type")}
     </button>
   ) : null;
   const ghosts = [...local, ...later].map((o) => (

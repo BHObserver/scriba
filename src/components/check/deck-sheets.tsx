@@ -50,18 +50,53 @@ export function RowStrip({ row, photo, height, tag }: { row: ReviewRow; photo: P
 /**
  * Fix one number (DESIGN_SPEC D2 "Fix sheet"): the handwriting, the old reading struck through,
  * the Bangla keypad (a laptop keyboard works too), "say it" and "keep". A spoken number is
- * placed in the field like a typed one (P1); nothing is saved until "keep".
+ * placed in the field like a typed one (P1); nothing is saved until "keep". In the ask deck, a
+ * line that isn't its part's first can also start a part of its own from there (`onSplit`, T2).
  */
-export function FixSheet({ target, photo, hint, busy, onSave, onClose }: { target: { row: ReviewRow; field: FixField } | null; photo: Photo; hint: string | null; busy: boolean; onSave: (typed: string) => void; onClose: () => void }) {
+export function FixSheet({
+  target,
+  photo,
+  hint,
+  busy,
+  onSave,
+  onSplit,
+  onClose,
+}: {
+  target: { row: ReviewRow; field: FixField } | null;
+  photo: Photo;
+  hint: string | null;
+  busy: boolean;
+  onSave: (typed: string) => void;
+  onSplit?: () => void;
+  onClose: () => void;
+}) {
   const { t } = useI18n();
   return (
     <Sheet open={target != null} onClose={onClose} label={target ? t("fx.title", target.row.values.item ?? t(`type.${target.row.values.type}`)) : ""}>
-      {target ? <FixBody key={`${target.row.id}:${target.field}`} row={target.row} field={target.field} photo={photo} hint={hint} busy={busy} onSave={onSave} onClose={onClose} /> : null}
+      {target ? <FixBody key={`${target.row.id}:${target.field}`} row={target.row} field={target.field} photo={photo} hint={hint} busy={busy} onSave={onSave} onSplit={onSplit} onClose={onClose} /> : null}
     </Sheet>
   );
 }
 
-function FixBody({ row, field, photo, hint, busy, onSave, onClose }: { row: ReviewRow; field: FixField; photo: Photo; hint: string | null; busy: boolean; onSave: (typed: string) => void; onClose: () => void }) {
+function FixBody({
+  row,
+  field,
+  photo,
+  hint,
+  busy,
+  onSave,
+  onSplit,
+  onClose,
+}: {
+  row: ReviewRow;
+  field: FixField;
+  photo: Photo;
+  hint: string | null;
+  busy: boolean;
+  onSave: (typed: string) => void;
+  onSplit?: () => void;
+  onClose: () => void;
+}) {
   const i18n = useI18n();
   const { t, digits } = i18n;
   const [draft, setDraft] = useState("");
@@ -157,6 +192,11 @@ function FixBody({ row, field, photo, hint, busy, onSave, onClose }: { row: Revi
           {t("fx.save")}
         </Button>
       </div>
+      {onSplit ? (
+        <Button variant="ghost" wide disabled={busy || listening || sending} onClick={onSplit}>
+          {t("asks.split")}
+        </Button>
+      ) : null}
     </div>
   );
 }

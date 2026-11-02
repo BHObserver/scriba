@@ -7,6 +7,7 @@ import { Button } from "@/components/kit";
 import { useI18n } from "@/lib/i18n/client";
 import { pageBlocks } from "@/lib/ledger/blocks";
 import type { TransactionType } from "@/lib/ledger/types";
+import { splitHereQuestion } from "@/lib/questions/engine";
 import type { Answer, Question, QuestionSet } from "@/lib/questions/types";
 import { ackFingerprint, assessEntry } from "@/lib/review/approval";
 import type { ReviewRow } from "@/lib/review/state";
@@ -173,7 +174,8 @@ export function AskSession({
   const failure = (reason: "stale" | "bad_value" | "failed"): Problem => (reason === "stale" ? "stale" : reason === "bad_value" ? "bad" : "save");
 
   async function answer(q: Question, a: Answer) {
-    const current = item;
+    // A question asked from a sheet, not its own card ("a separate part from here"), passes no card.
+    const current = item?.kind === "question" && item.id === q.id ? item : null;
     // Put off again while answering the later ones: it stays aside, nothing to save.
     if (revisit && "option" in a && q.options.find((o) => o.id === a.option)?.later && set.later.some((x) => x.id === q.id)) {
       setSheet(null);
@@ -536,11 +538,14 @@ export function AskSession({
   })();
 
   const fixRow = fix ? rowById(fix.id) : null;
+  // T2: any line but its part's first can start a part of its own; the sheet asks what it is.
+  const splitHere = fix ? splitHereQuestion({ page: review.page.values, rows: review.rows }, fix.id) : null;
   return (
     <>
       {screen}
       <AskSheet
         target={sheet}
+        rows={review.rows}
         photo={photo}
         busy={busy}
         onAnswer={(q, a) => void answer(q, a)}
@@ -559,7 +564,22 @@ export function AskSession({
         }}
         onClose={() => setLines(null)}
       />
-      <FixSheet target={fixRow && fix ? { row: fixRow, field: fix.field } : null} photo={photo} hint={fixRow ? lineSentences(i18n, fixRow, review.rows, findings).hint : null} busy={busy} onSave={saveFix} onClose={() => setFix(null)} />
+      <FixSheet
+        target={fixRow && fix ? { row: fixRow, field: fix.field } : null}
+        photo={photo}
+        hint={fixRow ? lineSentences(i18n, fixRow, review.rows, findings).hint : null}
+        busy={busy}
+        onSave={saveFix}
+        onSplit={
+          splitHere
+            ? () => {
+                setFix(null);
+                setSheet({ kind: "answer", question: splitHere, options: splitHere.options, listen: false });
+              }
+            : undefined
+        }
+        onClose={() => setFix(null)}
+      />
       <TypeSheet row={typeFor ? rowById(typeFor) : null} busy={busy} onPick={pickType} onClose={() => setTypeFor(null)} />
     </>
   );

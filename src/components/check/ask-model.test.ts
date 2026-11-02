@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { NormalizedDoubt } from "@/lib/extraction/parse";
 import { answerQuestion } from "@/lib/questions/answer";
-import { buildQuestions } from "@/lib/questions/engine";
+import { buildQuestions, splitHereQuestion } from "@/lib/questions/engine";
 import type { Answer, Question, QuestionInput } from "@/lib/questions/types";
 import type { BlockValues } from "@/lib/ledger/types";
 import { acceptAnswered, acceptRest, answeredLines, blockDone, blockFigures, blockLines, blockRegion, deckItems, deckSet, isBlockReading, itemKey } from "./ask-model";
@@ -158,10 +158,43 @@ describe("ask deck", () => {
       asked.push(q.id);
       ({ after: review, acc } = answered(review, q.id, { option: q.proposed ?? q.options.find((o) => !o.later && !o.local)!.id }, acc));
     }
-    expect(asked).toEqual(["meaning:b1", "opening:b1"]);
+    // T2: "are the lines after the first total Karim's too?" comes right after; "yes" keeps one part.
+    expect(asked).toEqual(["meaning:b1", "split:b1", "opening:b1"]);
     // Only the "before" he gave (none, so ৳0) is accepted; the page's lines all come back to him.
     expect(Object.keys(acc)).toEqual(review.rows.filter((r) => r.id.startsWith("new-")).map((r) => r.id));
     expect(restOf(review, acc, "b1")).toEqual(["r1", "r2", "r3", "r4", "r5", "r6", "r7"]);
+  });
+
+  test("a P1-shaped page: “a separate sale” makes two parts, each with its own quick confirm and stamp", () => {
+    const meaning = answered(karimPage(), "meaning:b1", { option: "yes" });
+    const { after, acc } = answered(meaning.after, "split:b1", { option: "apart" }, meaning.acc);
+    expect(acc).toEqual({});
+    const keys = deckItems(after, buildQuestions(inputOf(after)), acc, new Set()).map(itemKey);
+    expect(keys).toEqual(["question:opening:b1", "stamp:b1", "rest:b2", "stamp:b2"]);
+    expect(restOf(after, acc, "b2")).toEqual(["r4", "r5", "r6", "r7"]);
+    // Once Karim's "before" is answered, his own three lines come on his quick confirm.
+    const opened = answered(after, "opening:b1", { option: "none" }, acc);
+    expect(restOf(opened.after, opened.acc, "b1")).toEqual(["r1", "r2", "r3"]);
+    // Karim owes ৳260 from this page; the separate sale is ৳250 of cash.
+    const parts = blockLines(after);
+    expect(blockFigures(parts[0]!.block, parts[0]!.rows)).toMatchObject({ kind: "account", known: 26000, now: 26000 });
+    expect(blockFigures(parts[1]!.block, parts[1]!.rows)).toEqual({ kind: "total", total: 25000, lines: 4 });
+    const all = acceptRest(after, ["r4", "r5", "r6", "r7"], acc);
+    expect(blockDone(after, buildQuestions(inputOf(after)), all, "b2")).toBe(true);
+  });
+
+  test("lines moved to a new part lose their acceptance; the ones left keep it", () => {
+    const review = karimPage();
+    const accepted = acceptRest(review, ["r1", "r2", "r3", "r4", "r5", "r6", "r7"], {});
+    const q = splitHereQuestion({ page: review.page.values, rows: review.rows }, "r4")!;
+    const choice = { option: "kind:day_sales" };
+    const outcome = answerQuestion(inputOf(review), q.id, q.fp, choice, new Date("2026-11-03T10:00:00Z"));
+    if (!outcome.ok) throw new Error(outcome.error);
+    const after = { page: { ...review.page, values: outcome.after.page }, rows: outcome.after.rows };
+    expect(answeredLines(review, after, q, choice)).toEqual([]);
+    const acc = acceptAnswered(review, after, q, choice, accepted);
+    expect(Object.keys(acc)).toEqual(["r1", "r2", "r3"]);
+    expect(restOf(after, acc, "b2")).toEqual(["r4", "r5", "r6", "r7"]);
   });
 
   test("a doubt answer still accepts its line", () => {

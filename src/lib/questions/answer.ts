@@ -4,18 +4,19 @@
  *
  * An answer never confirms anything. It becomes the same edits a reviewer could make by hand
  * (line values, checked fields, a rejected or added line, the page date, a block's kind or
- * party), saved through the review rows and the page, whose triggers write the audit trail.
+ * party, a part split in two), saved through the review rows and the page, whose triggers write
+ * the audit trail.
  * The answer itself is recorded on the page (`AnswerRecord`). Confirming lines still goes through
  * the approval rules, with whatever problems the answers accepted.
  */
-import { splitPartyPerson } from "@/lib/ledger/blocks";
+import { nextBlockId, splitPartyPerson } from "@/lib/ledger/blocks";
 import { parseWrittenDate } from "@/lib/ledger/dates";
-import type { AnswerRecord, EntryValues, PageValues, ReviewableField } from "@/lib/ledger/types";
+import type { AnswerRecord, BlockValues, EntryValues, PageValues, ReviewableField } from "@/lib/ledger/types";
 import { parseQuantity } from "@/lib/numerals";
 import { lineOrderAfter } from "@/lib/review/line-order";
 import type { ReviewRow } from "@/lib/review/state";
 import { EMPTY_ENTRY, FIELD_TO_VALUE_KEY, MAX_ANSWERS, remainingReviewFields } from "@/lib/review/values";
-import { buildQuestions, deliveryChanges, readsAsNumber } from "./engine";
+import { buildQuestions, deliveryChanges, readsAsNumber, splitChanges, splitHereQuestion, splitLines } from "./engine";
 import type { Answer, Change, Question, QuestionInput } from "./types";
 
 export type ReviewState = { page: PageValues; rows: ReviewRow[] };
@@ -67,6 +68,25 @@ export function applyChanges(state: ReviewState, changes: readonly Change[]): Re
       case "block":
         page = { ...page, blocks: (page.blocks ?? []).map((b) => (b.id === c.block ? { ...b, ...c.values } : b)) };
         break;
+      case "split": {
+        const blocks = page.blocks ?? [];
+        const at = blocks.findIndex((b) => b.id === c.block);
+        const moved = at < 0 ? null : splitLines(rows, c.block, c.from);
+        if (!moved) break;
+        // Written on the same day as the part it came from, so it keeps that part's date.
+        const made: BlockValues = {
+          id: nextBlockId(blocks),
+          kind: c.values.kind,
+          title: c.values.title ?? null,
+          party: c.values.party ?? null,
+          person: c.values.person ?? null,
+          dateText: blocks[at]!.dateText,
+        };
+        page = { ...page, blocks: [...blocks.slice(0, at + 1), made, ...blocks.slice(at + 1)] };
+        const ids = new Set(moved.map((r) => r.id));
+        rows = rows.map((r) => (ids.has(r.id) ? { ...r, values: { ...r.values, block: made.id } } : r));
+        break;
+      }
     }
   }
   return { page, rows };
@@ -142,7 +162,22 @@ function valueChanges(q: Question, raw: string, rows: readonly ReviewRow[], capt
       if (goods.length !== target.entries.length) return { ok: false, error: "stale" };
       return ok(deliveryChanges(goods, target, value));
     }
+    case "split": {
+      // "রহিম" said or typed: the lines from here down are Rahim's account.
+      const { party, person } = splitPartyPerson(value);
+      return ok(splitChanges(rows, target.block, target.from, { kind: target.kind, party, person }));
+    }
   }
+}
+
+/**
+ * A question he asked for rather than one Scriba put to him: "from here, a separate part" (T2),
+ * worked out again from its id, `split:<block>:<line>`. Null when it can't split there now.
+ */
+function askedFor(input: QuestionInput, id: string): Question | null {
+  const m = /^split:[^:]+:(.+)$/.exec(id);
+  const q = m ? splitHereQuestion(input, m[1]!) : null;
+  return q?.id === id ? q : null;
 }
 
 function resolve(q: Question, answer: Answer, input: QuestionInput, now: Date): Resolved {
@@ -168,7 +203,7 @@ export type AnswerOutcome =
  */
 export function answerQuestion(input: QuestionInput, questionId: string, fp: string, answer: Answer, now: Date): AnswerOutcome {
   const before = buildQuestions(input);
-  const q = [...before.questions, ...before.later].find((x) => x.id === questionId);
+  const q = [...before.questions, ...before.later].find((x) => x.id === questionId) ?? askedFor(input, questionId);
   if (!q || q.fp !== fp) return { ok: false, error: "stale" };
   const resolved = resolve(q, answer, input, now);
   if (!resolved.ok) return resolved;

@@ -243,6 +243,7 @@ Documents: P1 `b6a9cbba` (confirmed), P2 `157e7df4` (confirmed), P3 `b4aea1e6`, 
   - "আলাদা বিক্রি" → Karim's part has 3 lines (৳260 due), and the new `day_sales` part's subtotal checks;
   - manual split mid-block; refusal at a first line.
 - **Verify** in Edge (dev-board fixture for the Karim case), bn and en. No live calls.
+- **Result (3 Nov):** done. Moved lines take kinds that fit their new part: in day sales, a credit sale with no name becomes a cash sale (the card says so). A split can't start at or above the part's first *written* line, so a "before" an answer added on top doesn't count. A supplier's account gets "a separate purchase" (→ expenses). Dev board: `/kit/check?step=asks&photo=karim`. Checked in Edge in both languages, $0. See `docs/sessions/T2.md`.
 
 ### T3: the khata's due as "before" (Track B)
 

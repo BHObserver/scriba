@@ -4,7 +4,7 @@
  */
 import type { MessageKey } from "@/lib/i18n/messages";
 import type { PartyKind } from "@/lib/ledger/parties";
-import type { BlockValues, EntryValues, PageValues, ReviewableField } from "@/lib/ledger/types";
+import type { BlockKind, BlockValues, EntryValues, PageValues, ReviewableField } from "@/lib/ledger/types";
 import type { NormalizedDoubt } from "@/lib/extraction/parse";
 import type { MemoForPage } from "@/lib/memo/match";
 import type { ReviewRow } from "@/lib/review/state";
@@ -36,6 +36,11 @@ export const QUESTION_KINDS = [
   "memo_extra",
   /** U4: a figure on the page that the memo gives differently. */
   "memo_differs",
+  /**
+   * T2: lines that may be a part of their own: after an account's first subtotal (asked by code),
+   * or from a line he picked down ("from here, a separate part", never put to him unasked).
+   */
+  "split",
 ] as const;
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 
@@ -55,7 +60,15 @@ export type Change =
   /** Add a line after `after` (null: at the top). */
   | { op: "add"; after: string | null; values: EntryValues }
   | { op: "date"; dateText: string }
-  | { op: "block"; block: string; values: Partial<Omit<BlockValues, "id">> };
+  | { op: "block"; block: string; values: Partial<Omit<BlockValues, "id">> }
+  /**
+   * T2: a new part, just after `block` in the page's order, takes the block's open lines from
+   * `from` to its end. `from` is never the block's first line.
+   */
+  | { op: "split"; block: string; from: string; values: SplitValues };
+
+/** What the new part of a split is. */
+export type SplitValues = { kind: BlockKind; party?: string | null; person?: string | null; title?: string | null };
 
 export type QuestionOption = {
   /** Stable within its question: "yes", "type:cash_sale", "value:1", "later"… */
@@ -80,9 +93,16 @@ export type ValueTarget =
   | { to: "party"; block: string }
   | { to: "date" }
   | { to: "opening"; block: string | null; after: string | null }
-  | { to: "delivery"; block: string; entries: string[]; after: string; type: EntryValues["type"] };
+  | { to: "delivery"; block: string; entries: string[]; after: string; type: EntryValues["type"] }
+  /** T2: the name of whose account the lines from `from` down are: a split into a part of `kind`. */
+  | { to: "split"; block: string; from: string; kind: BlockKind };
 
-export type AnswerInput = { kind: "money" | "quantity" | "text" | "date"; target: ValueTarget };
+export type AnswerInput = {
+  kind: "money" | "quantity" | "text" | "date";
+  target: ValueTarget;
+  /** What typing stands for, when it is one of the answers ("Someone else's account"), not just "Type it". */
+  label?: Sentence;
+};
 
 export type Question = {
   /** Stable while its subject exists: "meaning:b1", "doubt:<row>:amount"… */

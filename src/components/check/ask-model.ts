@@ -120,6 +120,8 @@ export const ANSWER_ACCEPTS = {
   memo: "none",
   // Its lines come from the memo, not the page, and the card can't change their figures.
   memo_extra: "none",
+  // Each part's lines come on that part's quick confirm (T2).
+  split: "none",
 } as const satisfies Record<QuestionKind, "lines" | "changed" | "added" | "none">;
 
 const FIGURES = ["quantityText", "rateText", "amountText", "balanceText"] as const;
@@ -150,12 +152,15 @@ export function answeredLines(before: Review, after: Review, question: Question,
  * only a line he has nothing left to decide on: no blocker, and every problem still on it one he
  * chose to keep ("it's written that way"). A line that still shows a problem comes back as its
  * own card. Checks that couldn't run (a balance waiting for a price) are accepted with it, as
- * the card that follows shows the open due.
+ * the card that follows shows the open due. A line the answer moved to another part (T2) loses
+ * its acceptance: it is looked at again in its new part.
  */
 export function acceptAnswered(before: Review, after: Review, question: Question, answer: Answer, acceptances: Acceptances): Acceptances {
   const { findings, entries } = checkReview(after);
   const kept = acceptedFindings(after.page.values);
   const out = { ...acceptances };
+  const part = new Map(before.rows.map((r) => [r.id, r.values.block ?? null]));
+  for (const r of after.rows) if (part.has(r.id) && part.get(r.id) !== (r.values.block ?? null)) delete out[r.id];
   for (const id of answeredLines(before, after, question, answer)) {
     const row = after.rows.find((r) => r.id === id);
     const entry = entries.get(id);

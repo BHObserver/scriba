@@ -53,6 +53,11 @@ export function groupByBlock<T extends { values: EntryValues }>(page: PageValues
   return groups;
 }
 
+/** The id for a block made after the reading (a split part, T2): one past the highest `bN` on the page. */
+export function nextBlockId(blocks: readonly BlockValues[]): string {
+  return `b${Math.max(0, ...blocks.map((b) => Number(/^b(\d+)$/.exec(b.id)?.[1] ?? 0))) + 1}`;
+}
+
 /** Goods with no price yet: an item is written and no amount. Never counted as zero. */
 export function isUnpricedGoods(values: EntryValues): boolean {
   return (values.item?.trim().length ?? 0) > 0 && (values.amountText?.trim().length ?? 0) === 0;

@@ -12,8 +12,8 @@
  * as it is is remembered on the page (see `AnswerRecord`) until that value changes.
  *
  * Order: block by block down the page, as the check screen walks it. In each block, what it is
- * first (it decides the party and the checks), then line by line, then its sums; the page's date
- * last.
+ * first (it decides the party and the checks) and whether it is all one part (T2), then line by
+ * line, then its sums; the page's date last.
  *
  * U4: a company memo photographed with the page proposes the prices of the visit's goods. Code
  * links the memo to its visit by name (or asks), pairs its lines with the handwritten goods, and
@@ -28,6 +28,7 @@ import {
   type BlockKind,
   type BlockValues,
   type EntryValues,
+  type PageValues,
   type ReviewableField,
   type TransactionType,
   MARKER_TYPES,
@@ -38,10 +39,10 @@ import type { MemoLine } from "@/lib/memo/parse";
 import { formatTaka, parseMoney, parseQuantity, parseRate } from "@/lib/numerals";
 import { ackFingerprint } from "@/lib/review/approval";
 import { type ReviewRow, toValidationInput } from "@/lib/review/state";
-import { EMPTY_ENTRY, FIELD_TO_VALUE_KEY } from "@/lib/review/values";
+import { EMPTY_ENTRY, FIELD_TO_VALUE_KEY, MAX_BLOCKS } from "@/lib/review/values";
 import { type Finding, accountSign, deriveNumbers, validateLedger } from "@/lib/validation/engine";
 import { soundsAlike } from "./similar";
-import type { Change, KnownParty, MemoRef, Question, QuestionInput, QuestionOption, QuestionSet, Sentence, SentenceArg, Why } from "./types";
+import type { Change, KnownParty, MemoRef, Question, QuestionInput, QuestionOption, QuestionSet, Sentence, SentenceArg, SplitValues, Why } from "./types";
 
 /** FNV-1a over the parts: a short, stable fingerprint of what a question is about. */
 export function fingerprint(parts: ReadonlyArray<string | number | null | undefined>): string {
@@ -519,6 +520,142 @@ function unbalancedQuestion(ctx: Ctx, f: Finding): Question | null {
     entries: rows.map((r) => r.id),
     sentence: { key, args: [{ money: f.expected }, { money: f.observed }] },
     options,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Splitting a part (T2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The lines a split at `from` moves to the new part: the block's lines from `from` to its end, in
+ * page order (a rejected line stays where it is). Null when it can't split there: `from` isn't one
+ * of the block's lines, or is at or above its first written line (what a part is, is the meaning
+ * question's job; a "before" an answer added on top doesn't count), or a line from there down is
+ * already in the khata.
+ */
+export function splitLines(rows: readonly ReviewRow[], block: string, from: string): ReviewRow[] | null {
+  const own = rows.filter((r) => r.values.block === block && r.status !== "rejected").sort((a, b) => a.lineOrder - b.lineOrder);
+  const at = own.findIndex((r) => r.id === from);
+  const written = Math.max(0, own.findIndex((r) => r.candidate != null));
+  if (at <= written) return null;
+  const moved = own.slice(at);
+  return moved.every((r) => r.status === "draft") ? moved : null;
+}
+
+const DAY_SALES_TYPES: ReadonlySet<TransactionType> = new Set(["cash_sale", "credit_sale", "repayment", "subtotal"]);
+const EXPENSE_TYPES: ReadonlySet<TransactionType> = new Set(["expense", "purchase", "supplier_payment", "subtotal"]);
+
+/**
+ * A line's kind in the part it moves to. In day sales or expenses, a sale or a purchase on nobody's
+ * account was paid there and then; a kind that can't be in the part becomes unknown, so Scriba asks.
+ * An account or "something else" keeps the kinds: the line-kind questions ask about any that point
+ * the other way.
+ */
+function kindIn(kind: BlockKind, values: EntryValues): TransactionType {
+  const type = values.type;
+  const named = (values.customer?.trim().length ?? 0) > 0;
+  if (kind === "day_sales") {
+    if (type === "credit_sale" && !named) return "cash_sale";
+    return DAY_SALES_TYPES.has(type) && (type !== "repayment" || named) ? type : "unknown";
+  }
+  if (kind === "expenses") {
+    if (type === "credit_purchase" && !named) return "purchase";
+    return EXPENSE_TYPES.has(type) ? type : "unknown";
+  }
+  return type;
+}
+
+/** A split at `from`, and the kinds its lines take in the new part (`kindIn`). */
+export function splitChanges(rows: readonly ReviewRow[], block: string, from: string, values: SplitValues): Change[] {
+  const retyped = (splitLines(rows, block, from) ?? []).flatMap((r): Change[] => {
+    const type = kindIn(values.kind, r.values);
+    return type === r.values.type ? [] : [{ op: "edit", entry: r.id, values: { type } }];
+  });
+  return [{ op: "split", block, from, values }, ...retyped];
+}
+
+/** The words of the split question by the account's side, and the parts its answers make. */
+const SPLIT_WORDS: Record<PartyKind, { apart: MessageKey; cash: MessageKey; other: MessageKey; apartKind: BlockKind; cashType: TransactionType; otherKind: BlockKind }> = {
+  customer: { apart: "q.split.sale", cash: "q.split.sale.cash", other: "q.split.other.customer", apartKind: "day_sales", cashType: "cash_sale", otherKind: "customer_account" },
+  supplier: { apart: "q.split.purchase", cash: "q.split.purchase.cash", other: "q.split.other.supplier", apartKind: "expenses", cashType: "purchase", otherKind: "supplier_account" },
+};
+
+/**
+ * "Are the 3 lines after “মোট ২৬০” (৳250) Karim's too?" An account with two or more written
+ * totals, whose lines after the first name no one, may be two things written one under the other:
+ * the account, then a separate sale. Each total can check on its own, so the sums don't show it.
+ * Code works out the count and the sum. Asked right after the part's meaning.
+ */
+function splitQuestion(ctx: Ctx, g: Group, open: readonly ReviewRow[]): Question | null {
+  const block = g.block;
+  if (!block || (block.kind !== "customer_account" && block.kind !== "supplier_account")) return null;
+  const who = whoOf(block);
+  const totals = open.filter((r) => r.values.type === "subtotal" && r.values.amountText?.trim());
+  if (!who || totals.length < 2 || (ctx.input.page.blocks ?? []).length >= MAX_BLOCKS) return null;
+  const first = totals[0]!;
+  const after = g.entries.filter((r) => r.lineOrder > first.lineOrder);
+  const lines = after.filter((r) => isOpen(r) && !MARKER_TYPES.has(r.values.type));
+  if (lines.length === 0 || after.some((r) => r.values.customer?.trim())) return null;
+  const from = after[0]!;
+  const moved = splitLines(ctx.rows, block.id, from.id);
+  if (!moved) return null;
+
+  const words = SPLIT_WORDS[blockPartyKind(block.kind)!];
+  const amounts = lines.map(amountOf);
+  const sum = amounts.every((n) => n != null) ? amounts.reduce<number>((s, n) => s + n!, 0) : null;
+  const cash = lines.every((r) => kindIn(words.apartKind, r.values) === words.cashType);
+  return question({
+    id: `split:${block.id}`,
+    kind: "split",
+    fp: fingerprint([block.kind, first.id, ...moved.map((r) => r.id)]),
+    block: block.id,
+    entry: null,
+    field: null,
+    // The first total too, so the picture shows what the lines come after.
+    entries: [first.id, ...moved.map((r) => r.id)],
+    sentence:
+      sum != null
+        ? { key: "q.split", args: [quote(first), { count: lines.length }, { money: sum }, who] }
+        : { key: "q.split.nosum", args: [quote(first), { count: lines.length }, who] },
+    why: { sentence: { key: "q.split.why" }, verified: false },
+    options: [
+      { id: "yes", label: { key: "q.split.yes", args: [who] }, changes: [] },
+      {
+        id: "apart",
+        label: { key: words.apart },
+        ...(cash ? { detail: { key: words.cash } } : {}),
+        changes: splitChanges(ctx.rows, block.id, from.id, { kind: words.apartKind }),
+      },
+    ],
+    input: { kind: "text", target: { to: "split", block: block.id, from: from.id, kind: words.otherKind }, label: { key: words.other } },
+  });
+}
+
+/**
+ * "From here down, a separate part" (T2): put to him only when he picks a line in its fix sheet,
+ * never in the deck. The answer route works it out again from its id, `split:<block>:<line>`. Null
+ * where a split can't start: a part's first line, a line in no part, a page with all its parts.
+ */
+export function splitHereQuestion(state: { page: PageValues; rows: readonly ReviewRow[] }, entry: string): Question | null {
+  const blocks = state.page.blocks ?? [];
+  const row = state.rows.find((r) => r.id === entry);
+  const block = row?.values.block ? blocks.find((b) => b.id === row.values.block) : undefined;
+  if (!block || blocks.length >= MAX_BLOCKS) return null;
+  const moved = splitLines(state.rows, block.id, entry);
+  if (!moved) return null;
+  const option = (kind: BlockKind): QuestionOption => ({ id: `kind:${kind}`, label: { key: KIND_LABEL[kind] }, changes: splitChanges(state.rows, block.id, entry, { kind }) });
+  return question({
+    id: `split:${block.id}:${entry}`,
+    kind: "split",
+    fp: fingerprint([block.kind, ...moved.map((r) => r.id)]),
+    block: block.id,
+    entry,
+    field: null,
+    entries: moved.map((r) => r.id),
+    sentence: { key: "q.split.here", args: [{ count: moved.length }] },
+    options: [option("day_sales"), option("expenses"), option("other")],
+    input: { kind: "text", target: { to: "split", block: block.id, from: entry, kind: "customer_account" }, label: { key: "q.split.other.customer" } },
   });
 }
 
@@ -1158,6 +1295,7 @@ export function buildQuestions(input: QuestionInput): QuestionSet {
 
     if (block) {
       add(meaningQuestion(block, open, ctx.memos.get(block.id)));
+      add(splitQuestion(ctx, g, open));
       const party = block.party?.trim();
       if (blockParty && party) {
         const link = partyLinkFor({ ...open[0]!.values, type: "opening_balance" }, page, ctx.pageTypes);
