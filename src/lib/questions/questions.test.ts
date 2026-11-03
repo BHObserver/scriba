@@ -29,7 +29,7 @@ import { bookPartiesOf, buildQuestions, splitHereQuestion, writtenDay } from "./
 import { romanize, soundsAlike } from "./similar";
 import { spokenAnswer } from "./speech";
 import { sentenceText } from "./text";
-import type { Answer, KnownParty, Question, QuestionInput } from "./types";
+import { type Answer, type KnownParty, MAX_FINGERPRINT, MAX_OPTION_ID, MAX_QUESTION_ID, type Question, type QuestionInput } from "./types";
 
 const V3 = { promptVersion: BLOCKS_PROMPT_VERSION, schemaVersion: SCHEMA_V3_VERSION };
 const NOW = new Date("2026-11-02T10:00:00Z");
@@ -754,23 +754,24 @@ describe("sums that don't come out", () => {
     line("e3", "b1", "Now - 1400", "closing_balance", { amount: "1400" }),
   ];
   const start = inputOf(read({ blocks: [VISIT], entries: lines, date: "1/11/26" }));
+  const OFF = buildQuestions(start).questions.find((q) => q.kind === "unbalanced")!.id;
 
   test("shows what code worked out and what is written", () => {
-    const q = find(start, "off:balance_equation:r1,r2,r3:b1");
+    const q = find(start, OFF);
     expect(sentenceText(en, q.sentence)).toBe("It doesn't add up: the lines give ৳1,300, but ৳1,400 is written.");
     expect(q.options.map((o) => o.id)).toEqual(["use", "keep", "look"]);
     expect(q.proposed).toBeNull();
   });
 
   test("“use” writes code's figure on the closing line", () => {
-    const next = answer(start, "off:balance_equation:r1,r2,r3:b1", { option: "use" });
+    const next = answer(start, OFF, { option: "use" });
     expect(row(next, "r3").values.amountText).toBe("1300");
     expect(findings(next).find((f) => f.ruleId === "balance_equation")?.status).toBe("pass");
   });
 
   test("“keep” accepts the problem as written, for the approval rules", () => {
-    const next = answer(start, "off:balance_equation:r1,r2,r3:b1", { option: "keep" });
-    expect(ids(next)).not.toContain("off:balance_equation:r1,r2,r3:b1");
+    const next = answer(start, OFF, { option: "keep" });
+    expect(ids(next)).not.toContain(OFF);
     const accepted = [...acceptedFindings(next.page)];
     expect(accepted).toHaveLength(1);
     const input = toValidationInput({ page: { values: next.page, version: 1, reviewStartedAt: null }, rows: next.rows });
@@ -779,8 +780,24 @@ describe("sums that don't come out", () => {
   });
 
   test("“show me the lines” saves nothing", () => {
-    const q = find(start, "off:balance_equation:r1,r2,r3:b1");
+    const q = find(start, OFF);
     expect(answerQuestion(start, q.id, q.fp, { option: "look" }, NOW)).toEqual({ ok: false, error: "local" });
+  });
+
+  test("ids and fingerprints fit the answer route with real line ids (F2: “keep” was refused)", () => {
+    const real = (input: QuestionInput): QuestionInput => ({
+      ...input,
+      rows: input.rows.map((r, i) => ({ ...r, id: `6f1c2a3b-0000-4000-8000-${String(i + 1).padStart(12, "0")}` })),
+    });
+    for (const input of [real(start), real(inputOf(read()))]) {
+      const set = buildQuestions(input);
+      for (const q of [...set.questions, ...set.later]) {
+        expect([q.id, q.id.length <= MAX_QUESTION_ID, q.fp.length <= MAX_FINGERPRINT]).toEqual([q.id, true, true]);
+        for (const o of q.options) expect([o.id, o.id.length <= MAX_OPTION_ID]).toEqual([o.id, true]);
+      }
+    }
+    const q = buildQuestions(real(start)).questions.find((x) => x.kind === "unbalanced")!;
+    expect(answerQuestion(real(start), q.id, q.fp, { option: "keep" }, NOW).ok).toBe(true);
   });
 });
 

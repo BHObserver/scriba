@@ -2,14 +2,15 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { type AnswerError, answerQuestion } from "@/lib/questions/answer";
 import { buildQuestions } from "@/lib/questions/engine";
+import { MAX_FINGERPRINT, MAX_OPTION_ID, MAX_QUESTION_ID } from "@/lib/questions/types";
 import { UUID_RE, apiUser, jsonError } from "@/lib/server/auth";
 import { loadQuestionInput, saveAnswer } from "@/lib/server/questions-data";
 
 const bodySchema = z.object({
-  question: z.string().min(1).max(120),
+  question: z.string().min(1).max(MAX_QUESTION_ID),
   /** The fingerprint of the question as it was shown. */
-  fingerprint: z.string().min(1).max(40),
-  answer: z.union([z.object({ option: z.string().min(1).max(60) }), z.object({ value: z.string().min(1).max(200) })]),
+  fingerprint: z.string().min(1).max(MAX_FINGERPRINT),
+  answer: z.union([z.object({ option: z.string().min(1).max(MAX_OPTION_ID) }), z.object({ value: z.string().min(1).max(200) })]),
 });
 
 const ERRORS: Record<AnswerError, { status: number; message: string }> = {

@@ -630,10 +630,11 @@ function unbalancedQuestion(ctx: Ctx, f: Finding): Question | null {
   options.push({ id: "look", label: { key: "q.off.look" }, changes: [], local: true });
 
   const key: MessageKey = f.ruleId === "qty_x_rate" ? "q.off.qty" : f.ruleId === "written_total" ? "q.off.total" : "q.off.balance";
+  // Hashed: the finding's key lists every line id, too long for the answer route (F2, 4 Nov).
   return question({
-    id: `off:${f.key}`,
+    id: `off:${fingerprint([f.key])}`,
     kind: "unbalanced",
-    fp: ackFingerprint(f),
+    fp: fingerprint([ackFingerprint(f)]),
     block: f.block ?? null,
     entry: target.row?.id ?? null,
     field: target.row ? target.field : null,

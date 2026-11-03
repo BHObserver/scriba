@@ -109,6 +109,11 @@ export type AnswerInput = {
   label?: Sentence;
 };
 
+/** The answer route refuses longer ones: an id or fingerprint built from line ids must be hashed. */
+export const MAX_QUESTION_ID = 120;
+export const MAX_OPTION_ID = 60;
+export const MAX_FINGERPRINT = 40;
+
 export type Question = {
   /** Stable while its subject exists: "meaning:b1", "doubt:<row>:amount"… */
   id: string;
