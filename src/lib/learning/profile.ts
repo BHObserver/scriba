@@ -25,6 +25,14 @@ export type LearningSample = {
   confirmed: NumberTexts & { item: string | null; unit: string | null };
   /** The line can be cut from a real photo: it has a box and its page isn't a sample page. */
   hasCrop: boolean;
+  /**
+   * A written total (subtotal or closing balance). He often changes a total that was written
+   * wrong, which says nothing about how a digit was read, so a changed total teaches no swap
+   * and is never a reference (T6: P2's মোট ১৫০ → ১৪০ would have taught "৪ read as ৫").
+   */
+  sum?: boolean;
+  /** The demo seed wrote the page: its "misreads" were never a reading, so the model never hears of them. */
+  seeded?: boolean;
 };
 
 export type DigitSwap = { written: number; read: number };
@@ -76,6 +84,9 @@ export function digitSwaps(read: string | null, confirmed: string | null): Digit
   return swaps.length <= Math.max(1, Math.floor(a.length / 2)) ? swaps : [];
 }
 
+/** A total he changed: maybe a misread, maybe a sum written wrong on the page. Nothing to learn from. */
+const changedTotal = (s: LearningSample) => !!s.sum && correctedFields(s).length > 0;
+
 /** The number fields he changed on a line the model read. */
 export function correctedFields(sample: LearningSample): NumberField[] {
   const read = sample.read;
@@ -93,6 +104,14 @@ export function describeLine(c: LearningSample["confirmed"]): string {
     c.balanceText ? `balance ${c.balanceText}` : null,
   ];
   return parts.filter(Boolean).join(" · ");
+}
+
+/**
+ * What the model may learn from: his own readings, never the demo seed's made-up misreads.
+ * In the demo shop the seed teaches "৬ read as ৩", the opposite of the real writer's mix-up (T6).
+ */
+export function realReadings(samples: readonly LearningSample[]): LearningSample[] {
+  return samples.filter((s) => !s.seeded);
 }
 
 const newestFirst = (a: LearningSample, b: LearningSample) =>
@@ -113,7 +132,7 @@ export function buildWriterProfile(
   let learnedFrom = 0;
   for (const s of samples) {
     const swaps: DigitSwap[] = [];
-    for (const f of correctedFields(s)) {
+    for (const f of changedTotal(s) ? [] : correctedFields(s)) {
       const found = digitSwaps(s.read![f], s.confirmed[f]);
       if (found.length > 0) learnedFrom++;
       swaps.push(...found);
@@ -164,7 +183,7 @@ function pickReferences(
   const rank = (s: LearningSample) =>
     (swapsOf.get(s.recordId)?.length ? 0 : 2) + ([...digits(s)].some((d) => hard.has(d)) ? 0 : 1);
   const usable = samples
-    .filter((s) => s.hasCrop && s.confirmed.amountText && describeLine(s.confirmed).length > 0)
+    .filter((s) => s.hasCrop && !changedTotal(s) && s.confirmed.amountText && describeLine(s.confirmed).length > 0)
     .map((s, i) => ({ s, i, r: rank(s) }))
     .sort((a, b) => a.r - b.r || a.i - b.i)
     .map((x) => x.s);

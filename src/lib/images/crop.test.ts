@@ -4,8 +4,17 @@ import { CROP_WIDTH, cropBlocksForReading, lineRect, stackLineCrops } from "./cr
 
 describe("lineRect", () => {
   test("maps the 0–1000 grid to pixels with padding, clamped to the photo", () => {
-    expect(lineRect({ x_min: 100, y_min: 500, x_max: 900, y_max: 540 }, 2000, 1000)).toEqual({ left: 180, top: 488, width: 1640, height: 64 });
+    expect(lineRect({ x_min: 100, y_min: 500, x_max: 500, y_max: 540 }, 2000, 1000)).toEqual({ left: 180, top: 488, width: 940, height: 64 });
+    expect(lineRect({ x_min: 100, y_min: 500, x_max: 900, y_max: 540 }, 2000, 1000)).toEqual({ left: 180, top: 488, width: 1820, height: 64 });
     expect(lineRect({ x_min: 0, y_min: 0, x_max: 1000, y_max: 30 }, 1000, 1000)).toEqual({ left: 0, top: 0, width: 1000, height: 39 });
+  });
+
+  test("leaves room on the right for a figure the model's box stops short of (T6)", () => {
+    // P4-like: রহিমা জমা ২৫০ read 115–515; its last ০ ends near 540.
+    const r = lineRect({ x_min: 115, y_min: 915, x_max: 515, y_max: 970 }, 1000, 1000)!;
+    expect(r.left + r.width).toBe(575);
+    // A short line still gets the old padding.
+    expect(lineRect({ x_min: 100, y_min: 500, x_max: 140, y_max: 540 }, 1000, 1000)!.width).toBe(60);
   });
 
   test("puts swapped corners in order and refuses empty boxes", () => {

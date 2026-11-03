@@ -186,11 +186,11 @@ export async function analyzeDocument(
 
   // A memo is read with the memo prompt alone: no writer's notes, no khata layout, one call.
   const memo = doc.kind === "memo";
-  // Personal notes only ride on prompt 4; a failure to build them means a plain reading.
+  // Personal notes ride on prompts 4 and 6 (as 5 and 7); a failure to build them means a plain reading.
   const personalProfile = deps.personalize && !memo ? getPersonalProfile() : null;
   const personal = personalProfile ? await deps.personalize!(doc).catch(() => null) : null;
   const layout = memo ? "free" : (request.layout ?? layoutOfPromptVersion(await repo.latestPromptVersion(doc.id)));
-  // Two-pass rides on prompt 6 only; the khata layout and the writer's notes on prompt 4 only.
+  // Two-pass rides on plain prompt 6 only: a khata page or one with the writer's notes is read in one call.
   const { promptVersion, schemaVersion } = memo
     ? MEMO_PROFILE
     : withTwoPass(withLayout(personal ? personalProfile! : getExtractionProfile(), layout));

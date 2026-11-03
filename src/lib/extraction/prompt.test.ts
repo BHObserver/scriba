@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { MONEY_OUT_TYPES } from "@/lib/ledger/types";
 import { buildExtractionRequest } from "@/lib/meta/transport";
 import {
+  LINES_PROMPT_VERSION,
   PERSONAL_PAGE_TEXT,
   PROMPT_VERSION,
   getExtractionProfile,
@@ -11,19 +12,31 @@ import {
   layoutOfPromptVersion,
   personalUserText,
   withLayout,
+  withTwoPass,
 } from "./prompt";
 
 const typeEnum = (schema: Record<string, unknown>) =>
   (schema as { properties: { entries: { items: { properties: { type: { enum: string[] } } } } } }).properties.entries.items.properties.type.enum;
 
 describe("extraction profiles", () => {
+  // Prompt 4 and the prompts built on it (5, its khata layout); the default is checked on its own.
+  beforeEach(() => {
+    process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-4";
+  });
   afterEach(() => {
     delete process.env.SCRIBA_PROMPT_VERSION;
   });
 
-  test("prompt 4 with schema 2 is the default, and teaches every money-out type", () => {
+  test("prompt 6 with schema 3 is the default since T6; prompt 4 stays selectable", () => {
+    delete process.env.SCRIBA_PROMPT_VERSION;
+    expect(getExtractionProfile()).toMatchObject({ promptVersion: PROMPT_VERSION, schemaVersion: "scriba-extraction-3" });
+    expect(PROMPT_VERSION).toBe("scriba-prompt-6");
+    process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-4";
+    expect(getExtractionProfile()).toMatchObject({ promptVersion: LINES_PROMPT_VERSION, schemaVersion: "scriba-extraction-2" });
+  });
+
+  test("prompt 4 with schema 2 teaches every money-out type", () => {
     const p = getExtractionProfile();
-    expect(p.promptVersion).toBe(PROMPT_VERSION);
     expect(p.promptVersion).toBe("scriba-prompt-4");
     expect(p.schemaVersion).toBe("scriba-extraction-2");
     for (const t of MONEY_OUT_TYPES) {
@@ -81,9 +94,32 @@ describe("extraction profiles", () => {
     expect(plain.input[0]!.content).toHaveLength(2);
   });
 
-  test("prompt 5 needs prompt 4 underneath", () => {
+  test("the writer's notes need prompt 4 or 6 underneath", () => {
     process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-3";
     expect(getPersonalProfile()).toBeNull();
+  });
+
+  test("prompt 7 is prompt 6 plus the writer rules, sent like prompt 5, and is never two-pass", () => {
+    process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-6";
+    process.env.SCRIBA_TWO_PASS = "1";
+    try {
+      const p7 = getPersonalProfile()!;
+      expect(p7.promptVersion).toBe("scriba-prompt-7");
+      expect(withTwoPass(p7).promptVersion).toBe("scriba-prompt-7");
+      const notes = { text: "notes", reference: { imageBytes: new Uint8Array([2]), mimeType: "image/jpeg" } };
+      const request = buildExtractionRequest(
+        { modelId: "m", reasoningEffort: "low", maxOutputTokens: 100 },
+        { imageBytes: new Uint8Array([1]), mimeType: "image/png", personal: notes, layout: "scriba_khata" },
+      );
+      expect(request.instructions).toBe(withLayout(p7, "scriba_khata").instructions);
+      expect(request.text.format.name).toBe("scriba_ledger_extraction_v3");
+      expect(request.input[0]!.content.map((c) => c.type)).toEqual(["input_text", "input_image", "input_text", "input_image"]);
+      // Prompt 5's own text is unchanged by sharing its writer rules with prompt 7.
+      process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-4";
+      expect(getPersonalProfile()!.instructions).toEndWith("give your best reading and list that field in review.");
+    } finally {
+      delete process.env.SCRIBA_TWO_PASS;
+    }
   });
 
   test("a Scriba khata page adds its column layout to prompts 4 and 5, and its version says so", () => {
@@ -114,15 +150,19 @@ describe("extraction profiles", () => {
     const html = readFileSync(join(import.meta.dir, "..", "..", "..", "scripts", "khata", "page.html"), "utf8");
     const headings = [...html.matchAll(/<th>([^<]+)<\/th>/g)].map((m) => m[1]!);
     expect(headings).toHaveLength(7);
-    const columns = withLayout(getExtractionProfile(), "scriba_khata").instructions.match(/^- Columns, left to right: (.+)\.$/m)![1]!;
-    expect(columns.split(" | ").map((c) => c.replace(/ \(.+\)$/, ""))).toEqual(headings);
-    for (const label of ["আগের পাতা থেকে জের", "মোট · পরের পাতায় জের", "বা জ", "Scriba খাতা", "দোকান", "পাতা নং"]) {
-      expect(html).toContain(label);
-      expect(withLayout(getExtractionProfile(), "scriba_khata").instructions).toContain(label);
+    for (const base of ["scriba-prompt-4", "scriba-prompt-6"]) {
+      process.env.SCRIBA_PROMPT_VERSION = base;
+      const layout = withLayout(getExtractionProfile(), "scriba_khata").instructions;
+      const columns = layout.match(/^- Columns, left to right: (.+)\.$/m)![1]!;
+      expect(columns.split(" | ").map((c) => c.replace(/ \(.+\)$/, ""))).toEqual(headings);
+      for (const label of ["আগের পাতা থেকে জের", "মোট · পরের পাতায় জের", "বা জ", "Scriba খাতা", "দোকান", "পাতা নং"]) {
+        expect(html).toContain(label);
+        expect(layout).toContain(label);
+      }
     }
   });
 
-  test("the khata layout needs prompt 4 or 5 underneath", () => {
+  test("the khata layout needs prompts 4 to 7 underneath", () => {
     process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-3";
     const p3 = getExtractionProfile();
     expect(withLayout(p3, "scriba_khata")).toBe(p3);

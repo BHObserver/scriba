@@ -198,7 +198,7 @@ if (withPhotos) {
   for (const [i, { id, response }] of PHOTO_PAGES.entries()) {
     const bytes = new Uint8Array(readFileSync(`private-test-data/ledger-snippets/${id}.jpg`));
     const saved = JSON.parse(readFileSync(`private-test-data/responses/${response}`, "utf8"));
-    const parsed = parseModelResponse(saved.result.summary);
+    const parsed = parseModelResponse(saved.result.summary, { promptVersion: saved.promptVersion, schemaVersion: saved.schemaVersion });
     if (!parsed.ok) throw new Error(`${id}: the stored reading doesn't parse`);
     const { width = 0, height = 0 } = await sharp(bytes).rotate().metadata().then((m) => (m.orientation && m.orientation >= 5 ? { width: m.height, height: m.width } : m));
     const path = `${owner}/demo/${id}.jpg`;

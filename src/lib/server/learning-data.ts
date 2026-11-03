@@ -3,8 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { learningEnabled } from "@/lib/config";
 import type { Personalizer } from "@/lib/extraction/pipeline";
 import { personalUserText } from "@/lib/extraction/prompt";
-import { type LearningSample, buildWriterProfile, personalHints } from "@/lib/learning/profile";
-import { hasPhoto } from "@/lib/shop/rows";
+import { type LearningSample, buildWriterProfile, personalHints, realReadings } from "@/lib/learning/profile";
+import { hasPhoto, isSeededPage } from "@/lib/shop/rows";
 import { cutConfirmedLines } from "./line-crops";
 
 /** His newest confirmed lines are what the profile learns from. */
@@ -19,6 +19,7 @@ type SampleRow = {
   id: string;
   document_id: string;
   confirmed_at: string;
+  transaction_type: string;
   item_name: string | null;
   unit: string | null;
   quantity_text: string | null;
@@ -40,7 +41,7 @@ export async function loadLearningSamples(supabase: SupabaseClient): Promise<Lea
     supabase
       .from("confirmed_records")
       .select(
-        "id, document_id, confirmed_at, item_name, unit, quantity_text, unit_rate_text, amount_text, balance_text, extracted_entries(quantity_text, unit_rate_text, amount_text, balance_text, bbox)",
+        "id, document_id, confirmed_at, transaction_type, item_name, unit, quantity_text, unit_rate_text, amount_text, balance_text, extracted_entries(quantity_text, unit_rate_text, amount_text, balance_text, bbox)",
       )
       .order("confirmed_at", { ascending: false })
       .range(0, SAMPLE_LIMIT - 1),
@@ -48,6 +49,7 @@ export async function loadLearningSamples(supabase: SupabaseClient): Promise<Lea
   ]);
   if (records.error || docs.error) throw new Error("Could not read the lines to learn from.");
   const withPhoto = new Set((docs.data ?? []).filter(hasPhoto).map((d) => d.id as string));
+  const seeded = new Set((docs.data ?? []).filter(isSeededPage).map((d) => d.id as string));
   return (records.data as unknown as SampleRow[]).map((r) => {
     const e = r.extracted_entries;
     return {
@@ -64,6 +66,8 @@ export async function loadLearningSamples(supabase: SupabaseClient): Promise<Lea
         balanceText: r.balance_text,
       },
       hasCrop: !!e?.bbox && withPhoto.has(r.document_id),
+      sum: r.transaction_type === "subtotal" || r.transaction_type === "closing_balance",
+      seeded: seeded.has(r.document_id),
     };
   });
 }
@@ -81,13 +85,13 @@ export async function setLearningSwitch(supabase: SupabaseClient, on: boolean): 
 }
 
 /**
- * Prompt 5's notes for one page: learned from every other page he confirmed, never from the
- * page being read. The reference image is cut now, before the cache key is made, so the key
- * always matches what is sent; if it can't be cut, the notes go without it.
+ * The notes for one page (prompt 5 or 7): learned from every other page he confirmed, never
+ * from the page being read or a seeded page. The reference image is cut now, before the cache
+ * key is made, so the key always matches what is sent; if it can't be cut, the notes go without it.
  */
 export function createPersonalizer(supabase: SupabaseClient): Personalizer {
   return async (doc) => {
-    const profile = buildWriterProfile(await loadLearningSamples(supabase), { excludeDocumentId: doc.id });
+    const profile = buildWriterProfile(realReadings(await loadLearningSamples(supabase)), { excludeDocumentId: doc.id });
     let hints = personalHints(profile);
     if (!hints) return null;
     let reference: { imageBytes: Uint8Array; mimeType: string } | null = null;
@@ -109,13 +113,15 @@ export type LearningPanel = {
   confusions: Array<{ written: number; read: number; count: number; exampleId: string | null }>;
   corrected: { numbers: number; pages: number };
   learnedFrom: number;
-  /** The lines prompt 5 would show the model, as confirmed record ids. */
+  /** The lines the notes would show the model, as confirmed record ids. */
   references: string[];
 };
 
+/** The sample shop's panel shows its seeded mix-ups; the reference strip is exactly what the model is shown. */
 export async function loadLearningPanel(supabase: SupabaseClient): Promise<LearningPanel> {
   const [samples, on] = await Promise.all([loadLearningSamples(supabase), learningSwitchOn(supabase)]);
   const profile = buildWriterProfile(samples);
+  const sent = buildWriterProfile(realReadings(samples));
   const croppable = new Set(samples.filter((s) => s.hasCrop).map((s) => s.recordId));
   return {
     available: learningEnabled(),
@@ -128,6 +134,6 @@ export async function loadLearningPanel(supabase: SupabaseClient): Promise<Learn
     })),
     corrected: profile.corrected,
     learnedFrom: profile.learnedFrom,
-    references: profile.references.map((r) => r.recordId),
+    references: sent.references.map((r) => r.recordId),
   };
 }

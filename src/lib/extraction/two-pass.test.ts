@@ -255,7 +255,7 @@ describe("two-pass prompts", () => {
     process.env.SCRIBA_TWO_PASS = "1";
     expect(withTwoPass(getExtractionProfile())).toMatchObject({ promptVersion: "scriba-prompt-6+2pass-1", schemaVersion: SCHEMA_V3_VERSION });
     expect(isTwoPassVersion(withTwoPass(getExtractionProfile()).promptVersion)).toBe(true);
-    delete process.env.SCRIBA_PROMPT_VERSION;
+    process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-4";
     expect(withTwoPass(getExtractionProfile()).promptVersion).toBe("scriba-prompt-4");
     expect(withTwoPass(withLayout(getExtractionProfile(), "scriba_khata")).promptVersion).toBe("scriba-prompt-4+khata-1");
     expect(isTwoPassVersion("scriba-prompt-4+khata-1")).toBe(false);

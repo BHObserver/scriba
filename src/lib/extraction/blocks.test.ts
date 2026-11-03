@@ -285,9 +285,7 @@ describe("prompt 6", () => {
     delete process.env.SCRIBA_PROMPT_VERSION;
   });
 
-  test("is selectable with schema 3; prompt 4 stays the default", () => {
-    expect(getExtractionProfile().promptVersion).toBe("scriba-prompt-4");
-    process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-6";
+  test("is the default since T6, with schema 3", () => {
     const p = getExtractionProfile();
     expect(p).toMatchObject({ promptVersion: "scriba-prompt-6", schemaVersion: "scriba-extraction-3", schemaName: "scriba_ledger_extraction_v3" });
     expect(p.jsonSchema).toBe(EXTRACTION_JSON_SCHEMA_V3);
@@ -304,10 +302,24 @@ describe("prompt 6", () => {
     expect(p6).toContain('For "Praan (Selim)", party is "Praan" and person is "Selim".');
   });
 
-  test("the khata layout and the writer's notes stay on prompt 4", () => {
+  test("the khata layout and the writer's notes ride on prompt 6 too (T6), in its words", () => {
     process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-6";
-    expect(withLayout(getExtractionProfile(), "scriba_khata").promptVersion).toBe("scriba-prompt-6");
-    expect(getPersonalProfile()).toBeNull();
+    const p6 = getExtractionProfile();
+    const k6 = withLayout(p6, "scriba_khata");
+    expect(k6).toMatchObject({ promptVersion: "scriba-prompt-6+khata-1", schemaVersion: SCHEMA_V3_VERSION });
+    expect(k6.instructions.startsWith(p6.instructions)).toBe(true);
+    expect(k6.instructions).toContain("Blocks follow the নাম column.");
+    expect(k6.instructions).toContain("One entry per row that carries an amount or goods.");
+    // Prompt 4's own khata rules (no blocks, a name per row) aren't mixed in.
+    expect(k6.instructions).not.toContain("use null for the blank rows");
+
+    const p7 = getPersonalProfile()!;
+    expect(p7).toMatchObject({ promptVersion: "scriba-prompt-7", schemaVersion: SCHEMA_V3_VERSION, jsonSchema: EXTRACTION_JSON_SCHEMA_V3 });
+    expect(p7.instructions.startsWith(p6.instructions)).toBe(true);
+    expect(p7.instructions).toContain("never make a block of it");
+    expect(p7.instructions).toContain("list that field in review and add a doubt");
+    expect(withLayout(p7, "scriba_khata").promptVersion).toBe("scriba-prompt-7+khata-1");
+    expect(withLayout(p7, "scriba_khata").instructions).toContain("Blocks follow the নাম column.");
   });
 });
 

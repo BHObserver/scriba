@@ -69,7 +69,7 @@ A memo's run records prompt and schema `scriba-memo-1`; its `result` is the read
 
 ## Versions recorded with every result
 
-`model_id`, `prompt_version` (`scriba-prompt-4`; `scriba-prompt-3` or `scriba-prompt-6` via `SCRIBA_PROMPT_VERSION`), `schema_version` (`scriba-extraction-2`; `-1` with prompt 3, `-3` with prompt 6), `processing_mode` (`baseline_original`, or `rotate_90` / `rotate_180` / `rotate_270` when the user turned the photo upright before analysis), `validator_version` (`scriba-validator-3`: balance, total and running-balance rules per block), `metrics_version` (`scriba-metrics-1`), ground-truth version.
+`model_id`, `prompt_version` (`scriba-prompt-6` since T6; `scriba-prompt-4` or `scriba-prompt-3` via `SCRIBA_PROMPT_VERSION`; `scriba-prompt-7` or `-5` with the writer's notes on 6 or 4; `+khata-1` for a printed khata page), `schema_version` (`scriba-extraction-3` with prompts 6 and 7; `-2` with 4 and 5, `-1` with 3), `processing_mode` (`baseline_original`, or `rotate_90` / `rotate_180` / `rotate_270` when the user turned the photo upright before analysis), `validator_version` (`scriba-validator-3`: balance, total and running-balance rules per block), `metrics_version` (`scriba-metrics-1`), ground-truth version.
 
 ## Data model v2: the shop (`20261031120000_scriba_shop_v2.sql`)
 

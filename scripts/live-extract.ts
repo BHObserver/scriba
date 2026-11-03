@@ -7,17 +7,19 @@
  *   bun run live:extract <path> --dry-run   # build the request, send nothing
  *   SCRIBA_PROMPT_VERSION=scriba-prompt-6 bun run live:extract <path> --two-pass
  *                                           # U3: layout call + one call per block (≤ 7 calls)
+ *   SCRIBA_PROMPT_VERSION=scriba-prompt-6 bun run live:extract <path> --notes=private-test-data/notes/P3.json
+ *                                           # T6: with the writer's notes (scripts/writer-notes.ts): prompt 7
  *
  * Reads META_MODEL_API_KEY etc. from .env.local (Bun loads it automatically).
  * The raw response is written to private-test-data/responses/ (git-ignored); a two-pass run
  * also writes its block crops to private-test-data/crops/.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { getMetaConfig } from "@/lib/config";
 import { sha256Hex } from "@/lib/extraction/cache-key";
 import { type NormalizedExtraction, pageValuesOf, parseModelResponse } from "@/lib/extraction/parse";
-import { BLOCKS_PROMPT_VERSION, TWO_PASS_VERSION, getExtractionProfile } from "@/lib/extraction/prompt";
+import { BLOCKS_PROMPT_VERSION, TWO_PASS_VERSION, getExtractionProfile, getPersonalProfile } from "@/lib/extraction/prompt";
 import { type BlockCropper, type CallLog, readTwoPass } from "@/lib/extraction/two-pass";
 import { cropBlocksForReading } from "@/lib/images/crop";
 import { inspectImage } from "@/lib/images/inspect";
@@ -33,14 +35,29 @@ const path = args.find((a) => !a.startsWith("--"));
 const dryRun = args.includes("--dry-run");
 const twoPass = args.includes("--two-pass");
 const turnArg = args.find((a) => a.startsWith("--turn="))?.slice("--turn=".length) ?? "0";
+const notesPath = args.find((a) => a.startsWith("--notes="))?.slice("--notes=".length) ?? null;
 if (!path || !["0", "90", "180", "270"].includes(turnArg)) {
-  console.error("Usage: bun run live:extract <image path> [--turn=90|180|270] [--two-pass] [--dry-run]");
+  console.error("Usage: bun run live:extract <image path> [--turn=90|180|270] [--two-pass | --notes=<notes.json>] [--dry-run]");
   process.exit(2);
 }
 if (twoPass && getExtractionProfile().promptVersion !== BLOCKS_PROMPT_VERSION) {
   console.error(`--two-pass reads with prompt 6: set SCRIBA_PROMPT_VERSION=${BLOCKS_PROMPT_VERSION}.`);
   process.exit(2);
 }
+// The writer's notes, as the app's personalizer would send them: prompt 5 on prompt 4, prompt 7 on prompt 6.
+const personalProfile = notesPath ? getPersonalProfile() : null;
+if (notesPath && (twoPass || !personalProfile)) {
+  console.error("--notes needs prompt 4 or 6 underneath, and no --two-pass.");
+  process.exit(2);
+}
+const notes = notesPath ? (JSON.parse(readFileSync(notesPath, "utf8")) as { key: string; text: string; reference: string | null }) : null;
+const personal = notes
+  ? {
+      text: notes.text,
+      reference: notes.reference ? { imageBytes: new Uint8Array(readFileSync(join(dirname(notesPath!), notes.reference))), mimeType: "image/jpeg" } : null,
+    }
+  : undefined;
+const profile = personalProfile ?? getExtractionProfile();
 const processingMode = processingModeForTurns(Number(turnArg) / 90);
 
 const bytes = new Uint8Array(readFileSync(path));
@@ -53,9 +70,10 @@ const config = getMetaConfig();
 const sha = sha256Hex(bytes);
 console.log(`Image   ${basename(path)}  ${inspection.width}x${inspection.height}  ${bytes.byteLength} bytes  sha256 ${sha.slice(0, 16)}…`);
 console.log(`Model   ${config.modelId}${isContributorModel(config.modelId) ? "  (CONTRIBUTOR MODE: may be used for training)" : "  (standard mode)"}`);
-console.log(`Config  effort=${config.reasoningEffort}  max_output_tokens=${config.maxOutputTokens}  ${getExtractionProfile().promptVersion}  ${getExtractionProfile().schemaVersion}  ${processingMode}`);
+console.log(`Config  effort=${config.reasoningEffort}  max_output_tokens=${config.maxOutputTokens}  ${profile.promptVersion}  ${profile.schemaVersion}  ${processingMode}`);
+if (notes) console.log(`Notes   ${notesPath}  key ${notes.key}  ${personal?.reference ? "with" : "without"} the reference image`);
 if (inspection.hasGpsMetadata && processingMode === "baseline_original") console.log("Note    the photo carries GPS metadata and is sent unchanged.");
-const prepared = await prepareImageForModel(bytes, inspection.mimeType, processingMode);
+const prepared = { ...(await prepareImageForModel(bytes, inspection.mimeType, processingMode)), personal };
 
 if (dryRun) {
   const body = buildExtractionRequest(config, twoPass ? { ...prepared, pass: { kind: "layout" } } : prepared);
@@ -72,7 +90,7 @@ if (!config.apiKey) {
 const outDir = join("private-test-data", "responses");
 mkdirSync(outDir, { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-const outFile = join(outDir, `${basename(path)}.${stamp}${twoPass ? `.${TWO_PASS_VERSION}` : ""}.private.json`);
+const outFile = join(outDir, `${basename(path)}.${stamp}${twoPass ? `.${TWO_PASS_VERSION}` : notes ? ".notes" : ""}.private.json`);
 const usageLine = (u: CallLog["usage"]) =>
   u
     ? `in=${u.inputTokens} (cached ${u.cachedInputTokens})  out=${u.outputTokens} (reasoning ${u.reasoningTokens})  ≈ $${estimateCostUsd(config.modelId, u)?.toFixed(5)}`
@@ -123,7 +141,10 @@ if (twoPass) {
   x = reading.extraction;
 } else {
   const result = await createMetaCaller(config)(prepared);
-  writeFileSync(outFile, JSON.stringify({ sha256: sha, model: config.modelId, promptVersion: getExtractionProfile().promptVersion, schemaVersion: getExtractionProfile().schemaVersion, processingMode, result }, null, 2));
+  writeFileSync(
+    outFile,
+    JSON.stringify({ sha256: sha, model: config.modelId, promptVersion: profile.promptVersion, schemaVersion: profile.schemaVersion, processingMode, notesKey: notes?.key ?? null, result }, null, 2),
+  );
 
   if (!result.ok) {
     console.error(`\nFAILED  ${result.category} (HTTP ${result.httpStatus ?? "-"})  ${result.message}`);
@@ -136,7 +157,7 @@ if (twoPass) {
   console.log(`Usage   ${usageLine(result.usage)}`);
   console.log(`Saved   ${outFile}`);
 
-  const parsed = parseModelResponse(result.summary);
+  const parsed = parseModelResponse(result.summary, profile);
   if (!parsed.ok) {
     console.error(`\nUNUSABLE OUTPUT  ${parsed.kind}: ${parsed.detail}`);
     process.exit(1);

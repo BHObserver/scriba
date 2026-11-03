@@ -30,7 +30,7 @@ import { MEMO_PROFILE, MEMO_USER_TEXT } from "@/lib/memo/prompt";
 export type ModelCallInput = {
   imageBytes: Uint8Array;
   mimeType: string;
-  /** Prompt 5 (P3): the writer's notes and, when his lines can be cut from photos, their reference image. */
+  /** Prompts 5 and 7 (P3, T6): the writer's notes and, when his lines can be cut from photos, their reference image. */
   personal?: { text: string; reference: { imageBytes: Uint8Array; mimeType: string } | null };
   /** P4: a printed Scriba khata page adds its column layout to the instructions. */
   layout?: PageLayout;

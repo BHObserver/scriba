@@ -312,6 +312,13 @@ Documents: P1 `b6a9cbba` (confirmed), P2 `157e7df4` (confirmed), P3 `b4aea1e6`, 
 - **A personal variant of prompt 6** (new version id, schema 3): prompt 6 plus the writer notes and the reference strip. Add the khata layout for prompt 6 too, adapted to blocks. These two were what kept prompt 6 from being the default (B7).
 - Find where the 2 Nov test got prompt 6 from: `.env.local` has no `SCRIBA_PROMPT_VERSION`, so check the Vercel env or the shell. Write it down.
 - **Measure:** the five pages, prompt 6 against prompt 6 + notes. Report digits and amounts right, cost and time. The user decides the default.
+- **Result (3 Nov):** done, $0.918 live.
+  - The 2 Nov test got prompt 6 from `SCRIBA_PROMPT_VERSION` in Vercel Production, a Secret set about 36 minutes before the uploads.
+  - The five pages' ground truth was checked with the user (`private-test-data/ground-truth/P1–P5.json`).
+  - **Prompt 7** is prompt 6 plus the writer rules, read in one call. The khata layout now rides on prompts 6 and 7 too (unmeasured).
+  - Prompt 7 got 53/58 amounts right, against 52/58 and 37/45 for plain prompt 6. The ৩ → ৬ misread it was told about went from 3 and 5 per plain pass to none, with one ৬ → ৩ the other way (offered as a doubt). It costs 19% more a page and takes about 9 s longer.
+  - Also fixed: the demo seed's made-up misreads no longer reach the model, a total he changed teaches nothing, and reference strips no longer cut off the figure.
+  - **The user chose prompt 7 for his pages** (learning goes on after the deploy) **and prompt 6 as the code default**, which is done. See `docs/sessions/T6.md`.
 
 ### V1: voice reading, step 1: measure Bangla speech (Track B, live ≤ $0.10)
 
@@ -325,5 +332,5 @@ The user's idea (2 Nov): he reads the khata to Scriba one part at a time, Scriba
 
 ## Open questions for the user
 
-- T6 needs his consent to use the five 2 Nov pages as test samples. V1 needs his recordings.
+- V1 needs his recordings. (T6's consent for the five 2 Nov pages: given 3 Nov.)
 - The stored-original choice (C2) and the migrations (U1, C2) were settled in those sessions.

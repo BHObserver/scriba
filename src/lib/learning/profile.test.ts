@@ -7,6 +7,7 @@ import {
   describeLine,
   digitSwaps,
   personalHints,
+  realReadings,
 } from "./profile";
 
 const none: NumberTexts = { quantityText: null, rateText: null, amountText: null, balanceText: null };
@@ -112,6 +113,28 @@ describe("buildWriterProfile", () => {
   test("references fill up from the same page when there are too few pages", () => {
     const two = [line("a", "p1", "20", { amountText: "১০" }), line("b", "p1", "21", { amountText: "২০" })];
     expect(buildWriterProfile(two).references.map((r) => r.recordId)).toEqual(["b", "a"]);
+  });
+
+  test("a total he changed teaches no digit and is never a reference: it may have been written wrong (T6)", () => {
+    // P2-shaped: the page says মোট ১৫০ under ৬০ + ৮০; he made it ১৪০. চিনি ১৬০ → ১৩০ was a real misread.
+    const p2 = [
+      { ...line("t1", "p1", "20", { amountText: "১৪০" }, { amountText: "১৫০" }), sum: true },
+      line("t2", "p1", "20", { item: "চিনি", amountText: "১৩০" }, { amountText: "১৬০" }),
+      { ...line("t3", "p2", "21", { amountText: "২৭০" }), sum: true },
+    ];
+    const p = buildWriterProfile(p2);
+    expect(p.confusions.map((c) => [c.written, c.read, c.count])).toEqual([[3, 6, 1]]);
+    expect(p.learnedFrom).toBe(1);
+    expect(p.references.map((r) => r.recordId)).toEqual(["t2", "t3"]);
+    // He did change it, so the panel still counts it among his corrections.
+    expect(p.corrected.numbers).toBe(2);
+  });
+
+  test("the demo seed's made-up misreads never reach the model", () => {
+    const seeded = { ...line("s1", "d1", "20", { amountText: "১৬০" }, { amountText: "১৩০" }), seeded: true };
+    const real = line("r1", "p1", "21", { item: "চিনি", amountText: "১৩০" }, { amountText: "১৬০" });
+    expect(buildWriterProfile([seeded, real]).confusions.map((c) => [c.written, c.read])).toEqual([[3, 6], [6, 3]]);
+    expect(buildWriterProfile(realReadings([seeded, real])).confusions.map((c) => [c.written, c.read])).toEqual([[3, 6]]);
   });
 
   test("empty data, and a shop that never corrected anything", () => {

@@ -16,7 +16,7 @@ export async function runAnalyze(userClient: SupabaseClient, ownerId: string, re
   const meta = getMetaConfig();
   const limits = getLimitsConfig();
   const repo = createSupabaseExtractionRepo({ userClient, serviceClient: createServiceSupabase(), ownerId });
-  // Prompt 5 only when he switched learning on (P3); his notes are read through his own client.
+  // Prompt 5 or 7 only when he switched learning on (P3, T6); his notes are read through his own client.
   const personalize = (await learningSwitchOn(userClient)) ? createPersonalizer(userClient) : undefined;
   // U3: a two-pass run makes two steps in a row, so each call gets a shorter timeout.
   const twoPass = isTwoPassVersion(withTwoPass(getExtractionProfile()).promptVersion);

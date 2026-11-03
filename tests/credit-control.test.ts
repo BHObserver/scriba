@@ -62,6 +62,14 @@ beforeEach(() => {
 const req = (requestId: string, mode: "use_cache" | "fresh" = "use_cache") => ({ documentId: docId, requestId, mode });
 
 describe("credit control", () => {
+  // These read prompt 4's schema 2 fixture (`validOutput`); prompt 6 has its own tests below.
+  beforeEach(() => {
+    process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-4";
+  });
+  afterEach(() => {
+    delete process.env.SCRIBA_PROMPT_VERSION;
+  });
+
   test("first analysis makes exactly one call and records usage and cost", async () => {
     const m = countingModel([success()]);
     const out = await analyzeDocument({ repo: store.repoFor("user-a"), callModel: m.caller, now: () => new Date() }, settings, req("r1"));
@@ -384,6 +392,19 @@ describe("two-pass reading (U3): one run is at most 1 + 6 calls, each logged and
   afterEach(() => {
     delete process.env.SCRIBA_PROMPT_VERSION;
     delete process.env.SCRIBA_TWO_PASS;
+  });
+
+  test("with his notes, a prompt 6 page is read once with prompt 7, even with the switch on (T6)", async () => {
+    const m = twoPassModel(twoBlocks);
+    const personalize = async () => ({ key: "k1", text: "notes", reference: null });
+    const out = await analyzeDocument({ ...depsFor(m.caller), personalize }, settings, req("r1"));
+    expect(out.kind).toBe("completed");
+    expect(m.inputs).toHaveLength(1);
+    expect(m.inputs[0]!.pass).toBeUndefined();
+    expect(m.inputs[0]!.personal).toEqual({ text: "notes", reference: null });
+    expect(cropped).toHaveLength(0);
+    expect(store.runs[0]).toMatchObject({ promptVersion: "scriba-prompt-7", schemaVersion: "scriba-extraction-3" });
+    expect(store.runs[0]!.success!.extraction.blocks!.map((b) => b.kind)).toEqual(["day_sales"]);
   });
 
   test("one layout call, then one call per block; usage and cost are the sum and every call is kept", async () => {

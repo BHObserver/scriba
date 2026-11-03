@@ -1,6 +1,6 @@
 /**
- * The extraction prompt, versioned. Changing any wording here must bump
- * PROMPT_VERSION so cached results and benchmark rows stay attributable.
+ * The extraction prompts, versioned. Changing any wording here must bump the prompt's
+ * version so cached results and benchmark rows stay attributable.
  *
  * Kept short on purpose: one request per image, no reasoning narrative, and only
  * the fields Scriba uses.
@@ -22,7 +22,8 @@ import {
   SCHEMA_VERSION,
 } from "./schema";
 
-export const PROMPT_VERSION = "scriba-prompt-4";
+/** Prompt 4: one entry per line, schema 2. The default until T6; the line deck reads it. */
+export const LINES_PROMPT_VERSION = "scriba-prompt-4";
 
 /** Prompt 3 (30 Oct): Bangla digit-shape rules. Kept verbatim for comparison and fallback. */
 const PROMPT_3 = `You transcribe photographs of handwritten shop ledgers (khata) from Bangladesh into JSON that matches the given schema. The image may be a whole page or a small cropped snippet.
@@ -109,6 +110,12 @@ export const DIGIT_RULES = PROMPT_4.slice(PROMPT_4.indexOf("Reading digits:"), P
  * its doubts. Code still computes every number.
  */
 export const BLOCKS_PROMPT_VERSION = "scriba-prompt-6";
+
+/**
+ * The default for new readings: prompt 6 since T6 (3 Nov, the user's call), as production
+ * already ran it through SCRIBA_PROMPT_VERSION. Prompt 4 stays selectable.
+ */
+export const PROMPT_VERSION = BLOCKS_PROMPT_VERSION;
 
 const PROMPT_6 = `You transcribe photographs of handwritten shop ledgers (khata) from Bangladesh into JSON that matches the given schema. The image may be a whole page or a small cropped snippet. The writing may be scattered: groups of lines in different places on the page, side by side or at an angle, joined by arrows or brackets, with notes in the margin.
 
@@ -261,12 +268,26 @@ export function isTwoPassVersion(promptVersion: string): boolean {
  */
 export const PERSONAL_PROMPT_VERSION = "scriba-prompt-5";
 
+const WRITER_NOTES_INTRO = `Notes about this writer:
+- The request may also carry notes about this writer's digits, learned from earlier pages the shopkeeper checked, and an image of reference lines cut from those pages. Use them only to recognise how this writer forms each digit.`;
+
 const PROMPT_5 = `${PROMPT_4}
 
-Notes about this writer:
-- The request may also carry notes about this writer's digits, learned from earlier pages the shopkeeper checked, and an image of reference lines cut from those pages. Use them only to recognise how this writer forms each digit.
+${WRITER_NOTES_INTRO}
 - Never transcribe a reference line as an entry and never copy a number from it. The page to transcribe is the last image.
 - The notes are hints, not rules. Still read every digit from the ink of the page; when a digit could be read either way, give your best reading and list that field in review.`;
+
+/**
+ * Prompt 7 (3 Nov, T6): prompt 6 plus the writer rules, as prompt 5 is to prompt 4. The same
+ * notes and reference image travel in the user message. Schema 3, read in one call.
+ */
+export const PERSONAL_BLOCKS_PROMPT_VERSION = "scriba-prompt-7";
+
+const PROMPT_7 = `${PROMPT_6}
+
+${WRITER_NOTES_INTRO}
+- Never transcribe a reference line as an entry, never copy a number from it, and never make a block of it. The page to transcribe is the last image, and every box is on its grid.
+- The notes are hints, not rules. Still read every digit from the ink of the page; when a digit could be read either way, give your best reading, list that field in review and add a doubt.`;
 
 const DIGIT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
 const digitName = (d: number) => `${BANGLA_DIGITS[d]} (${DIGIT_WORDS[d]})`;
@@ -300,27 +321,45 @@ export const PERSONAL_PAGE_TEXT = "Now transcribe this ledger image. Only this i
 export const PAGE_LAYOUTS = ["free", "scriba_khata"] as const;
 export type PageLayout = (typeof PAGE_LAYOUTS)[number];
 
-/** Bump with any change to KHATA_LAYOUT or to the printed page's columns. */
+/** Bump with any change to KHATA_LAYOUT, KHATA_LAYOUT_BLOCKS or the printed page's columns. */
 export const KHATA_LAYOUT_VERSION = "khata-1";
 const KHATA_SUFFIX = `+${KHATA_LAYOUT_VERSION}`;
 
-const KHATA_LAYOUT = `Page layout: the shopkeeper says this is a printed Scriba khata page. If the photo shows no such printed page, ignore this section.
+const KHATA_INTRO = `Page layout: the shopkeeper says this is a printed Scriba khata page. If the photo shows no such printed page, ignore this section.
 - Printed, never transcribed: the four black corner squares, the title "Scriba খাতা" and the line under it, দোকান (his own shop's name: never use it as customer or account_name), পাতা নং, the column headings, the printed row labels and the tips at the bottom. Each row's last cell has a faint printed "বা জ".
 - Columns, left to right: তারিখ (date) | নাম (name) | জিনিস (item) | পরিমাণ (quantity) | দর (rate) | টাকা (amount) | বাকি/জমা.
-- The column decides the field. A number in পরিমাণ is qty (a unit written with it goes in unit), in দর it is rate, in টাকা it is amount. Never move a number to another field because of its size or of arithmetic. A number that crosses a column line belongs to the column holding most of it; list that field in review.
+- The column decides the field. A number in পরিমাণ is qty (a unit written with it goes in unit), in দর it is rate, in টাকা it is amount. Never move a number to another field because of its size or of arithmetic. A number that crosses a column line belongs to the column holding most of it; list that field in review.`;
+const KHATA_MARKS = `- বাকি/জমা: a circled বা means বাকি and a circled জ means জমা; decide the type with the বাকি and জমা rules above. Neither circled: decide from the words as usual. The printed letters alone mean nothing.`;
+const KHATA_ROW_TEXT = `text: the handwritten cells of the row, left to right, separated by spaces, with বা or জ at the end only when one is circled. box: the whole row.`;
+
+const KHATA_LAYOUT = `${KHATA_INTRO}
 - নাম is the customer or supplier. A name written once and left blank on the rows below is not repeated: use null for the blank rows.
-- বাকি/জমা: a circled বা means বাকি and a circled জ means জমা; decide the type with the বাকি and জমা rules above. Neither circled: decide from the words as usual. The printed letters alone mean nothing.
+${KHATA_MARKS}
 - The first row, "আগের পাতা থেকে জের", is the balance carried from the previous page: a figure written there is an opening_balance entry. The last row, "মোট · পরের পাতায় জের", is the page total carried to the next page: a figure written there is a closing_balance entry.
-- One entry per row that carries an amount. text: the handwritten cells of the row, left to right, separated by spaces, with বা or জ at the end only when one is circled. box: the whole row.
+- One entry per row that carries an amount. ${KHATA_ROW_TEXT}
 - date_text: the first date written in the তারিখ column, exactly as written. A date applies to its row and the rows below it until the next date.`;
 
-/** The layout rides on prompts 4 and 5 only; another base prompt is read as written. */
-const LAYOUT_BASES = new Set([PROMPT_VERSION, PERSONAL_PROMPT_VERSION]);
+/** T6: the same printed page for prompts 6 and 7, where the নাম column decides the blocks. */
+const KHATA_LAYOUT_BLOCKS = `${KHATA_INTRO}
+- Blocks follow the নাম column. A name starts a block about that customer or supplier, with the name as its party, and the rows below it with নাম left blank belong to the same block, up to the next name. Rows above the first name are the day's sales (day_sales), or expenses when they are shop costs. The name is not repeated as the customer of the block's rows.
+${KHATA_MARKS}
+- The first row, "আগের পাতা থেকে জের", is the balance carried from the previous page, and the last row, "মোট · পরের পাতায় জের", the page total carried to the next page. When the page is about one customer or supplier, a figure in the first row is that block's opening_balance and a figure in the last row its closing_balance. Otherwise each is its own block, kind other, with an opening_balance or a closing_balance entry.
+- One entry per row that carries an amount or goods. ${KHATA_ROW_TEXT}
+- date_text: the first date written in the তারিখ column, exactly as written. A date applies to its row and the rows below it until the next date; a block whose rows carry a later date has it as its date_text.`;
+
+/** The layout rides on prompts 4 to 7, in the words of each one's schema; another base prompt is read as written. */
+const LAYOUT_OF_BASE = new Map([
+  [LINES_PROMPT_VERSION, KHATA_LAYOUT],
+  [PERSONAL_PROMPT_VERSION, KHATA_LAYOUT],
+  [BLOCKS_PROMPT_VERSION, KHATA_LAYOUT_BLOCKS],
+  [PERSONAL_BLOCKS_PROMPT_VERSION, KHATA_LAYOUT_BLOCKS],
+]);
 
 /** The profile for a reading of a page with this layout. Its version records the layout. */
 export function withLayout(profile: ExtractionProfile, layout: PageLayout): ExtractionProfile {
-  if (layout !== "scriba_khata" || !LAYOUT_BASES.has(profile.promptVersion)) return profile;
-  return { ...profile, promptVersion: `${profile.promptVersion}${KHATA_SUFFIX}`, instructions: `${profile.instructions}\n\n${KHATA_LAYOUT}` };
+  const text = LAYOUT_OF_BASE.get(profile.promptVersion);
+  if (layout !== "scriba_khata" || !text) return profile;
+  return { ...profile, promptVersion: `${profile.promptVersion}${KHATA_SUFFIX}`, instructions: `${profile.instructions}\n\n${text}` };
 }
 
 /** The layout a recorded run was read with, so a re-read of the same page keeps it. */
@@ -338,7 +377,7 @@ export type ExtractionProfile = {
 
 const PROFILES: Record<string, ExtractionProfile> = {
   "scriba-prompt-4": {
-    promptVersion: "scriba-prompt-4",
+    promptVersion: LINES_PROMPT_VERSION,
     instructions: PROMPT_4,
     schemaVersion: SCHEMA_VERSION,
     schemaName: SCHEMA_NAME,
@@ -363,19 +402,20 @@ const PROFILES: Record<string, ExtractionProfile> = {
 export const PROMPT_VERSIONS = Object.keys(PROFILES);
 
 /**
- * Prompt 5 builds on prompt 4 and its schema. Null when another base prompt is selected, so
- * a comparison run on prompt 3 is never mixed with personal notes.
+ * The personal prompt on the selected base, with the base's schema: prompt 5 on prompt 4,
+ * prompt 7 on prompt 6. Null on prompt 3, so a comparison run there is never mixed with notes.
  */
 export function getPersonalProfile(): ExtractionProfile | null {
   const base = getExtractionProfile();
-  if (base.promptVersion !== "scriba-prompt-4") return null;
-  return { ...base, promptVersion: PERSONAL_PROMPT_VERSION, instructions: PROMPT_5 };
+  if (base.promptVersion === LINES_PROMPT_VERSION) return { ...base, promptVersion: PERSONAL_PROMPT_VERSION, instructions: PROMPT_5 };
+  if (base.promptVersion === BLOCKS_PROMPT_VERSION) return { ...base, promptVersion: PERSONAL_BLOCKS_PROMPT_VERSION, instructions: PROMPT_7 };
+  return null;
 }
 
 /**
- * The prompt and schema used for new extractions: prompt 4 unless
- * SCRIBA_PROMPT_VERSION selects another (prompt 3 runs with the schema it was
- * measured with; prompt 6 with schema 3, until the check flow can show blocks). Both versions are part of the cache key and of every run row.
+ * The prompt and schema used for new extractions: prompt 6 with schema 3 unless
+ * SCRIBA_PROMPT_VERSION selects another (prompt 4 with schema 2 for the line deck; prompt 3
+ * with the schema it was measured with). Both versions are part of the cache key and of every run row.
  */
 export function getExtractionProfile(): ExtractionProfile {
   const version = process.env.SCRIBA_PROMPT_VERSION?.trim() || PROMPT_VERSION;

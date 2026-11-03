@@ -14,17 +14,23 @@ import { MODEL_TARGET_PIXELS, type PreparedImage } from "./rotate";
 
 export type PixelRect = { left: number; top: number; width: number; height: number };
 
-/** The box in pixels of a width × height image, padded so ascenders and the line's ends aren't cut. */
+/**
+ * The box in pixels of a width × height image, padded so ascenders and the line's ends aren't cut.
+ * The right end gets more: the model's line boxes often stop short of the figure written last
+ * (T6: on his pages, রহিমা জমা ২৫০ lost its ০ and চিনি ১৩০ all but its ১), and the figure is
+ * what a reference line is there to show.
+ */
 export function lineRect(box: BoundingBox, width: number, height: number): PixelRect | null {
   const clamp = (n: number) => Math.min(1000, Math.max(0, n));
   const [x0, x1] = [clamp(box.x_min), clamp(box.x_max)].sort((a, b) => a - b) as [number, number];
   const [y0, y1] = [clamp(box.y_min), clamp(box.y_max)].sort((a, b) => a - b) as [number, number];
   if (width <= 0 || height <= 0 || x1 - x0 < 1 || y1 - y0 < 1) return null;
   const padX = 10;
+  const padRight = Math.max(padX, (x1 - x0) * 0.15);
   const padY = Math.max(6, (y1 - y0) * 0.3);
   const left = Math.floor((clamp(x0 - padX) / 1000) * width);
   const top = Math.floor((clamp(y0 - padY) / 1000) * height);
-  const right = Math.ceil((clamp(x1 + padX) / 1000) * width);
+  const right = Math.ceil((clamp(x1 + padRight) / 1000) * width);
   const bottom = Math.ceil((clamp(y1 + padY) / 1000) * height);
   return { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
 }

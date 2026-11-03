@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ENTRY_FIELDS, EXTRACTION_JSON_SCHEMA, PAGE_FIELDS, modelOutputSchema } from "./schema";
+import { ENTRY_FIELDS, EXTRACTION_JSON_SCHEMA, PAGE_FIELDS, SCHEMA_VERSION, modelOutputSchema } from "./schema";
 import { parseModelResponse } from "./parse";
 import { extractionCacheKey } from "./cache-key";
 
@@ -32,14 +32,18 @@ function output(entries: unknown[], page: Record<string, unknown> = {}) {
   };
 }
 
+/** Prompt 4's readings (schema 2); prompt 6's blocks are tested in blocks.test.ts. */
 const respond = (body: unknown, extra: Partial<Parameters<typeof parseModelResponse>[0]> = {}) =>
-  parseModelResponse({
-    status: "completed",
-    incompleteReason: null,
-    refusal: null,
-    outputText: typeof body === "string" ? body : JSON.stringify(body),
-    ...extra,
-  });
+  parseModelResponse(
+    {
+      status: "completed",
+      incompleteReason: null,
+      refusal: null,
+      outputText: typeof body === "string" ? body : JSON.stringify(body),
+      ...extra,
+    },
+    { promptVersion: "scriba-prompt-4", schemaVersion: SCHEMA_VERSION },
+  );
 
 describe("valid responses", () => {
   test("normalizes Bangla digits while preserving source text", () => {
