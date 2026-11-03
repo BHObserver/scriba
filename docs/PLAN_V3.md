@@ -287,6 +287,7 @@ Documents: P1 `b6a9cbba` (confirmed), P2 `157e7df4` (confirmed), P3 `b4aea1e6`, 
   - another owner's run and a draft run are refused;
   - other pages' records untouched.
 - No live calls.
+- **Result (3 Nov):** done, migration `20261103120000_scriba_reopen.sql`. The function is `scriba_reopen_page`. It takes out every record the page has, from whichever reading, so a page read again after confirming can be fixed from the reading shown. A preview function, also behind `GET /api/runs/[id]/reopen`, tells T5's sheet before he taps how many figures leave and which closed days hold the page. The reopen uses the same rule. The loop limit is 30 reopens an hour, kept in the database. Tested in pglite, $0. Not yet on the hosted dev project (the user's go-ahead first). See `docs/sessions/T4.md`.
 
 ### T5: reopen in the app, and fix Karim's account (Track A)
 

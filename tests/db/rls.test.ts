@@ -463,3 +463,208 @@ describe("company memos (U4)", () => {
     });
   });
 });
+
+describe("reopen a confirmed page (T4)", () => {
+  const PAGE = "40000000-0000-4000-8000-000000000001";
+  const RUN = "40000000-0000-4000-8000-0000000000a1";
+  const NEWER_RUN = "40000000-0000-4000-8000-0000000000a2";
+  const OTHER_PAGE = "40000000-0000-4000-8000-000000000002";
+  const OTHER_RUN = "40000000-0000-4000-8000-0000000000b1";
+  const DRAFT_PAGE = "40000000-0000-4000-8000-000000000003";
+  const DRAFT_RUN = "40000000-0000-4000-8000-0000000000c1";
+  const DAY = "2026-11-02";
+
+  type Preview = { document_id: string; latest: boolean; record_ids: string[]; business_date: string; closed_days: string[] };
+  const preview = async (run: string, owner = A) => (await rows(`select public.scriba_reopen_preview($1, $2) as p`, [owner, run]))[0]!.p as Preview;
+  const reopen = async (run: string, owner = A) => (await rows(`select public.scriba_reopen_page($1, $2) as r`, [owner, run]))[0]!.r;
+  const recordsOf = (doc: string) =>
+    rows(`select id, run_id, transaction_type, amount_poisha::int as amount_poisha, party_id from public.confirmed_records where document_id = $1 order by line_order`, [doc]);
+
+  // Karim's part, as a hand-made reading: "before" ৳260, rice ৳180, paid ৳200.
+  function karimLines() {
+    const line = (n: number, type: string, text: string, amount: string, poisha: number) => ({
+      candidate_id: `k${n}`, line_order: n, source_text: text, transaction_type: type, customer_alias: "করিম",
+      amount_text: amount, amount_poisha: poisha, crossed_out: false, review_fields: [],
+      entry_values: { sourceText: text, type, customer: "করিম", item: null, quantityText: null, unit: null, rateText: null, amountText: amount, balanceText: null, crossedOut: false },
+    });
+    return [line(1, "opening_balance", "আগের ২৬০", "২৬০", 26000), line(2, "credit_sale", "চাল ১৮০", "১৮০", 18000), line(3, "repayment", "জমা ২০০", "২০০", 20000)];
+  }
+
+  async function reading(doc: string, run: string, key: string, startedAt: string) {
+    await db.query(
+      `insert into public.extraction_runs (id, document_id, owner_id, request_id, cache_key, model_id, prompt_version, schema_version, processing_mode, started_at)
+       values ($1, $2, $3, gen_random_uuid(), $4, 'm', 'p6', 's3', 'baseline_original', $5)`,
+      [run, doc, A, key.repeat(32), startedAt],
+    );
+    await db.query(`select public.scriba_complete_extraction($1, $2, $3, $4, $5, '[]')`, [
+      A,
+      run,
+      JSON.stringify({ elapsed_ms: 1, raw_output_text: "{}", result: { ok: true }, validator_version: "v1" }),
+      JSON.stringify(karimLines()),
+      JSON.stringify({ ledgerType: "customer_credit", dateText: null, accountName: "করিম" }),
+    ]);
+  }
+
+  async function page(doc: string, run: string, key: string) {
+    await db.query(
+      `insert into public.ledger_documents (id, owner_id, storage_path, sha256, mime_type, byte_size, width, height, business_date)
+       values ($1::uuid, $2::uuid, $2::text || '/' || $1::text || '.png', $3, 'image/png', 100, 64, 64, $4)`,
+      [doc, A, key.repeat(32), DAY],
+    );
+    await reading(doc, run, key, `${DAY}T10:00:00+06:00`);
+  }
+
+  /** Confirm every draft line of a reading, as the confirm route would, with one finding. */
+  async function confirmAll(run: string) {
+    const drafts = await rows(
+      `select er.id, er.version, x.transaction_type, x.source_text, x.amount_text, x.amount_poisha::int as amount_poisha
+       from public.entry_reviews er join public.extracted_entries x on x.id = er.extracted_entry_id
+       where er.run_id = $1 and er.status = 'draft' order by er.line_order`,
+      [run],
+    );
+    const records = drafts.map((d) => ({
+      entry_review_id: d.id, expected_version: d.version, transaction_type: d.transaction_type, source_text: d.source_text,
+      customer_alias: "করিম", amount_text: d.amount_text, amount_poisha: d.amount_poisha, was_corrected: false, acknowledgements: {},
+      party_kind: "customer", party_key: "করিম", party_name: "করিম",
+    }));
+    const finding = { finding_key: "b", rule_id: "balance_equation", rule_version: 1, status: "pass", severity: "info", entry_refs: [], expected_poisha: null, observed_poisha: null, message: "m" };
+    await db.query(`select public.scriba_confirm_entries($1, $2, gen_random_uuid(), 'v1', $3, $4)`, [A, run, JSON.stringify(records), JSON.stringify([finding])]);
+  }
+
+  let firstRecords: string[] = [];
+
+  test("reopen: the page's records leave the khata, its lines are drafts again, and the audit trail keeps everything", async () => {
+    await as("service_role", null, async () => {
+      await page(PAGE, RUN, "41");
+      await page(OTHER_PAGE, OTHER_RUN, "42");
+      await page(DRAFT_PAGE, DRAFT_RUN, "43");
+      await confirmAll(RUN);
+      await confirmAll(OTHER_RUN);
+    });
+    const before = await as("service_role", null, () => recordsOf(PAGE));
+    expect(before).toHaveLength(3);
+    firstRecords = before.map((r) => r.id as string);
+
+    await as("service_role", null, async () => {
+      expect(await preview(RUN)).toEqual({ document_id: PAGE, latest: true, record_ids: firstRecords, business_date: DAY, closed_days: [] });
+      // The preview changes nothing.
+      expect(await recordsOf(PAGE)).toHaveLength(3);
+      expect(await reopen(RUN)).toEqual({ records: 3, lines: 3, business_date: DAY, closed_days: [] });
+    });
+
+    await as("authenticated", A, async () => {
+      expect(await recordsOf(PAGE)).toHaveLength(0);
+      expect((await rows(`select status from public.entry_reviews where run_id = $1`, [RUN])).map((r) => r.status)).toEqual(["draft", "draft", "draft"]);
+      expect(await rows(`select status from public.ledger_documents where id = $1`, [PAGE])).toEqual([{ status: "extracted" }]);
+
+      // Each line says it was reopened...
+      const lineEvents = await rows(
+        `select action, previous_values ->> 'status' as was, new_values ->> 'status' as now from public.review_events
+         where run_id = $1 and entry_review_id is not null order by id`,
+        [RUN],
+      );
+      expect(lineEvents.map((e) => e.action)).toEqual(["confirm", "confirm", "confirm", "reopen", "reopen", "reopen"]);
+      expect(lineEvents.slice(3).every((e) => e.was === "confirmed" && e.now === "draft")).toBe(true);
+      // ...and the page's event holds the records that left, as they were.
+      const [event] = await rows(`select previous_values, new_values from public.review_events where run_id = $1 and entry_review_id is null and action = 'reopen'`, [RUN]);
+      const left = event!.previous_values as { status: string; records: Array<Record<string, unknown>> };
+      expect(left.status).toBe("confirmed");
+      expect(left.records.map((r) => [r.id, r.run_id, r.transaction_type, r.amount_poisha, r.party_id])).toEqual(
+        before.map((r) => [r.id, r.run_id, r.transaction_type, r.amount_poisha, r.party_id]),
+      );
+      expect(event!.new_values).toEqual({ status: "extracted", lines: 3, closed_days: [] });
+
+      // The confirmation's findings stay as history, and the party stays.
+      expect(await rows(`select id from public.validation_findings where run_id = $1 and scope = 'confirmation'`, [RUN])).toHaveLength(1);
+      expect(await rows(`select id from public.parties where id = $1`, [before[0]!.party_id])).toHaveLength(1);
+      // He can change the lines again.
+      const upd = await db.query(`update public.entry_reviews set review_fields = '{amount}' where run_id = $1 and line_order = 2`, [RUN]);
+      expect(upd.affectedRows).toBe(1);
+
+      // Another page is untouched.
+      expect(await recordsOf(OTHER_PAGE)).toHaveLength(3);
+      expect(await rows(`select status from public.ledger_documents where id = $1`, [OTHER_PAGE])).toEqual([{ status: "confirmed" }]);
+    });
+  });
+
+  test("confirming again goes through the same function and makes new records", async () => {
+    await as("service_role", null, () => confirmAll(RUN));
+    await as("authenticated", A, async () => {
+      const again = (await recordsOf(PAGE)).map((r) => r.id as string);
+      expect(again).toHaveLength(3);
+      expect(again.some((id) => firstRecords.includes(id))).toBe(false);
+      expect(await rows(`select status from public.ledger_documents where id = $1`, [PAGE])).toEqual([{ status: "confirmed" }]);
+    });
+  });
+
+  test("refused: another owner's reading, a page never confirmed, an older reading", async () => {
+    await as("service_role", null, async () => {
+      await expectDenied(reopen(RUN, B), /not a succeeded reading/);
+      await expectDenied(preview(RUN, B), /not a succeeded reading/);
+      await expectDenied(reopen(DRAFT_RUN), /nothing in the khata/);
+      expect(await recordsOf(PAGE)).toHaveLength(3);
+
+      // The page is read again: only the newer reading, the one the check screen shows, can reopen it.
+      await reading(PAGE, NEWER_RUN, "4a", `${DAY}T11:00:00+06:00`);
+      expect((await preview(RUN)).latest).toBe(false);
+      await expectDenied(reopen(RUN), /not the latest reading/);
+      expect(await recordsOf(PAGE)).toHaveLength(3);
+
+      // Reopening from the newer reading takes out the records the older one put in...
+      expect(await reopen(NEWER_RUN)).toMatchObject({ records: 3, lines: 3 });
+      expect(await recordsOf(PAGE)).toHaveLength(0);
+      expect((await rows(`select status from public.entry_reviews where run_id = $1`, [RUN])).every((r) => r.status === "draft")).toBe(true);
+      const [event] = await rows(`select previous_values from public.review_events where run_id = $1 and entry_review_id is null and action = 'reopen'`, [NEWER_RUN]);
+      expect((event!.previous_values as { records: Array<{ run_id: string }> }).records.every((r) => r.run_id === RUN)).toBe(true);
+
+      // ...so the newer reading can be confirmed.
+      await confirmAll(NEWER_RUN);
+      expect((await recordsOf(PAGE)).map((r) => r.run_id)).toEqual([NEWER_RUN, NEWER_RUN, NEWER_RUN]);
+    });
+  });
+
+  test("a closed day: the page is still reopened, the close keeps its snapshot, and both say which days", async () => {
+    await as("service_role", null, async () => {
+      const [record] = await recordsOf(PAGE);
+      // Its own day, and the day before, closed while one of its records was dated then.
+      await db.query(
+        `insert into public.day_closes (owner_id, business_date, opening_cash_poisha, expected_cash_poisha, counted_cash_poisha, record_ids)
+         values ($1, $2, 0, 0, 0, '{}'), ($1, '2026-11-01', 0, 0, 0, array[$3::uuid])`,
+        [A, DAY, record!.id],
+      );
+      expect((await preview(NEWER_RUN)).closed_days).toEqual(["2026-11-01", DAY]);
+      expect(await reopen(NEWER_RUN)).toEqual({ records: 3, lines: 3, business_date: DAY, closed_days: ["2026-11-01", DAY] });
+      const [close] = await rows(`select record_ids from public.day_closes where owner_id = $1 and business_date = '2026-11-01'`, [A]);
+      expect(close!.record_ids).toEqual([record!.id]);
+    });
+  });
+
+  test("users can call neither function", async () => {
+    await as("authenticated", A, async () => {
+      await expectDenied(preview(NEWER_RUN));
+      await expectDenied(reopen(NEWER_RUN));
+    });
+  });
+
+  test("rejected → draft is still a restore", async () => {
+    await as("authenticated", A, async () => {
+      await db.query(`update public.entry_reviews set status = 'rejected' where run_id = $1 and line_order = 3`, [DRAFT_RUN]);
+      await db.query(`update public.entry_reviews set status = 'draft' where run_id = $1 and line_order = 3`, [DRAFT_RUN]);
+      const events = await rows(`select action from public.review_events where run_id = $1 order by id`, [DRAFT_RUN]);
+      expect(events.map((e) => e.action)).toEqual(["reject", "restore"]);
+    });
+  });
+
+  test("a client stuck in a loop is stopped after 30 reopens in an hour", async () => {
+    await as("service_role", null, async () => {
+      await confirmAll(NEWER_RUN);
+      await db.query(
+        `insert into public.review_events (owner_id, document_id, run_id, action)
+         select $1, $2, $3, 'reopen' from generate_series(1, 30)`,
+        [A, DRAFT_PAGE, DRAFT_RUN],
+      );
+      await expectDenied(reopen(NEWER_RUN), /too many pages reopened/);
+      expect(await recordsOf(PAGE)).toHaveLength(3);
+    });
+  });
+});
