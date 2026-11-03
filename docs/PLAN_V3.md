@@ -329,6 +329,7 @@ The user's idea (2 Nov): he reads the khata to Scriba one part at a time, Scriba
   - `scripts/live-voice.ts` takes a folder of WAVs.
   - Report per clip: transcript, the numbers `number-words.ts` finds, item and name words, and the misses.
 - **Output:** go or no-go, and what the design needs: how he says a part's start and end, মোট, names, "আগের"/"দিলাম". The voice sessions (V2…) are planned from these numbers.
+- **Part 1 (3 Nov):** the measuring kit is ready, $0. `live:voice` takes a folder of any phone audio (ffmpeg converts it to the app's format), scores each `P1-b3-quiet`-style clip against that part's checked truth (`src/lib/evaluation/spoken-part.ts`), saves the transcripts and re-scores them for free. The go bar is set before measuring: ≥ 90% of money figures heard in the quiet, ≥ 80% in noise, median ≤ 3 s. Part 2 waits for his 30 clips (pages 1–3, 15 parts, quiet and noise). See `docs/sessions/V1.md`.
 
 ## Open questions for the user
 
