@@ -7,13 +7,20 @@ import { remainingReviewFields } from "@/lib/review/values";
  * The deck talks to the same APIs as the details page's review workspace: one line saved at a
  * time (`PATCH /api/reviews/[id]`, versioned), lines added (`POST /api/runs/[id]/rows`), page
  * details (`PATCH /api/runs/[id]/page`, versioned) and one confirmation
- * (`POST /api/runs/[id]/confirm`) that re-runs every check on the server. The dev board swaps
- * in `localReviewApi`.
+ * (`POST /api/runs/[id]/confirm`) that re-runs every check on the server. A confirmed page is
+ * reopened through `/api/runs/[id]/reopen` (T4, T5). The dev board swaps in `localReviewApi`.
  */
 export type LinePatch = { values?: EntryValues; status?: "draft" | "rejected"; markChecked?: ReviewableField[] };
 export type SavedLine = Pick<ReviewRow, "values" | "reviewFields" | "status" | "version">;
 export type ConfirmEntry = { id: string; expectedVersion: number; acknowledgements: Acknowledgements };
 export type ApiFailure = { ok: false; reason: "conflict" | "failed" | "notReady"; lineIds?: string[] };
+type Review = { page: PageState; rows: ReviewRow[] };
+
+/** Why a page can't be reopened: read again since (`not_latest`), nothing in the khata (`not_confirmed`). */
+export type ReopenRefusal = "not_latest" | "not_confirmed";
+/** What reopening would do (T4's preview): how many lines leave the khata, and the closed days that hold the page. */
+export type ReopenPreview = { canReopen: boolean; reason: ReopenRefusal | null; records: number; closedDays: string[] };
+export type ReopenResult = { ok: true; review: Review } | { ok: false; reason: ReopenRefusal | "busy" | "failed" };
 
 export type ReviewApi = {
   markStarted: () => void;
@@ -22,7 +29,14 @@ export type ReviewApi = {
   addLine: (afterId: string | null, values: EntryValues) => Promise<{ ok: true; row: ReviewRow } | ApiFailure>;
   savePage: (page: PageState, values: PageValues) => Promise<{ ok: true; page: PageState } | ApiFailure>;
   confirm: (entries: ConfirmEntry[]) => Promise<{ ok: true; confirmed: number } | ApiFailure>;
+  /** What reopening the page would do; changes nothing. Null: it couldn't be asked. `review` is read only by the dev board's version. */
+  reopenPreview: (review: Review) => Promise<ReopenPreview | null>;
+  /** Take the page's lines out of the khata so it can be fixed; returns the review as it now is. */
+  reopen: (review: Review) => Promise<ReopenResult>;
 };
+
+const REFUSALS: readonly string[] = ["not_latest", "not_confirmed"] satisfies ReopenRefusal[];
+const refusal = (code: unknown): ReopenRefusal | null => (typeof code === "string" && REFUSALS.includes(code) ? (code as ReopenRefusal) : null);
 
 async function send(path: string, method: string, body: unknown): Promise<{ status: number; json: Record<string, unknown> } | null> {
   try {
@@ -63,11 +77,34 @@ export function httpReviewApi(runId: string): ReviewApi {
       if (res.status >= 300) return { ok: false, reason: "failed" };
       return { ok: true, confirmed: Number(res.json.confirmed ?? entries.length) };
     },
+    async reopenPreview() {
+      try {
+        const res = await fetch(`/api/runs/${runId}/reopen`);
+        if (!res.ok) return null;
+        const json = (await res.json()) as Record<string, unknown>;
+        const closedDays = Array.isArray(json.closedDays) ? json.closedDays.filter((d): d is string => typeof d === "string") : [];
+        return { canReopen: json.canReopen === true, reason: refusal(json.reason), records: Number(json.records ?? 0), closedDays };
+      } catch {
+        return null;
+      }
+    },
+    async reopen() {
+      const res = await send(`/api/runs/${runId}/reopen`, "POST", {});
+      if (!res) return { ok: false, reason: "failed" };
+      if (res.status === 409) return { ok: false, reason: refusal(res.json.code) ?? "failed" };
+      if (res.status === 429) return { ok: false, reason: "busy" };
+      const { page, rows } = res.json as { page?: PageState | null; rows?: ReviewRow[] | null };
+      if (res.status >= 300 || !page || !rows) return { ok: false, reason: "failed" };
+      return { ok: true, review: { page, rows } };
+    },
   };
 }
 
-/** Development only: the server's line rules in memory, so the deck can be clicked through on stored readings. */
-export function localReviewApi(): ReviewApi {
+/**
+ * Development only: the server's line rules in memory, so the deck can be clicked through on
+ * stored readings. `closedDays`: the closed days a reopen warns about (the dev board's `&closed=1`).
+ */
+export function localReviewApi({ closedDays = [] }: { closedDays?: string[] } = {}): ReviewApi {
   return {
     markStarted() {},
     async saveLine(row, patch) {
@@ -84,6 +121,14 @@ export function localReviewApi(): ReviewApi {
     },
     async confirm(entries) {
       return { ok: true, confirmed: entries.length };
+    },
+    async reopenPreview(review) {
+      const records = review.rows.filter((r) => r.status === "confirmed").length;
+      return { canReopen: records > 0, reason: records > 0 ? null : "not_confirmed", records, closedDays };
+    },
+    async reopen(review) {
+      if (!review.rows.some((r) => r.status === "confirmed")) return { ok: false, reason: "not_confirmed" };
+      return { ok: true, review: { ...review, rows: review.rows.map((r) => (r.status === "confirmed" ? { ...r, status: "draft", version: r.version + 1 } : r)) } };
     },
   };
 }

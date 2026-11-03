@@ -924,3 +924,26 @@ Source: the `asks.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (B7 pa
 | `asks.err.bad` | এটা এখানে বসানো যায় না। আবার দেখুন। | That can't be used here. Have another look. |
 | `asks.memo` | কোম্পানির মেমো | Company memo |
 | `asks.memo.from` | মেমো থেকে | from the memo |
+
+## Part 6: “Fix this page”, as built (T5)
+
+Source: the `ro.*` section of `src/lib/i18n/messages/bn.ts` and `en.ts` (3 Nov). Change the strings there, not here. “পাতাটা ঠিক করুন / Fix this page” is the plan's wording; the rest was written in T5 and hasn't been read by a Bangla reader yet. The button sits on a page that is in the khata: the last screen of the ask deck and of the line deck, and the page's details screen (`ro.dt.*`). The sheet first asks what reopening would do. In `ro.body`, `{1}` is how many of the page's lines leave the khata (`ro.body1` when it is one). In `ro.closed` it is the closed days, as day and month, joined with commas. The red button says what it does, as the kit asks of a destructive one. `ro.not_latest` and `ro.not_confirmed` show in place of the body when the page can't be reopened.
+
+| Key | বাংলা | English |
+|---|---|---|
+| `ro.cta` | পাতাটা ঠিক করুন | Fix this page |
+| `ro.title` | পাতাটা ঠিক করবেন? | Fix this page? |
+| `ro.loading` | দেখছি… | Checking… |
+| `ro.body` | এই পাতার {1}টা লাইন খাতা থেকে সরে যাবে। ঠিক করে আবার খাতায় তুললে ফিরে আসবে। | This page's {1} lines come out of the khata. They go back in when you add the page again. |
+| `ro.body1` | এই পাতার লাইনটা খাতা থেকে সরে যাবে। ঠিক করে আবার খাতায় তুললে ফিরে আসবে। | This page's line comes out of the khata. It goes back in when you add the page again. |
+| `ro.kept` | আপনার উত্তর আর ঠিক করা সংখ্যা থেকে যাবে। লাইনগুলো আবার দেখে খাতায় তুলবেন। | Your answers and fixes are kept. You look over the lines again, then add them. |
+| `ro.closed` | দিন বন্ধ করা হয়েছে: {1}। পাতা ঠিক করার পর সেই দিনের ক্যাশ আবার গুনে দেখুন। | Day already closed: {1}. After fixing the page, count that day's cash again. |
+| `ro.go` | খাতা থেকে সরিয়ে ঠিক করুন | Take it out and fix it |
+| `ro.keep` | থাক, যেমন আছে | Leave it as it is |
+| `ro.not_latest` | এই পাতা পরে আবার পড়া হয়েছে। নতুন পড়াটা খুলে ঠিক করুন। | This page was read again since. Open its latest reading to fix it. |
+| `ro.not_confirmed` | এই পাতার কিছু খাতায় নেই, তাই সরানোর কিছু নেই। | Nothing from this page is in the khata, so there's nothing to take out. |
+| `ro.err.load` | এখন দেখা যাচ্ছে না। আবার চেষ্টা করুন। | Couldn't check just now. Try again. |
+| `ro.err.busy` | এইমাত্র অনেক পাতা খোলা হয়েছে। একটু পরে আবার চেষ্টা করুন। | Too many pages reopened just now. Try again in a while. |
+| `ro.err.fail` | পাতাটা খোলা গেল না। কিছুই বদলায়নি, আবার চেষ্টা করুন। | The page couldn't be reopened. Nothing changed; try again. |
+| `ro.dt.title` | খাতায় আছে | In the khata |
+| `ro.dt.sub` | কিছু ভুল থাকলে পাতাটা খুলে ঠিক করুন, তারপর আবার খাতায় তুলুন। | If something is wrong, reopen the page, fix it, and add it again. |

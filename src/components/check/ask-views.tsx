@@ -88,6 +88,7 @@ export function DeckFrame({ segments, now, notice, onBack, children }: { segment
  * The page seal (D5): the page with its parts, the big seal only when nothing is left open, one
  * row per part, then "Add to the khata". With questions left for later, no seal: how many, and
  * "Answer them now"; confirming then sends only the accepted lines (unpriced goods stay out).
+ * Once the page is in the khata, "Fix this page" (T5) offers to take it out again.
  */
 export function PageSealView({
   photo,
@@ -106,6 +107,7 @@ export function PageSealView({
   onBack,
   onLater,
   onConfirm,
+  onFix,
 }: {
   photo: Photo;
   groups: Group[];
@@ -124,6 +126,8 @@ export function PageSealView({
   onBack: () => void;
   onLater: () => void;
   onConfirm: () => void;
+  /** The page is in the khata: "Fix this page" opens the reopen sheet. */
+  onFix: () => void;
 }) {
   const i18n = useI18n();
   const { t, money, count } = i18n;
@@ -188,6 +192,9 @@ export function PageSealView({
                 {t("sl.today")}
               </ButtonLink>
             )}
+            <Button variant="ghost" wide onClick={onFix}>
+              {t("ro.cta")}
+            </Button>
           </>
         ) : (
           <Button variant="red" wide disabled={busy || !canConfirm} onClick={onConfirm}>

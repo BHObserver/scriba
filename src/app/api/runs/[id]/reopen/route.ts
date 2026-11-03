@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { UUID_RE, apiUser, jsonError } from "@/lib/server/auth";
+import { loadRunReview } from "@/lib/server/review-data";
 import { createServiceSupabase } from "@/lib/supabase/server";
 
 const previewSchema = z.object({
@@ -28,7 +29,7 @@ async function ownReading(runId: string) {
   if (!auth.ok) return auth;
   const { data: run } = await auth.supabase.from("extraction_runs").select("id, status").eq("id", runId).maybeSingle();
   if (!run || run.status !== "succeeded") return { ok: false as const, response: jsonError("Not found.", 404) };
-  return { ok: true as const, ownerId: auth.user.id };
+  return { ok: true as const, ownerId: auth.user.id, supabase: auth.supabase };
 }
 
 /**
@@ -68,6 +69,9 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/runs/[id]/r
  * when the page has something in the khata (409 `not_confirmed`). A closed day keeps its close;
  * `dayClosed` says the page was in one. The owner is checked through his own client, then again by
  * the database with the service role, as confirm does.
+ *
+ * Returns the review as it now is (`page`, `rows`: every line a draft again, with its new version),
+ * so the check screen can go on without reloading (T5).
  */
 export async function POST(_request: Request, ctx: RouteContext<"/api/runs/[id]/reopen">) {
   const { id: runId } = await ctx.params;
@@ -82,7 +86,10 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/runs/[id]/
     return jsonError("Reopening failed. Nothing was changed.", 500);
   }
   const result = resultSchema.parse(data);
+  const review = await loadRunReview(own.supabase, runId);
   return NextResponse.json({
+    page: review?.page ?? null,
+    rows: review?.rows ?? null,
     reopened: result.records,
     lines: result.lines,
     businessDate: result.business_date,

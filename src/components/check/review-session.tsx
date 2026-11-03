@@ -27,6 +27,7 @@ import { type DeckActions, DeckView } from "./deck-view";
 import { SealedView, SummaryView } from "./end-views";
 import { AddSheet, PageSheet } from "./page-sheets";
 import type { Photo } from "./reading-view";
+import { ReopenSheet } from "./reopen-sheet";
 import { NothingView, RevealView } from "./reveal-view";
 import type { LinePatch, ReviewApi, SavedLine } from "./review-api";
 import { lineSentences } from "./sentences";
@@ -57,7 +58,8 @@ function writeStored(runId: string, value: object | null) {
 /**
  * One page from the reveal to the khata: the reveal, the check deck, the summary and the seal
  * over one review state. Every line change is saved at once through `api` (versioned); the
- * confirmation sends only accepted lines and the server re-checks everything.
+ * confirmation sends only accepted lines and the server re-checks everything. A page in the khata
+ * can be reopened from its seal ("Fix this page", T5): its cards then come again.
  */
 export function ReviewSession({
   api,
@@ -100,6 +102,7 @@ export function ReviewSession({
   /** Where a new line goes: after this row, or null for the top of the page. */
   const [adding, setAdding] = useState<{ afterId: string | null } | null>(null);
   const [pageOpen, setPageOpen] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const started = useRef(false);
 
   const { findings, entries } = useMemo(() => checkReview(review), [review]);
@@ -267,6 +270,21 @@ export function ReviewSession({
     setStage("done");
   }
 
+  /** The page came out of the khata (T5): every line is a draft again, and each comes on its card afresh. */
+  function reopened(fresh: Review) {
+    writeStored(runId, null);
+    started.current = true;
+    const o = deckOrder(fresh);
+    setReopening(false);
+    setReview(fresh);
+    setAcceptances({});
+    setLanded(false);
+    setProblem(null);
+    setOrder(o);
+    setIndex(0);
+    setStage(o.length > 0 ? "deck" : "summary");
+  }
+
   const notice = problem ? (
     <div className="dk-err" role="alert">
       <span>{t(problem === "conflict" ? "dk.err.conflict" : problem === "save" ? "dk.err.save" : problem === "some" ? "sl.err.some" : "sl.err.fail")}</span>
@@ -295,7 +313,21 @@ export function ReviewSession({
       return <RevealView photo={photo} rows={review.rows} page={review.page} sub={sub} backHref={backHref} onStart={start} nextHref={nextHref} nextPage={nextHref ? pageNumber + 1 : undefined} />;
     }
     if (stage === "done") {
-      return <SealedView photo={photo} rows={review.rows} findings={findings} outcome={pageOutcome(review, findings)} land={landed} pageNumber={pageNumber} accountName={accountName} sub={sub} nextHref={nextHref} backHref={backHref} />;
+      return (
+        <SealedView
+          photo={photo}
+          rows={review.rows}
+          findings={findings}
+          outcome={pageOutcome(review, findings)}
+          land={landed}
+          pageNumber={pageNumber}
+          accountName={accountName}
+          sub={sub}
+          nextHref={nextHref}
+          backHref={backHref}
+          onFix={() => setReopening(true)}
+        />
+      );
     }
     if (stage === "summary") {
       const statusOf = (row: ReviewRow) => cardStatus(row, entries.get(row.id), findings, acceptances[row.id]);
@@ -399,6 +431,7 @@ export function ReviewSession({
         onClose={() => setAdding(null)}
       />
       <PageSheet open={pageOpen} page={review.page} capturedAt={capturedAt} busy={busy} notice={pageOpen ? notice : null} onSave={savePage} onClose={() => setPageOpen(false)} />
+      <ReopenSheet open={reopening} api={api} review={review} onReopened={reopened} onClose={() => setReopening(false)} />
     </>
   );
 }

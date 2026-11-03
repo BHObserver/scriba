@@ -29,21 +29,24 @@ export type Fixture = {
 export type KitMemo = { memo: MemoForPage; view: MemoView };
 
 const DOC = "00000000-0000-4000-8000-000000000000";
-const API = localReviewApi();
 /** A pretend book for the ask deck: Pran is already in it (written in English), owed ৳2,800. */
 const PARTIES: KnownParty[] = [{ id: "demo-pran", kind: "supplier", name: "Pran", key: "pran" }];
 const DUES = new Map([["demo-pran", 280000]]);
 const CAPTURED_ON = "2026-11-01";
 
-/** Renders one step of the real screens on fixture data. Buttons that would upload or read are live: don't press them. */
-export function CheckBoard({ step, fixture, memos }: { step: string; fixture: Fixture; memos: KitMemo[] }) {
+/**
+ * Renders one step of the real screens on fixture data. Buttons that would upload or read are live: don't press them.
+ * `closed`: "Fix this page" (T5) warns that the photo's day is closed.
+ */
+export function CheckBoard({ step, fixture, memos, closed = false }: { step: string; fixture: Fixture; memos: KitMemo[]; closed?: boolean }) {
   const { t } = useI18n();
+  const lines = useMemo(() => localReviewApi({ closedDays: closed ? [CAPTURED_ON] : [] }), [closed]);
   const ask = useMemo(() => {
     const book = fixture.book ? { parties: fixture.book.parties, dues: new Map(fixture.book.dues) } : { parties: PARTIES, dues: DUES };
     const base = { doubts: fixture.doubts, parties: book.parties, capturedOn: CAPTURED_ON, dues: book.dues, ...(memos.length > 0 ? { memos: memos.map((m) => m.memo) } : {}) };
-    return { api: localAskApi(base), set: buildQuestions({ ...base, page: fixture.page.values, rows: fixture.rows }) };
-  }, [fixture, memos]);
-  const common = { documentId: DOC, photo: fixture.photo, readTurns: fixture.photo.turns, pageNumber: 1, pageCount: 2, detailsHref: "/kit", nextHref: null, backHref: "/kit", api: API, capturedAt: "2026-10-31T09:30:00Z" };
+    return { api: localAskApi(base, lines), set: buildQuestions({ ...base, page: fixture.page.values, rows: fixture.rows }) };
+  }, [fixture, memos, lines]);
+  const common = { documentId: DOC, photo: fixture.photo, readTurns: fixture.photo.turns, pageNumber: 1, pageCount: 2, detailsHref: "/kit", nextHref: null, backHref: "/kit", api: lines, capturedAt: "2026-10-31T09:30:00Z" };
   const body = (() => {
     switch (step) {
       case "capture":

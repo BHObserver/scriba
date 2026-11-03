@@ -48,10 +48,10 @@ export function httpAskApi(runId: string): AskApi {
 }
 
 /** Development only: the engine and the answer rules in memory, so the dev board can be clicked through on a stored reading. */
-export function localAskApi(base: Omit<QuestionInput, "page" | "rows">): AskApi {
+export function localAskApi(base: Omit<QuestionInput, "page" | "rows">, lines: ReviewApi = localReviewApi()): AskApi {
   const inputOf = (review: Review): QuestionInput => ({ ...base, page: review.page.values, rows: review.rows });
   return {
-    ...localReviewApi(),
+    ...lines,
     async answer(review, question, fingerprint, answer) {
       const outcome = answerQuestion(inputOf(review), question, fingerprint, answer, new Date());
       if (!outcome.ok) return { ok: false, reason: outcome.error === "stale" ? "stale" : outcome.error === "bad_value" ? "bad_value" : "failed" };

@@ -97,12 +97,13 @@ async function loadMemo(photo: string): Promise<KitMemo | null> {
  * default, `&photo=S01.jpg` for another; the ask deck on V01.flat by default, `&photo=V02.flat.jpg`;
  * `&memo=M01.jpg` adds a company memo's stored reading, as if photographed with the page;
  * `&photo=karim` is a drawn page shaped like the five-page test's first, for splitting a part;
- * `&photo=karim2` one shaped like its second, with a pretend khata for the "before" questions),
- * for screenshots without an account or a paid call.
+ * `&photo=karim2` one shaped like its second, with a pretend khata for the "before" questions;
+ * `&closed=1` makes "Fix this page" warn of a closed day), for screenshots without an account or
+ * a paid call.
  */
 export default async function KitCheckPage({ searchParams }: PageProps<"/kit/check">) {
   if (process.env.NODE_ENV === "production") notFound();
-  const { step, photo, memo } = await searchParams;
+  const { step, photo, memo, closed } = await searchParams;
   const current = STEPS.find((s) => s === step);
   const name = typeof photo === "string" && PHOTO_RE.test(photo) ? photo : current === "asks" ? "V01.flat.jpg" : "S04.jpg";
   if (!current) {
@@ -127,7 +128,7 @@ export default async function KitCheckPage({ searchParams }: PageProps<"/kit/che
   if (memo && !kitMemo) return <main className="app-main pad">No stored memo reading for {String(memo)} in private-test-data.</main>;
   return (
     <main className="app-main">
-      <CheckBoard step={current} fixture={fixture} memos={kitMemo ? [kitMemo] : []} />
+      <CheckBoard step={current} fixture={fixture} memos={kitMemo ? [kitMemo] : []} closed={closed === "1"} />
     </main>
   );
 }

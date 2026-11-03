@@ -24,6 +24,7 @@ import { type Acceptances, type Review, acceptanceFor, cardStatus, checkReview, 
 import { FixSheet, type FixField, TypeSheet } from "./deck-sheets";
 import { LineActions, LineCard } from "./deck-view";
 import type { Photo } from "./reading-view";
+import { ReopenSheet } from "./reopen-sheet";
 import type { LinePatch } from "./review-api";
 import { lineSentences } from "./sentences";
 
@@ -62,7 +63,9 @@ function writeStored(runId: string, value: object | null) {
  * the "Scriba asks" deck, the page seal. Answers are saved at once through `api.answer` (the
  * server works the question out again and saves its changes as review edits); a line edited by
  * hand asks the questions again. Lines are accepted here and confirmed through the review API,
- * whose approval rules re-check everything, as in the line deck.
+ * whose approval rules re-check everything, as in the line deck. A page in the khata can be
+ * reopened from its seal ("Fix this page", T5): the deck then starts again on the lines, with
+ * his answers kept.
  */
 export function AskSession({
   api,
@@ -121,6 +124,7 @@ export function AskSession({
   const [skipped, setSkipped] = useState<string[]>([]);
   /** The deck has started: from then on acceptances are kept in session storage. */
   const [started, setStarted] = useState(false);
+  const [reopening, setReopening] = useState(false);
 
   const { findings, entries } = useMemo(() => checkReview(review), [review]);
   const blocks = pageBlocks(review.page.values);
@@ -362,6 +366,31 @@ export function AskSession({
     setStage("done");
   }
 
+  /**
+   * The page came out of the khata (T5): every line is a draft again. His answers stay on the
+   * page, so the questions are worked out again and only what is still open is asked; the lines
+   * come on each part's quick confirm. Nothing he accepted before counts: it starts afresh.
+   */
+  async function reopened(fresh: Review) {
+    writeStored(runId, null);
+    const asked = await api.questions(fresh);
+    // Without the questions the deck could skip one: the server works them out on a reload.
+    if (!asked) return window.location.reload();
+    setReopening(false);
+    setReview(fresh);
+    setSet(asked);
+    setAcceptances({});
+    setSeen([]);
+    setPassed([]);
+    setRevisit(false);
+    setSkipped([]);
+    setDrafts({});
+    setLanded(false);
+    setProblem(null);
+    setStarted(true);
+    setStage("deck");
+  }
+
   const notice = problem ? (
     <div className="dk-err" role="alert">
       <span>
@@ -418,6 +447,7 @@ export function AskSession({
           onBack={() => (view === "done" ? router.push(backHref) : setStage("overview"))}
           onLater={answerLater}
           onConfirm={confirm}
+          onFix={() => setReopening(true)}
         />
       );
     }
@@ -581,6 +611,7 @@ export function AskSession({
         onClose={() => setFix(null)}
       />
       <TypeSheet row={typeFor ? rowById(typeFor) : null} busy={busy} onPick={pickType} onClose={() => setTypeFor(null)} />
+      <ReopenSheet open={reopening} api={api} review={review} onReopened={reopened} onClose={() => setReopening(false)} />
     </>
   );
 }

@@ -140,9 +140,33 @@ export function SummaryView({
 /**
  * The end of a page (DESIGN_SPEC D2 "seal"): the seal lands only when every line is in or
  * removed, nothing fails and at least one check passed. Otherwise the page is "in" and the
- * screen says plainly what still doesn't add up.
+ * screen says plainly what still doesn't add up. "Fix this page" (T5) offers to take it out again.
  */
-export function SealedView({ photo, rows, findings, outcome, land, pageNumber, accountName, sub, nextHref, backHref }: { photo: Photo; rows: readonly ReviewRow[]; findings: readonly Finding[]; outcome: PageOutcome; land: boolean; pageNumber: number; accountName: string | null; sub: string; nextHref: string | null; backHref: string }) {
+export function SealedView({
+  photo,
+  rows,
+  findings,
+  outcome,
+  land,
+  pageNumber,
+  accountName,
+  sub,
+  nextHref,
+  backHref,
+  onFix,
+}: {
+  photo: Photo;
+  rows: readonly ReviewRow[];
+  findings: readonly Finding[];
+  outcome: PageOutcome;
+  land: boolean;
+  pageNumber: number;
+  accountName: string | null;
+  sub: string;
+  nextHref: string | null;
+  backHref: string;
+  onFix: () => void;
+}) {
   const i18n = useI18n();
   const { t, money } = i18n;
   const hero = pageSentence(i18n, rows, findings);
@@ -182,6 +206,9 @@ export function SealedView({ photo, rows, findings, outcome, land, pageNumber, a
         <ButtonLink href="/" variant="line" wide>
           {t("sl.today")}
         </ButtonLink>
+        <Button variant="ghost" wide onClick={onFix}>
+          {t("ro.cta")}
+        </Button>
       </div>
     </div>
   );

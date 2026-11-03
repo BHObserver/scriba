@@ -7,7 +7,8 @@ import { normalizePartyName } from "@/lib/ledger/parties";
 import type { BlockValues } from "@/lib/ledger/types";
 import { acceptAnswered, acceptRest, answeredLines, blockDone, blockFigures, blockLines, blockRegion, deckItems, deckSet, isBlockReading, itemKey } from "./ask-model";
 import { type Line, reviewOf } from "./deck-fixture.test-util";
-import { type Acceptances, type Review, checkReview, isAccepted } from "./deck-model";
+import { type Acceptances, type Review, checkReview, confirmEntries, isAccepted } from "./deck-model";
+import { localReviewApi } from "./review-api";
 
 const BLOCKS: BlockValues[] = [
   { id: "b1", kind: "day_sales", title: null, party: null, person: null, dateText: null },
@@ -279,5 +280,63 @@ describe("ask deck", () => {
     const again = deckSet(set, true, [delivery.id]);
     expect(deckItems(review, again, acc, seen).map(itemKey)).not.toContain(`question:${delivery.id}`);
     expect(again.later.map((q) => q.id)).toEqual([delivery.id]);
+  });
+});
+
+describe("a page reopened (T5)", () => {
+  /** "Add to the khata" with every line accepted: the lines confirmed. */
+  function confirmAll(review: Review): Review {
+    const ids = review.rows.map((r) => r.id);
+    const sent = new Set(confirmEntries(review, acceptRest(review, ids, {})).map((e) => e.id));
+    expect(sent.size).toBe(ids.length);
+    return { ...review, rows: review.rows.map((r) => (sent.has(r.id) ? { ...r, status: "confirmed" as const } : r)) };
+  }
+
+  async function reopen(review: Review): Promise<Review> {
+    const res = await localReviewApi().reopen(review);
+    if (!res.ok) throw new Error(res.reason);
+    return res.review;
+  }
+
+  test("his answers stay: nothing is asked again, and every line comes on its part's quick confirm", async () => {
+    let review = karimPage();
+    for (let q = buildQuestions(inputOf(review)).questions[0]; q; q = buildQuestions(inputOf(review)).questions[0]) {
+      review = answer(review, q.id, { option: q.proposed ?? q.options.find((o) => !o.later && !o.local)!.id });
+    }
+    const confirmed = confirmAll(review);
+    expect(deckItems(confirmed, buildQuestions(inputOf(confirmed)), {}, new Set()).map(itemKey)).toEqual(["stamp:b1"]);
+
+    const reopened = await reopen(confirmed);
+    expect(reopened.rows.every((r) => r.status === "draft")).toBe(true);
+    // A new version on every line: acceptances kept for the old ones don't come back.
+    expect(reopened.rows.map((r) => r.version)).toEqual(confirmed.rows.map((r) => r.version + 1));
+    const set = buildQuestions(inputOf(reopened));
+    expect(set).toEqual({ questions: [], later: [] });
+    expect(deckItems(reopened, set, {}, new Set()).map(itemKey)).toEqual(["rest:b1", "stamp:b1"]);
+    expect(restOf(reopened, {}, "b1")).toEqual(reopened.rows.map((r) => r.id));
+  });
+
+  test("P1, confirmed before T2: reopened, Scriba asks the split it never asked, and Karim's part is ৳260", async () => {
+    // Before T2 there was no split question: he said yes to Karim's account and "nothing before".
+    let review = answer(karimPage(), "meaning:b1", { option: "yes" });
+    review = answer(review, "opening:b1", { option: "none" });
+    const reopened = await reopen(confirmAll(review));
+
+    const set = buildQuestions(inputOf(reopened));
+    expect(set.questions.map((q) => q.id)).toEqual(["split:b1"]);
+    const apart = answered(reopened, "split:b1", { option: "apart" });
+    expect(deckItems(apart.after, buildQuestions(inputOf(apart.after)), apart.acc, new Set()).map(itemKey)).toEqual(["rest:b1", "stamp:b1", "rest:b2", "stamp:b2"]);
+    const [karim, sale] = blockLines(apart.after);
+    expect(blockFigures(karim!.block, karim!.rows)).toMatchObject({ kind: "account", before: 0, known: 26000, now: 26000 });
+    expect(blockFigures(sale!.block, sale!.rows)).toEqual({ kind: "total", total: 25000, lines: 4 });
+    expect(sale!.rows.filter((r) => r.values.type === "cash_sale").map((r) => r.values.item)).toEqual(["আটা", "লবণ", "ডিম"]);
+  });
+
+  test("the dev board's preview counts the lines in the khata, and a page with none can't be reopened", async () => {
+    const api = localReviewApi({ closedDays: ["2026-11-01"] });
+    const confirmed = confirmAll(karimPage());
+    expect(await api.reopenPreview(confirmed)).toEqual({ canReopen: true, reason: null, records: 7, closedDays: ["2026-11-01"] });
+    expect(await api.reopenPreview(karimPage())).toMatchObject({ canReopen: false, reason: "not_confirmed", records: 0 });
+    expect(await api.reopen(karimPage())).toEqual({ ok: false, reason: "not_confirmed" });
   });
 });

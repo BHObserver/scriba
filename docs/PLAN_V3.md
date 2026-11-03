@@ -301,6 +301,7 @@ Documents: P1 `b6a9cbba` (confirmed), P2 `157e7df4` (confirmed), P3 `b4aea1e6`, 
   2. Split Karim's part at আটা ("আলাদা বিক্রি").
   3. Confirm, and check that Karim's ledger shows ৳260 → ৳60 after P2 with no adjustment line, and that the ৳250 shows in that day's cash sales.
   - P2 needs no reopen: its "before" ৳260 now equals the book.
+- **Result, the app half (3 Nov):** done. "Fix this page" is on both decks' last screen and on the page's details screen. Its sheet asks T4's preview first: how many lines leave, and the closed-day note. The reopen route now returns the review, so the ask deck opens at once on the cards, his answers kept. A dry run on P1, read only, asks only "are the 3 lines after মোট ২৬০ Karim's too?". Checked in Edge in both languages, $0. **The P1 fix waits for the user.** See `docs/sessions/T5.md`.
 
 ### T6: his digits on prompt 6 (Track B, live ≤ $1)
 

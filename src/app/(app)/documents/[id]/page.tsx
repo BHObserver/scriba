@@ -4,6 +4,7 @@ import { AnalyzePanel } from "@/components/analyze-panel";
 import { DetailsTop } from "@/components/details/details-top";
 import { DeleteDocumentButton } from "@/components/delete-document-button";
 import { type MemoSummary, MemoPanel } from "@/components/details/memo-panel";
+import { ReopenPanel } from "@/components/details/reopen-panel";
 import { OrientationProvider, PhotoPreview } from "@/components/photo-orientation";
 import { ReviewWorkspace } from "@/components/review-workspace";
 import { Card, CardHeader, Notice, Pill, formatBytes, formatDateTime } from "@/components/ui";
@@ -82,6 +83,8 @@ export default async function DocumentPage({ params, searchParams }: PageProps<"
     (typeof runParam === "string" && succeeded.find((r) => r.id === runParam)) || succeeded[0] || null;
   const review = chosen ? await loadRunReview(supabase, chosen.id) : null;
   const latest = runs[0] ?? null;
+  // T5: a page in the khata can be reopened from the reading the check screen shows, its latest.
+  const inKhata = (doc.status === "confirmed" || doc.status === "partially_confirmed") && review != null && chosen?.id === succeeded[0]?.id;
   const lastFailure =
     latest && latest.status !== "succeeded" && latest.status !== "pending"
       ? { status: latest.status, message: latest.errorMessage }
@@ -111,6 +114,13 @@ export default async function DocumentPage({ params, searchParams }: PageProps<"
         <Notice tone="warn">
           This original contains GPS location metadata. It is stored privately. Analyzing it as uploaded sends it to Meta unchanged; a turned copy carries no metadata.
         </Notice>
+      ) : null}
+
+      {inKhata && review ? (
+        <Card>
+          <CardHeader title={t("ro.dt.title")} subtitle={t("ro.dt.sub")} />
+          <ReopenPanel documentId={doc.id} runId={review.run.id} review={{ page: review.page, rows: review.rows }} />
+        </Card>
       ) : null}
 
       <OrientationProvider key={chosen?.id ?? "none"} initialTurns={turnsForProcessingMode(chosen?.processingMode)}>
