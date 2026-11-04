@@ -147,6 +147,7 @@ button.rc-row:not([disabled]) .rc-l::after { content: " ›"; color: var(--ink-s
 .tl-what { font: 500 16px/1.35 var(--font-ui); }
 .tl-amt { font: 700 22px var(--font-ui); font-stretch: 85%; color: var(--blue); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tl-bal { padding: 0 4px; font: 500 14px var(--font-ui); color: var(--ink-soft); }
+.tl-fix { justify-self: start; display: inline-flex; align-items: center; min-height: 40px; padding: 0 4px; font: 600 14px var(--font-ui); color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
 
 /* sheets: merge and reminder */
 .sh-body { display: grid; gap: 12px; }

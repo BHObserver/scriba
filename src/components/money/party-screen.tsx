@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, Money, SampleBadge, StatusMark, TopBar } from "@/components/kit";
@@ -184,6 +185,10 @@ export function PartyScreen(view: PartyScreenView) {
                   <span className="tl-amt">{entryAmount(e, i18n)}</span>
                 </div>
                 <div className="tl-bal">{afterText(kind, e.balancePoisha, i18n)}</div>
+                {/* F2 fix 9: a mistake found here (রহিমা's credit saved as cash) is fixed on its page. */}
+                <Link href={`/documents/${e.documentId}`} className="tl-fix">
+                  {t("pl.wrong")}
+                </Link>
               </article>
             );
           })}

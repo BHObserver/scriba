@@ -345,3 +345,32 @@ describe("blocks survive clients that predate them", () => {
     expect(pageValuesSchema.parse({ dateText: null, ledgerType: "mixed", accountName: null }).blocks).toBeUndefined();
   });
 });
+
+describe("a part headed with বাকি and a name (F2 fix 9)", () => {
+  // His 5 Nov page 2: "রহিমা বাকি:" over আটা and চিনি, read as the day's sales with রহিমা as its party.
+  const RAHIMA = { id: "b1", kind: "day_sales", title: "রহিমা বাকি :", party: "রহিমা", person: null, date_text: null, box: null };
+  const CASH = { id: "b2", kind: "day_sales", title: null, party: null, person: null, date_text: null, box: null };
+  const x = read(
+    pranPage({
+      blocks: [RAHIMA, CASH],
+      entries: [
+        line("e1", "b1", "আটা ২ কেজি ১২৫", "credit_sale", { item: "আটা", amount: "১২৫" }),
+        line("e2", "b1", "চিনি ১ কেজি ১৪০", "unknown", { item: "চিনি", amount: "১৪০", review: ["type"] }),
+        line("e3", "b2", "সাবান ১ টা ৫০", "unknown", { item: "সাবান", amount: "৫০" }),
+      ],
+    }),
+  );
+
+  test("is her account: its sales are on credit, and the khata gives them to her", () => {
+    expect(x.blocks?.find((b) => b.id === "b1")?.kind).toBe("customer_account");
+    expect(x.entries.map((e) => e.values.type)).toEqual(["credit_sale", "credit_sale", "cash_sale"]);
+    expect(x.entries[1]!.reviewFields).not.toContain("type");
+    const page = pageValuesOf(x);
+    expect(partyLinkFor(x.entries[0]!.values, page, [])?.name).toBe("রহিমা");
+    expect(partyLinkFor(x.entries[1]!.values, page, [])?.name).toBe("রহিমা");
+  });
+
+  test("a day's-sales part with no বাকি in its heading stays the day's sales", () => {
+    expect(x.blocks?.find((b) => b.id === "b2")?.kind).toBe("day_sales");
+  });
+});

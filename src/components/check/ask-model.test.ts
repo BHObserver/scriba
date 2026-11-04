@@ -17,12 +17,16 @@ import {
   deckSet,
   isBlockReading,
   itemKey,
+  joinAbove,
   numbersPatches,
+  partAbove,
   partFailures,
   questionsAhead,
   salesKind,
   seenNow,
+  setPartKind,
   settledByNumbers,
+  wordPatch,
 } from "./ask-model";
 import { type Line, reviewOf } from "./deck-fixture.test-util";
 import { type Acceptances, type Review, checkReview, confirmEntries, isAccepted, linesLeft } from "./deck-model";
@@ -522,5 +526,65 @@ describe("the numbers first (F2, 4 Nov)", () => {
     const apart = answer(meaning, "split:b1", { option: "apart" });
     const acc = acceptSeen(apart, buildQuestions(inputOf(apart)), seen, {});
     expect(restOf(apart, acc, "b2")).toEqual(["r4", "r5", "r6", "r7"]);
+  });
+});
+
+describe("parts and words he changes himself (F2 fix 9)", () => {
+  const PARTS: BlockValues[] = [
+    { id: "b1", kind: "customer_account", title: "হাবিব বাকি", party: "হাবিব", person: null, dateText: null },
+    { id: "b2", kind: "day_sales", title: "রহিমা বাকি :", party: "রহিমা", person: null, dateText: null },
+    { id: "b3", kind: "day_sales", title: null, party: null, person: null, dateText: null },
+  ];
+  const page = (): Review =>
+    pageOf(
+      [
+        { type: "credit_sale", item: "তেল", sourceText: "তেল ২ লিটার ৩৪০", amountText: "৩৪০" },
+        { type: "cash_sale", item: "আটা", sourceText: "আটা ২ কেজি ১২৫", amountText: "১২৫" },
+        { type: "unknown", item: "চিনি", sourceText: "চিনি ১ কেজি ১৪০", amountText: "১৪০" },
+        { type: "cash_sale", item: "সড়", sourceText: "সড় ৫০০ গ্রাম ৬৫", amountText: "৬৫", review: ["item", "text", "amount"] },
+      ],
+      ["b1", "b2", "b2", "b3"],
+      PARTS,
+    );
+
+  test("a part set to someone's credit: its sales become sales on credit, and it is named", () => {
+    const c = setPartKind(page(), "b2", "customer_account", "রহিমা")!;
+    expect(c.blocks.find((b) => b.id === "b2")).toMatchObject({ kind: "customer_account", party: "রহিমা", title: "রহিমা বাকি :" });
+    expect(c.lines.map((l) => l.patch.values?.type)).toEqual(["credit_sale", "credit_sale"]);
+    expect(c.linesFirst).toBe(false);
+    expect(setPartKind(page(), "b2", "customer_account", " ")).toBeNull(); // a credit needs a name
+  });
+
+  test("a credit part set to the day's sales: a sale on nobody's account is cash, the name and heading go", () => {
+    const c = setPartKind(page(), "b1", "day_sales", null)!;
+    expect(c.blocks.find((b) => b.id === "b1")).toMatchObject({ kind: "day_sales", party: null, title: null });
+    expect(c.lines.map((l) => l.patch.values?.type)).toEqual(["cash_sale"]);
+  });
+
+  test("a part joined to the one above: its lines move there and take its kinds; the part goes", () => {
+    const c = joinAbove(page(), "b2")!;
+    expect(c.linesFirst).toBe(true);
+    expect(c.blocks.map((b) => b.id)).toEqual(["b1", "b3"]);
+    expect(c.lines.map((l) => [l.patch.values?.block, l.patch.values?.type])).toEqual([
+      ["b1", "credit_sale"],
+      ["b1", "credit_sale"],
+    ]);
+    expect(joinAbove(page(), "b1")).toBeNull(); // nothing above the first part
+    expect(partAbove(page(), "b3")?.id).toBe("b2");
+  });
+
+  test("a word fixed in place changes the line's text with it and settles Scriba's doubt about it", () => {
+    const r = page();
+    const p = wordPatch(r.rows[3]!, "item", "গুড়")!;
+    expect(p.values).toMatchObject({ item: "গুড়", sourceText: "গুড় ৫০০ গ্রাম ৬৫" });
+    expect(p.markChecked).toEqual(["item", "text"]);
+    expect(wordPatch(r.rows[3]!, "item", " সড় ")).toBeNull();
+  });
+
+  test("all the numbers right also settles the words Scriba doubted: no 'I read X, right?' card after", () => {
+    const patch = numbersPatches(page()).find((p) => p.id === page().rows[3]!.id)!;
+    expect(patch.patch.markChecked).toEqual(["amount", "item", "text"]);
+    const q = { kind: "doubt", field: "item", options: [] } as unknown as Question;
+    expect(settledByNumbers(q)).toBe(true);
   });
 });

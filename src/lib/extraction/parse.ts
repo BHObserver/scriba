@@ -213,6 +213,9 @@ function normalizeDoubts(doubts: ModelOutputV3["doubts"], entries: NormalizedEnt
 type AnyModelOutput = ModelOutput | ModelOutputV3;
 const isV3 = (o: AnyModelOutput): o is ModelOutputV3 => "blocks" in o;
 
+/** A heading that says the part is on credit: "রহিমা বাকি:", "Rahima baki". */
+const CREDIT_HEADING = /বাকি|baki/i;
+
 /** How far past the bottom a page's boxes may run and still be scaled back onto it. */
 const TALL_LIMIT = 1500;
 
@@ -318,6 +321,29 @@ export function normalizeModelOutput(
     warnings.push(`${orphans.join(", ")} named no block of this reading, so ${orphans.length === 1 ? "it was" : "they were"} put in block ${id} ("other").`);
   }
   let doubts = isV3(output) ? normalizeDoubts(output.doubts, entries, idOf, warnings) : null;
+
+  // F2 fix 9: "রহিমা বাকি:" over two lines is রহিমা's credit, but the model sometimes files such a
+  // part as the day's sales with her name as its party. There a sale with no name of its own was
+  // saved as cash, so her due was lost (his 5 Nov page 2). A day-sales part whose heading says বাকি
+  // and names someone is that customer's account, and its sales are sales on credit.
+  if (blocks) {
+    const credit = new Set<string>();
+    for (const b of blocks) {
+      if (b.kind !== "day_sales" || !b.party?.trim() || !CREDIT_HEADING.test(b.title ?? "")) continue;
+      b.kind = "customer_account";
+      credit.add(b.id);
+    }
+    const retyped = new Set<string>();
+    for (const e of entries) {
+      if (!e.values.block || !credit.has(e.values.block)) continue;
+      if (e.values.type !== "unknown" && e.values.type !== "cash_sale") continue;
+      e.values.type = "credit_sale";
+      e.reviewFields = e.reviewFields.filter((f) => f !== "type");
+      retyped.add(e.candidateId);
+    }
+    if (credit.size > 0) warnings.push(`A day's-sales part headed with বাকি and a name was read as that customer's account (${[...credit].join(", ")}).`);
+    if (doubts && retyped.size > 0) doubts = doubts.filter((d) => d.field !== "type" || !retyped.has(d.entryId));
+  }
 
   // The shop's rule (F2): in the day's sales, no বাকি written means a cash sale. The model leaves
   // the kind unknown there, as it is told not to guess credit; code applies the rule, so nothing

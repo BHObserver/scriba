@@ -14,7 +14,7 @@ import type { Question } from "@/lib/questions/types";
 import { ackFingerprint } from "@/lib/review/approval";
 import type { ReviewRow } from "@/lib/review/state";
 import type { Finding } from "@/lib/validation/engine";
-import { type NumberField, blockFigures, blockTone, checkable, draftPoisha, isSaleLine, partChecked, partFailures, salesKind, unsureNumbers } from "./ask-model";
+import { type NumberField, blockFigures, blockTone, checkable, draftPoisha, isSaleLine, partChecked, partFailures, salesKind, unsureNumbers, unsureWords } from "./ask-model";
 import { blockName, nowLabel } from "./ask-parts";
 import { RowStrip } from "./deck-sheets";
 import { failsOn } from "./line-state";
@@ -49,6 +49,9 @@ export function NumbersView({
   backHref,
   onFix,
   onSales,
+  onPart,
+  onWord,
+  onType,
   onAnswer,
   onDate,
   onSubmit,
@@ -70,6 +73,12 @@ export function NumbersView({
   backHref: string;
   onFix: (id: string, field: NumberField) => void;
   onSales: (block: string) => void;
+  /** F2 fix 9: what a part is (its kind and name), or join it to the one above. */
+  onPart: (block: string) => void;
+  /** F2 fix 9: a word on a line fixed in place (the item, or who took it on credit). */
+  onWord: (id: string, field: "item" | "customer", text: string) => void;
+  /** A line's kind. */
+  onType: (id: string) => void;
   onAnswer: (q: Question, option: string) => void;
   onDate: () => void;
   onSubmit: () => void;
@@ -90,7 +99,7 @@ export function NumbersView({
         ) : null}
         {unsure > 0 ? <p className="as-why look">{t("asks.nm.unsure", count(unsure))}</p> : null}
         {groups.map((g, i) => (
-          <PartNumbers key={g.block?.id ?? "page"} index={i} group={g} photo={photo} findings={findings} questions={questions} kept={kept} busy={busy} onFix={onFix} onSales={onSales} onAnswer={onAnswer} />
+          <PartNumbers key={g.block?.id ?? "page"} index={i} group={g} photo={photo} findings={findings} questions={questions} kept={kept} busy={busy} onFix={onFix} onSales={onSales} onPart={onPart} onWord={onWord} onType={onType} onAnswer={onAnswer} />
         ))}
       </div>
       <div className="pad column as-dock">
@@ -114,6 +123,9 @@ function PartNumbers({
   busy,
   onFix,
   onSales,
+  onPart,
+  onWord,
+  onType,
   onAnswer,
 }: {
   index: number;
@@ -125,6 +137,9 @@ function PartNumbers({
   busy: boolean;
   onFix: (id: string, field: NumberField) => void;
   onSales: (block: string) => void;
+  onPart: (block: string) => void;
+  onWord: (id: string, field: "item" | "customer", text: string) => void;
+  onType: (id: string) => void;
   onAnswer: (q: Question, option: string) => void;
 }) {
   const i18n = useI18n();
@@ -149,10 +164,20 @@ function PartNumbers({
         <span className={`as-avatar sm r-${tone}`} aria-hidden="true">
           {count(index + 1)}
         </span>
-        <div className="as-who">
-          <b>{blockName(i18n, block)}</b>
-          {about ? <span>{about}</span> : null}
-        </div>
+        {block ? (
+          <button type="button" className="as-who as-who-btn" disabled={busy} onClick={() => onPart(block.id)} aria-label={t("asks.pt.open", blockName(i18n, block))}>
+            <b>
+              {blockName(i18n, block)}
+              <ChevronDown size={18} aria-hidden="true" />
+            </b>
+            {about ? <span>{about}</span> : null}
+          </button>
+        ) : (
+          <div className="as-who">
+            <b>{blockName(i18n, block)}</b>
+            {about ? <span>{about}</span> : null}
+          </div>
+        )}
         {sales && block ? (
           <button type="button" className={cx("as-kind", sales)} disabled={busy} onClick={() => onSales(block.id)} aria-label={t("asks.sl.open", t(`asks.nm.sales.${sales}`))}>
             {t(`asks.nm.sales.${sales}`)}
@@ -161,7 +186,7 @@ function PartNumbers({
         ) : null}
       </div>
       {rows.map((row) => (
-        <NumberLine key={row.id} row={row} block={block} photo={photo} look={failsOn(open, row.id)} busy={busy} onFix={onFix} />
+        <NumberLine key={row.id} row={row} block={block} photo={photo} look={failsOn(open, row.id)} busy={busy} onFix={onFix} onWord={onWord} onType={onType} />
       ))}
       {fails.map((f) => {
         const asWritten = kept.has(ackFingerprint(f));
@@ -241,15 +266,35 @@ function PartNumbers({
 }
 
 /** One line: its handwriting, then what Scriba read from it, each figure a button to fix it. */
-function NumberLine({ row, block, photo, look, busy, onFix }: { row: ReviewRow; block: BlockValues | null; photo: Photo; look: boolean; busy: boolean; onFix: (id: string, field: NumberField) => void }) {
+function NumberLine({
+  row,
+  block,
+  photo,
+  look,
+  busy,
+  onFix,
+  onWord,
+  onType,
+}: {
+  row: ReviewRow;
+  block: BlockValues | null;
+  photo: Photo;
+  look: boolean;
+  busy: boolean;
+  onFix: (id: string, field: NumberField) => void;
+  onWord: (id: string, field: "item" | "customer", text: string) => void;
+  onType: (id: string) => void;
+}) {
   const i18n = useI18n();
   const { t, digits } = i18n;
   const v = row.values;
   const open = checkable(row);
   const unsure = new Set(unsureNumbers(row));
+  const words = new Set(unsureWords(row));
   const credit = isSaleLine(block, row) && v.type === "credit_sale";
   const sum = block != null && sumsRunning(block.kind);
-  const label = [v.item ?? t(`type.${v.type}`), credit && v.customer ? t("asks.nm.creditTo", digits(v.customer)) : null].filter(Boolean).join(" · ");
+  // In the day's sales the part's tag says cash or বাকি; elsewhere each line shows its kind, to change it.
+  const showType = v.item == null || block?.kind !== "day_sales";
   const fig = (field: NumberField, text: string | null, main: boolean) =>
     text == null ? null : (
       <button
@@ -269,7 +314,25 @@ function NumberLine({ row, block, photo, look, busy, onFix }: { row: ReviewRow; 
     <div className={cx("as-nl", !open && "off")}>
       <RowStrip row={row} photo={photo} height={48} tag={false} />
       <div className="as-nl-row">
-        <span className="as-nl-label">{v.crossedOut ? t("asks.nm.crossed") : row.status === "confirmed" ? t("asks.nm.in") : digits(label)}</span>
+        {v.crossedOut || row.status === "confirmed" ? (
+          <span className="as-nl-label">{v.crossedOut ? t("asks.nm.crossed") : t("asks.nm.in")}</span>
+        ) : (
+          <span className="as-nl-words">
+            {v.item != null ? <WordEdit text={v.item} unsure={words.has("item") || words.has("text") || words.has("unit")} disabled={!open || busy} onSave={(text) => onWord(row.id, "item", text)} /> : null}
+            {credit && v.customer ? (
+              <span className="as-nl-credit">
+                <span>{t("asks.nm.creditOf")}</span>
+                <WordEdit text={v.customer} unsure={words.has("customer")} disabled={!open || busy} onSave={(text) => onWord(row.id, "customer", text)} />
+              </span>
+            ) : null}
+            {showType ? (
+              <button type="button" className={cx("as-tag", v.item == null && "lead")} disabled={!open || busy} onClick={() => onType(row.id)} aria-label={t("asks.nm.type", t(`type.${v.type}`))}>
+                {t(`type.${v.type}`)}
+                <ChevronDown size={14} aria-hidden="true" />
+              </button>
+            ) : null}
+          </span>
+        )}
         <span className="as-nl-figs">
           {qty ? <button type="button" className={cx("as-fig", unsure.has("qty") && "unsure")} disabled={!open || busy} onClick={() => onFix(row.id, "qty")} aria-label={t("eq.tap", fieldLabel(i18n, "qty"), digits(qty))}>{digits(qty)}</button> : null}
           {qty && v.rateText ? <i aria-hidden="true">×</i> : null}
@@ -282,6 +345,49 @@ function NumberLine({ row, block, photo, look, busy, onFix }: { row: ReviewRow; 
         </span>
       </div>
     </div>
+  );
+}
+
+/**
+ * A word Scriba read, fixed where it stands (F2 fix 9): a tap turns it into a box with the word in
+ * it; Enter or leaving the box saves it, with nothing to confirm. A word Scriba wasn't sure of is
+ * turmeric, like a doubted figure.
+ */
+function WordEdit({ text, unsure, disabled, onSave }: { text: string; unsure: boolean; disabled: boolean; onSave: (text: string) => void }) {
+  const { t, digits } = useI18n();
+  const [draft, setDraft] = useState<string | null>(null);
+  const done = () => {
+    if (draft != null && draft.trim() && draft.trim() !== text) onSave(draft.trim());
+    setDraft(null);
+  };
+  if (draft != null) {
+    return (
+      <form
+        className="as-word-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          done();
+        }}
+      >
+        <input
+          className="as-word-input"
+          value={draft}
+          maxLength={80}
+          autoFocus
+          aria-label={t("asks.nm.word", digits(text))}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={done}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setDraft(null);
+          }}
+        />
+      </form>
+    );
+  }
+  return (
+    <button type="button" className={cx("as-word", unsure && "unsure")} disabled={disabled} onClick={() => setDraft(text)} aria-label={t("asks.nm.word", digits(text))}>
+      {digits(text)}
+    </button>
   );
 }
 

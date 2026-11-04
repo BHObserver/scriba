@@ -1,7 +1,8 @@
 import type { GridBox } from "@/components/kit/strip-geometry";
 import { blockPartyKind, cashByDefault, groupByBlock, isUnpricedGoods, pageBlocks } from "@/lib/ledger/blocks";
-import type { BlockValues, PageValues, ReviewableField } from "@/lib/ledger/types";
+import type { BlockKind, BlockValues, EntryValues, PageValues, ReviewableField, TransactionType } from "@/lib/ledger/types";
 import { acceptedFindings } from "@/lib/questions/answer";
+import { kindIn } from "@/lib/questions/engine";
 import { parseMoney } from "@/lib/numerals";
 import type { Answer, Question, QuestionKind, QuestionOption, QuestionSet } from "@/lib/questions/types";
 import { ackFingerprint, assessEntry } from "@/lib/review/approval";
@@ -197,6 +198,14 @@ export type NumberField = (typeof NUMBER_FIELDS)[number];
 /** The figures on a line that Scriba wasn't sure of: the numbers screen marks them. */
 export const unsureNumbers = (row: ReviewRow): NumberField[] => NUMBER_FIELDS.filter((f) => row.reviewFields.includes(f));
 
+/**
+ * The words on a line Scriba wasn't sure of (F2 fix 9): the item, the name, the unit, or the line's
+ * text as a whole. The numbers screen marks the line's words, and he taps them to fix them in
+ * place, so "all the numbers are right" settles these too and no "I read X, right?" card follows.
+ */
+export const WORD_FIELDS = ["item", "customer", "unit", "text"] as const satisfies readonly ReviewableField[];
+export const unsureWords = (row: ReviewRow): ReviewableField[] => WORD_FIELDS.filter((f) => row.reviewFields.includes(f));
+
 /** A line the numbers screen shows him to check: a draft that isn't crossed out. */
 export const checkable = (row: ReviewRow): boolean => row.status === "draft" && !row.values.crossedOut;
 
@@ -215,15 +224,15 @@ export function salesKind(block: BlockValues | null, rows: readonly ReviewRow[])
 }
 
 /**
- * What "all the numbers are right" saves, line by line: the figures Scriba was unsure of, which he
- * has now seen beside the writing (checked), and in the day's sales a line of no kind as the cash
+ * What "all the numbers are right" saves, line by line: the figures and words Scriba was unsure
+ * of, which he has now seen beside the writing (checked), and in the day's sales a line of no kind as the cash
  * sale its part's tag showed (`cashByDefault`). Lines with nothing to save are left out.
  */
 export function numbersPatches(review: Review): Array<{ id: string; patch: LinePatch }> {
   const out: Array<{ id: string; patch: LinePatch }> = [];
   for (const { block, rows } of blockLines(review)) {
     for (const row of rows.filter(checkable)) {
-      const markChecked = unsureNumbers(row);
+      const markChecked = [...unsureNumbers(row), ...unsureWords(row)];
       const cash = block != null && cashByDefault(block.kind, row.values);
       if (markChecked.length === 0 && !cash) continue;
       out.push({ id: row.id, patch: { ...(cash ? { values: { ...row.values, type: "cash_sale" as const } } : {}), ...(markChecked.length > 0 ? { markChecked } : {}) } });
@@ -238,7 +247,8 @@ export function numbersPatches(review: Review): Array<{ id: string; patch: LineP
  * sales as cash, and the photo's day when no date is written (shown at the top, he can change it).
  */
 export function settledByNumbers(q: Question): boolean {
-  if (q.kind === "doubt") return q.field != null && (NUMBER_FIELDS as readonly string[]).includes(q.field) && !q.options.some((o) => o.accepts);
+  const shown: readonly string[] = [...NUMBER_FIELDS, ...WORD_FIELDS];
+  if (q.kind === "doubt") return q.field != null && shown.includes(q.field) && !q.options.some((o) => o.accepts);
   if (q.kind === "date") return q.proposed != null;
   return q.kind === "block_kind" && q.options.some((o) => o.id === "cash");
 }
@@ -419,3 +429,86 @@ export function blockTone(block: BlockValues | null): "blue" | "green" | "plain"
   return block.kind === "day_sales" ? "green" : "plain";
 }
 
+
+// --- parts he changes himself (F2 fix 9) ----------------------------------------------------------
+
+/**
+ * The kinds a part can be given from its menu on the numbers screen. His 5 Nov pages: "রহিমা
+ * বাকি" read as the day's sales, cash sales after a credit put in the same part. He fixes that by
+ * splitting the part where it changes, joining parts that belong together, and saying what each is.
+ */
+export const PART_KINDS: readonly BlockKind[] = ["day_sales", "customer_account", "supplier_visit", "expenses", "other"];
+
+const NAMED_KINDS: ReadonlySet<BlockKind> = new Set(["customer_account", "supplier_visit", "supplier_account"]);
+/** A customer's credit or a company's visit is about someone: it needs the name. */
+export const partNeedsName = (kind: BlockKind): boolean => NAMED_KINDS.has(kind);
+
+/**
+ * A line's kind once its part is of `kind`. A part headed "X বাকি" is X's credit: a sale or a line of
+ * no kind there is a sale on credit. In a company's visit a line of no kind, or goods bought, came
+ * on credit. The day's sales and expenses follow the engine's rule for a line moved there
+ * (`kindIn`: a sale on nobody's account is cash).
+ */
+export function typeInPart(kind: BlockKind, values: EntryValues): TransactionType {
+  if (kind === "customer_account" && (values.type === "cash_sale" || values.type === "unknown")) return "credit_sale";
+  if ((kind === "supplier_visit" || kind === "supplier_account") && (values.type === "purchase" || values.type === "unknown")) return "credit_purchase";
+  return kindIn(kind, values);
+}
+
+/** What a change to the parts saves: the page's parts as they become, and each line that changes. */
+export type PartChange = { blocks: BlockValues[]; lines: Array<{ id: string; patch: LinePatch }>; linesFirst: boolean };
+
+/** A part set to `kind` (with the name it needs): its lines take the kinds that go with it. Null when nothing would change or a name is missing. */
+export function setPartKind(review: Review, blockId: string, kind: BlockKind, name: string | null): PartChange | null {
+  const blocks = pageBlocks(review.page.values);
+  const block = blocks.find((b) => b.id === blockId);
+  if (!block) return null;
+  const named = name?.trim() || null;
+  if (partNeedsName(kind) && !named) return null;
+  const party = partNeedsName(kind) ? named : kind === "other" ? block.party : null;
+  const person = partNeedsName(kind) ? block.person : null;
+  const lines = review.rows
+    .filter((r) => r.values.block === blockId && r.status === "draft")
+    .flatMap((r) => {
+      const type = typeInPart(kind, r.values);
+      return type === r.values.type ? [] : [{ id: r.id, patch: { values: { ...r.values, type } } }];
+    });
+  if (kind === block.kind && party === block.party && lines.length === 0) return null;
+  // The heading as written stays only while it still says what the part is.
+  const title = kind === block.kind || partNeedsName(kind) ? block.title : null;
+  return { blocks: blocks.map((b) => (b.id === blockId ? { ...b, kind, party, person, title } : b)), lines, linesFirst: false };
+}
+
+/** The part shown above `blockId` on the numbers screen, or null for the first. */
+export function partAbove(review: Review, blockId: string): BlockValues | null {
+  const order = blockLines(review).flatMap((g) => (g.block ? [g.block] : []));
+  const at = order.findIndex((b) => b.id === blockId);
+  return at > 0 ? order[at - 1]! : null;
+}
+
+/**
+ * A part joined to the one above: its lines move there and take that part's kinds, and the part
+ * goes. The lines move first, so no line is ever left in a part that no longer exists. Null for the
+ * first part, or when one of its lines is already in the khata.
+ */
+export function joinAbove(review: Review, blockId: string): PartChange | null {
+  const above = partAbove(review, blockId);
+  if (!above) return null;
+  const rows = review.rows.filter((r) => r.values.block === blockId);
+  if (rows.some((r) => r.status === "confirmed")) return null;
+  const lines = rows.map((r) => ({ id: r.id, patch: { values: { ...r.values, block: above.id, type: r.status === "draft" ? typeInPart(above.kind, r.values) : r.values.type } } }));
+  return { blocks: pageBlocks(review.page.values).filter((b) => b.id !== blockId), lines, linesFirst: true };
+}
+
+/**
+ * A word on a line fixed by hand: the item or the name. The line's text as read says the same
+ * word, so it changes with it where it is written there; Scriba's doubt about it is settled.
+ */
+export function wordPatch(row: ReviewRow, field: "item" | "customer", typed: string): LinePatch | null {
+  const text = typed.trim();
+  const before = row.values[field]?.trim() ?? "";
+  if (!text || text === before) return null;
+  const sourceText = before && row.values.sourceText.includes(before) ? row.values.sourceText.replace(before, text) : row.values.sourceText;
+  const markChecked = unsureWords(row).filter((f) => f === field || f === "text");
+  return { values: { ...row.values, [field]: text, sourceText }, ...(markChecked.length > 0 ? { markChecked } : {}) };
+}

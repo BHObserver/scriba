@@ -17,25 +17,7 @@ import { voiceSupported } from "@/lib/voice/recorder";
 import type { AskApi } from "./ask-api";
 import { AskFrame, PricesCard, QuestionCard, RestCard } from "./ask-cards";
 import { type MemoView, memoOf } from "./ask-memo";
-import {
-  type AskItem,
-  type SeenFigures,
-  acceptAnswered,
-  acceptRest,
-  acceptSeen,
-  blockFigures,
-  blockLines,
-  blockTone,
-  deckItems,
-  deckSet,
-  figuresKey,
-  itemKey,
-  numbersPatches,
-  questionsAhead,
-  seenNow,
-  slotAnswer,
-  slotText,
-} from "./ask-model";
+import { type AskItem, type SeenFigures, acceptAnswered, acceptRest, acceptSeen, blockFigures, blockLines, blockTone, deckItems, deckSet, figuresKey, itemKey, numbersPatches, questionsAhead, seenNow, slotAnswer, slotText, type PartChange, joinAbove, partAbove, setPartKind, wordPatch } from "./ask-model";
 import { NumbersView, type SaleKindChange, SalesSheet } from "./ask-numbers";
 import { Kicker } from "./ask-parts";
 import { AskSheet, type AskSheetTarget, LinesSheet } from "./ask-sheet";
@@ -44,6 +26,7 @@ import { type Acceptances, type Review, acceptanceFor, cardStatus, checkReview, 
 import { FixSheet, type FixField, TypeSheet } from "./deck-sheets";
 import { LineActions, LineCard } from "./deck-view";
 import type { Photo } from "./reading-view";
+import { PartSheet } from "./part-sheet";
 import { ReopenSheet } from "./reopen-sheet";
 import type { ApiFailure, LinePatch, SavedLine } from "./review-api";
 import { lineSentences } from "./sentences";
@@ -149,6 +132,8 @@ export function AskSession({
   /** The deck has started: from then on acceptances are kept in session storage. */
   const [started, setStarted] = useState(false);
   const [reopening, setReopening] = useState(false);
+  /** The part whose menu is open (F2 fix 9). */
+  const [partFor, setPartFor] = useState<string | null>(null);
 
   const { findings, entries } = useMemo(() => checkReview(review), [review]);
   const blocks = pageBlocks(review.page.values);
@@ -366,6 +351,47 @@ export function AskSession({
   }
   const change = (id: string, patch: LinePatch) => changeLines([{ id, patch }]);
 
+  /**
+   * A part changed by hand (F2 fix 9): its kind and name, or joined to the part above. The page's
+   * parts and the lines are saved in the order that never leaves a line in a part that doesn't
+   * exist, then the questions are asked again. The lines' acceptance is taken back, as for a fix.
+   */
+  async function changeParts(change: PartChange) {
+    setBusy(true);
+    setProblem(null);
+    let r = review;
+    const savePart = async (): Promise<boolean> => {
+      const res = await api.savePage(r.page, { ...r.page.values, blocks: change.blocks });
+      if (!res.ok) {
+        setProblem(res.reason === "conflict" ? "conflict" : "save");
+        return false;
+      }
+      r = { ...r, page: { ...r.page, ...res.page } };
+      return true;
+    };
+    const stop = () => {
+      setBusy(false);
+      setReview(r);
+    };
+    if (!change.linesFirst && !(await savePart())) return stop();
+    const saved = await saveLines(r, change.lines);
+    r = saved.review;
+    if (saved.failed) {
+      setProblem(saved.failed.reason === "conflict" ? "conflict" : "save");
+      return stop();
+    }
+    if (change.linesFirst && !(await savePart())) return stop();
+    begin();
+    const fresh = await api.questions(r);
+    setBusy(false);
+    setReview(r);
+    if (fresh) setSet(fresh);
+    let acc = acceptances;
+    for (const { id } of change.lines) acc = without(acc, id);
+    setAcceptances(acc);
+    setPartFor(null);
+  }
+
   /** The day's sales marked cash or বাকি on the sales sheet (F2). */
   const saleKinds = (changes: readonly SaleKindChange[]) =>
     changeLines(changes.map(({ row, type, customer }) => ({ id: row.id, patch: { values: { ...rowById(row.id).values, type, customer } } })));
@@ -526,6 +552,12 @@ export function AskSession({
           backHref={backHref}
           onFix={(id, field) => setFix({ id, field })}
           onSales={setSalesFor}
+          onPart={setPartFor}
+          onWord={(id, field, text) => {
+            const patch = wordPatch(rowById(id), field, text);
+            if (patch) void change(id, patch);
+          }}
+          onType={setTypeFor}
           onAnswer={(q, option) => void answer(q, { option })}
           onDate={() => dateQuestion && setSheet({ kind: "answer", question: dateQuestion, options: dateQuestion.options, listen: false })}
           onSubmit={() => void submitNumbers()}
@@ -704,6 +736,21 @@ export function AskSession({
       />
       <TypeSheet row={typeFor ? rowById(typeFor) : null} busy={busy} onPick={pickType} onClose={() => setTypeFor(null)} />
       <SalesSheet group={salesFor ? (groups.find((g) => g.block?.id === salesFor) ?? null) : null} photo={photo} busy={busy} onKind={(changes) => void saleKinds(changes)} onClose={() => setSalesFor(null)} />
+      <PartSheet
+        block={partFor ? blockOf(partFor) : null}
+        canJoin={partFor != null && partAbove(review, partFor) != null}
+        busy={busy}
+        onKind={(kind, name) => {
+          const c = partFor ? setPartKind(review, partFor, kind, name) : null;
+          if (c) void changeParts(c);
+          else setPartFor(null);
+        }}
+        onJoin={() => {
+          const c = partFor ? joinAbove(review, partFor) : null;
+          if (c) void changeParts(c);
+        }}
+        onClose={() => setPartFor(null)}
+      />
       <ReopenSheet open={reopening} api={api} review={review} onReopened={reopened} onClose={() => setReopening(false)} />
     </>
   );

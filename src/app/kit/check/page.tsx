@@ -37,16 +37,17 @@ const DATA = path.join(process.cwd(), "private-test-data");
  * S01–S04 are the line-ledger snippets; V01 and V02 (and their flattened pages) are the v3 pages
  * with blocks; P1–P5 are his five-page test (consented as test samples on 3 Nov).
  */
-const PHOTO_RE = /^(S\d{2}(-upright)?|V\d{2}(\.flat)?|P\d|f2-P\d)\.jpg$/;
+const PHOTO_RE = /^(S\d{2}(-upright)?|V\d{2}(\.flat)?|P\d|f[2-4]-P\d)\.jpg$/;
 const folderOf = (photo: string) => (/^[VP]/.test(photo) ? "v3" : "ledger-snippets");
 
-/** F2 fix 6: his 4 Nov pages and their stored readings, saved by scripts/fetch-pages.ts. */
+/** F2 fix 6: his pages and their stored readings, saved by scripts/fetch-pages.ts: f2 (4 Nov), f3 and f4 (5 Nov). */
 async function loadF2(photo: string): Promise<{ bytes: Uint8Array; stored: { promptVersion: string; schemaVersion: string; processingMode: string; summary: Parameters<typeof parseModelResponse>[0] }; source: string } | null> {
+  const set = photo.slice(0, 2);
   const page = photo.slice(3).replace(/\.jpg$/, "");
-  const bytes = new Uint8Array(await readFile(path.join(DATA, "f2", `${page}.jpg`)));
-  const j = JSON.parse(await readFile(path.join(DATA, "f2", `${page}.reading.private.json`), "utf8"));
+  const bytes = new Uint8Array(await readFile(path.join(DATA, set, `${page}.jpg`)));
+  const j = JSON.parse(await readFile(path.join(DATA, set, `${page}.reading.private.json`), "utf8"));
   const summary = { status: "completed", incompleteReason: null, outputText: j.rawOutputText, refusal: null };
-  return { bytes, stored: { promptVersion: j.promptVersion, schemaVersion: j.schemaVersion, processingMode: j.processingMode, summary }, source: `f2/${page}` };
+  return { bytes, stored: { promptVersion: j.promptVersion, schemaVersion: j.schemaVersion, processingMode: j.processingMode, summary }, source: `${set}/${page}` };
 }
 /** M01, M02: the synthetic company memos for V01 and V02 (U4). */
 const MEMO_RE = /^M\d{2}\.jpg$/;
@@ -61,7 +62,7 @@ async function loadFixture(photo: string, snap: boolean): Promise<Fixture | null
     let bytes: Uint8Array;
     let stored: { promptVersion: string; schemaVersion: string; processingMode: string; summary: Parameters<typeof parseModelResponse>[0] };
     let latest: string;
-    if (photo.startsWith("f2-")) {
+    if (/^f[2-4]-/.test(photo)) {
       const f2 = await loadF2(photo);
       if (!f2) return null;
       ({ bytes, stored, source: latest } = f2);

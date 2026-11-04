@@ -678,7 +678,7 @@ const EXPENSE_TYPES: ReadonlySet<TransactionType> = new Set(["expense", "purchas
  * An account or "something else" keeps the kinds: the line-kind questions ask about any that point
  * the other way.
  */
-function kindIn(kind: BlockKind, values: EntryValues): TransactionType {
+export function kindIn(kind: BlockKind, values: EntryValues): TransactionType {
   const type = values.type;
   const named = (values.customer?.trim().length ?? 0) > 0;
   if (kind === "day_sales") {
