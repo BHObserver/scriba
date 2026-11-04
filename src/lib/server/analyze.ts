@@ -6,6 +6,7 @@ import { getExtractionProfile, isTwoPassVersion, withTwoPass } from "@/lib/extra
 import { TWO_PASS_CALL_TIMEOUT_MS } from "@/lib/extraction/two-pass";
 import { cropBlocksForReading } from "@/lib/images/crop";
 import { prepareImageForModel } from "@/lib/images/rotate";
+import { snapReadingBoxes } from "@/lib/images/snap-boxes";
 import { createMetaCaller } from "@/lib/meta/transport";
 import { createServiceSupabase } from "@/lib/supabase/server";
 import { createSupabaseExtractionRepo } from "./extraction-repo";
@@ -28,6 +29,7 @@ export async function runAnalyze(userClient: SupabaseClient, ownerId: string, re
       prepareImage: prepareImageForModel,
       personalize,
       cropBlocks: cropBlocksForReading, // U3: used only when SCRIBA_TWO_PASS is on
+      snapBoxes: (image, extraction) => snapReadingBoxes(image.imageBytes, extraction), // F2 fix 6
     },
     {
       modelId: meta.modelId,

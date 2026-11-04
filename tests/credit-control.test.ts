@@ -199,6 +199,41 @@ describe("credit control", () => {
     expect(store.runs[0]!.cacheKey).not.toBe(store.runs[1]!.cacheKey);
   });
 
+  test("F2 fix 6: the boxes are put on the writing in the image the model saw, before they are stored", async () => {
+    const turned = makePng(64, 65);
+    const seen: Uint8Array[] = [];
+    const moved = { x_min: 1, y_min: 2, x_max: 3, y_max: 4 };
+    const deps = {
+      repo: store.repoFor("user-a"),
+      callModel: countingModel([]).caller,
+      now: () => new Date(),
+      prepareImage: async (_bytes: Uint8Array, mimeType: string) => ({ imageBytes: turned, mimeType }),
+      snapBoxes: async (image: { imageBytes: Uint8Array }, extraction: Parameters<NonNullable<Parameters<typeof analyzeDocument>[0]["snapBoxes"]>>[1]) => {
+        seen.push(image.imageBytes);
+        return { ...extraction, entries: extraction.entries.map((e) => ({ ...e, bbox: moved })) };
+      },
+    };
+    expect((await analyzeDocument(deps, settings, req("r1"))).kind).toBe("completed");
+    expect(seen).toEqual([turned]);
+    const stored = store.runs[0]!.success!;
+    expect(stored.extraction.entries.map((e) => e.bbox)).toEqual([moved, moved, moved, moved]);
+    // The model's own boxes stay in the raw output.
+    expect(stored.rawOutputText).toBe(validOutput);
+  });
+
+  test("F2 fix 6: a snapper that fails keeps the model's boxes and the reading", async () => {
+    const deps = {
+      repo: store.repoFor("user-a"),
+      callModel: countingModel([]).caller,
+      now: () => new Date(),
+      snapBoxes: async () => {
+        throw new Error("no picture");
+      },
+    };
+    expect((await analyzeDocument(deps, settings, req("r1"))).kind).toBe("completed");
+    expect(store.runs[0]!.success!.extraction.entries.map((e) => e.bbox)).toEqual([null, null, null, null]);
+  });
+
   test("a personal reading (prompt 5) sends his notes, is recorded as such and never shares a cache entry", async () => {
     const inputs: Parameters<ModelCaller>[0][] = [];
     const callModel: ModelCaller = async (input) => (inputs.push(input), success());
@@ -576,16 +611,19 @@ describe("company memo (U4): read once, like a page, and never reviewed as one",
     expect(run.memo!.estimatedCostUsd).toBeGreaterThan(0);
   });
 
-  test("never with his notes, a khata layout or two passes", async () => {
+  test("never with his notes, a khata layout, two passes or snapped boxes", async () => {
     const inputs: Parameters<ModelCaller>[0][] = [];
     const callModel: ModelCaller = async (input) => (inputs.push(input), success(memoOutput));
     let asked = 0;
+    let snapped = 0;
     const personalize = async () => (asked++, { key: "k", text: "notes", reference: null });
     process.env.SCRIBA_PROMPT_VERSION = "scriba-prompt-6";
     process.env.SCRIBA_TWO_PASS = "1";
     try {
       const cropBlocks: BlockCropper = async () => [];
-      const out = await analyzeDocument({ repo: store.repoFor("user-a"), callModel, now: () => new Date(), personalize, cropBlocks }, settings, {
+      // F2 fix 6: a memo's lines are not snapped (it has no review rows).
+      const snapBoxes = async <T,>(_image: unknown, extraction: T) => (snapped++, extraction);
+      const out = await analyzeDocument({ repo: store.repoFor("user-a"), callModel, now: () => new Date(), personalize, cropBlocks, snapBoxes }, settings, {
         ...memoReq("r1"),
         layout: "scriba_khata",
       });
@@ -595,6 +633,7 @@ describe("company memo (U4): read once, like a page, and never reviewed as one",
       delete process.env.SCRIBA_TWO_PASS;
     }
     expect(asked).toBe(0);
+    expect(snapped).toBe(0);
     expect(inputs).toHaveLength(1);
     expect(inputs[0]).toMatchObject({ memo: true });
     expect(inputs[0]!.personal).toBeUndefined();

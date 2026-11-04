@@ -7,6 +7,7 @@ import { karimBookFixture, karimFixture } from "./karim-fixture";
 import { memoView } from "@/components/check/ask-memo";
 import { pageValuesOf, parseModelResponse } from "@/lib/extraction/parse";
 import { inspectImage } from "@/lib/images/inspect";
+import { grayForSnap, snapExtraction } from "@/lib/images/snap-boxes";
 import { turnsForProcessingMode } from "@/lib/images/orientation";
 import { parseMemoResponse } from "@/lib/memo/parse";
 import type { ReviewRow } from "@/lib/review/state";
@@ -36,24 +37,49 @@ const DATA = path.join(process.cwd(), "private-test-data");
  * S01–S04 are the line-ledger snippets; V01 and V02 (and their flattened pages) are the v3 pages
  * with blocks; P1–P5 are his five-page test (consented as test samples on 3 Nov).
  */
-const PHOTO_RE = /^(S\d{2}(-upright)?|V\d{2}(\.flat)?|P\d)\.jpg$/;
+const PHOTO_RE = /^(S\d{2}(-upright)?|V\d{2}(\.flat)?|P\d|f2-P\d)\.jpg$/;
 const folderOf = (photo: string) => (/^[VP]/.test(photo) ? "v3" : "ledger-snippets");
+
+/** F2 fix 6: his 4 Nov pages and their stored readings, saved by scripts/fetch-pages.ts. */
+async function loadF2(photo: string): Promise<{ bytes: Uint8Array; stored: { promptVersion: string; schemaVersion: string; processingMode: string; summary: Parameters<typeof parseModelResponse>[0] }; source: string } | null> {
+  const page = photo.slice(3).replace(/\.jpg$/, "");
+  const bytes = new Uint8Array(await readFile(path.join(DATA, "f2", `${page}.jpg`)));
+  const j = JSON.parse(await readFile(path.join(DATA, "f2", `${page}.reading.private.json`), "utf8"));
+  const summary = { status: "completed", incompleteReason: null, outputText: j.rawOutputText, refusal: null };
+  return { bytes, stored: { promptVersion: j.promptVersion, schemaVersion: j.schemaVersion, processingMode: j.processingMode, summary }, source: `f2/${page}` };
+}
 /** M01, M02: the synthetic company memos for V01 and V02 (U4). */
 const MEMO_RE = /^M\d{2}\.jpg$/;
 
-/** The newest stored single-pass response for one test photo, read as the app would read a run. */
-async function loadFixture(photo: string): Promise<Fixture | null> {
+/**
+ * The newest stored single-pass response for one test photo, read as the app would read a run:
+ * since F2 fix 6 with its boxes put on the writing, as a reading is stored; `snap` false keeps
+ * the model's boxes, as readings stored before it have them.
+ */
+async function loadFixture(photo: string, snap: boolean): Promise<Fixture | null> {
   try {
-    const bytes = new Uint8Array(await readFile(path.join(DATA, folderOf(photo), photo)));
+    let bytes: Uint8Array;
+    let stored: { promptVersion: string; schemaVersion: string; processingMode: string; summary: Parameters<typeof parseModelResponse>[0] };
+    let latest: string;
+    if (photo.startsWith("f2-")) {
+      const f2 = await loadF2(photo);
+      if (!f2) return null;
+      ({ bytes, stored, source: latest } = f2);
+    } else {
+      bytes = new Uint8Array(await readFile(path.join(DATA, folderOf(photo), photo)));
+      const names = (await readdir(path.join(DATA, "responses"))).filter((n) => n.startsWith(`${photo}.2026-`) && !/\.(2pass|p6draft)/.test(n)).sort();
+      const newest = names.at(-1);
+      if (!newest) return null;
+      latest = newest;
+      const j = JSON.parse(await readFile(path.join(DATA, "responses", latest), "utf8"));
+      stored = { promptVersion: j.promptVersion, schemaVersion: j.schemaVersion, processingMode: j.processingMode, summary: j.result.summary };
+    }
     const inspection = inspectImage(bytes);
     if (!inspection.ok) return null;
-    const names = (await readdir(path.join(DATA, "responses"))).filter((n) => n.startsWith(`${photo}.2026-`) && !/\.(2pass|p6draft)/.test(n)).sort();
-    const latest = names.at(-1);
-    if (!latest) return null;
-    const stored = JSON.parse(await readFile(path.join(DATA, "responses", latest), "utf8"));
-    const parsed = parseModelResponse(stored.result.summary, { promptVersion: stored.promptVersion, schemaVersion: stored.schemaVersion });
+    const parsed = parseModelResponse(stored.summary, { promptVersion: stored.promptVersion, schemaVersion: stored.schemaVersion });
     if (!parsed.ok) return null;
-    const { extraction } = parsed;
+    // The stored responses are unturned pages, so the photo is the image the model saw.
+    const extraction = snap ? snapExtraction(await grayForSnap(bytes), parsed.extraction).extraction : parsed.extraction;
     const rows: ReviewRow[] = extraction.entries.map((e) => ({
       id: e.candidateId,
       extractedEntryId: null,
@@ -99,6 +125,8 @@ async function loadMemo(photo: string): Promise<KitMemo | null> {
  * Development only: the check flow's screens on a stored reading of a private test photo (S04 by
  * default, `&photo=S01.jpg` for another; the ask deck on V01.flat by default, `&photo=V02.flat.jpg`;
  * `&photo=P1.jpg` … `P5.jpg` his five-page test (F2: the numbers screen on real pages);
+ * `&photo=f2-P1.jpg`, `f2-P2.jpg` his 4 Nov pages (F2 fix 6), boxes put on the writing as a
+ * reading is now stored, or `&snap=0` the model's boxes as they came;
  * `&memo=M01.jpg` adds a company memo's stored reading, as if photographed with the page;
  * `&photo=karim` is a drawn page shaped like the five-page test's first, for splitting a part;
  * `&photo=karim2` one shaped like its second, with a pretend khata for the "before" questions;
@@ -107,7 +135,7 @@ async function loadMemo(photo: string): Promise<KitMemo | null> {
  */
 export default async function KitCheckPage({ searchParams }: PageProps<"/kit/check">) {
   if (process.env.NODE_ENV === "production") notFound();
-  const { step, photo, memo, closed } = await searchParams;
+  const { step, photo, memo, closed, snap } = await searchParams;
   const current = STEPS.find((s) => s === step);
   const name = typeof photo === "string" && PHOTO_RE.test(photo) ? photo : current === "asks" ? "V01.flat.jpg" : "S04.jpg";
   if (!current) {
@@ -126,7 +154,7 @@ export default async function KitCheckPage({ searchParams }: PageProps<"/kit/che
       </main>
     );
   }
-  const fixture = photo === "karim" ? karimFixture() : photo === "karim2" ? karimBookFixture() : await loadFixture(name);
+  const fixture = photo === "karim" ? karimFixture() : photo === "karim2" ? karimBookFixture() : await loadFixture(name, snap !== "0");
   if (!fixture) return <main className="app-main pad">No stored reading for {name} in private-test-data.</main>;
   const kitMemo = typeof memo === "string" && MEMO_RE.test(memo) ? await loadMemo(memo) : null;
   if (memo && !kitMemo) return <main className="app-main pad">No stored memo reading for {String(memo)} in private-test-data.</main>;

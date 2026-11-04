@@ -161,6 +161,12 @@ export type Personalizer = (doc: DocumentForExtraction) => Promise<Personalizati
 
 export type ImagePreparer = (imageBytes: Uint8Array, mimeType: string, mode: ProcessingMode) => Promise<PreparedImage>;
 
+/**
+ * F2 fix 6: puts the reading's line boxes on the rows of writing in the image the model saw. Must
+ * never fail a reading: on any trouble it returns the reading as it was.
+ */
+export type BoxSnapper = (image: PreparedImage, extraction: NormalizedExtraction) => Promise<NormalizedExtraction>;
+
 const originalOnly: ImagePreparer = async (imageBytes, mimeType, mode) => {
   if (mode !== "baseline_original") throw new Error(`No image preparer for ${mode}.`);
   return { imageBytes, mimeType };
@@ -175,6 +181,8 @@ export async function analyzeDocument(
     personalize?: Personalizer;
     /** U3: cuts blocks from the page for a two-pass reading. Without it, a two-pass run sends nothing. */
     cropBlocks?: BlockCropper;
+    /** F2 fix 6: without it, the model's boxes are stored as they came. */
+    snapBoxes?: BoxSnapper;
   },
   settings: AnalyzeSettings,
   request: AnalyzeRequest,
@@ -350,6 +358,14 @@ export async function analyzeDocument(
       return persist(repo, runId, spent, () => repo.completeMemoRun(runId, { ...spent, rawOutputText: spent.rawOutputText ?? "", memo: reading }));
     }
     read = { extraction: called.reading.extraction, ...called.spent };
+  }
+
+  // F2 fix 6: the model places lines badly on a long page (up to five lines low on his 4 Nov page 2),
+  // so every picture of a line showed another one. The boxes are put on the writing before they
+  // are stored; the model's own boxes stay in the raw output.
+  if (deps.snapBoxes) {
+    const reading = read.extraction;
+    read = { ...read, extraction: await deps.snapBoxes(prepared, reading).catch(() => reading) };
   }
 
   const findings = validateLedger({
