@@ -47,6 +47,9 @@ next-env.d.ts
 # exports stay on the developer's machine or in the private Supabase bucket.
 # ---------------------------------------------------------------------------
 /private-test-data/
+# Pitch video material: story images, khata photos, phone recordings, sound, renders.
+/photos/
+/video/
 *.private.json
 *.private.jsonl
 
