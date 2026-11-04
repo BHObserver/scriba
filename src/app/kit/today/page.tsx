@@ -2,12 +2,13 @@ import Link from "next/link";
 import { TodayScreen, type TodayView } from "@/components/money/today-screen";
 import { TabBar } from "@/components/shell/tab-bar";
 import { prepareBook } from "@/lib/insights/book";
+import { addDays } from "@/lib/insights/calendar";
 import { bookInput, SAMPLE_TODAY, sampleShop } from "@/lib/insights/testing";
 import { todayInsights } from "@/lib/insights/today";
 
 export const metadata = { title: "Kit · Today" };
 
-const STEPS = ["today", "new", "new-waiting"] as const;
+const STEPS = ["today", "yesterday", "new", "new-waiting"] as const;
 type Step = (typeof STEPS)[number];
 
 /**
@@ -15,7 +16,8 @@ type Step = (typeof STEPS)[number];
  * new shop, and a new shop whose first page waits. For design review and screenshots only.
  */
 function view(step: Step): TodayView {
-  const fresh = step !== "today";
+  // "yesterday": the sample day seen the morning after, before that day's page is in (F2 fix 10).
+  const fresh = step !== "today" && step !== "yesterday";
   const book = prepareBook(fresh ? bookInput([], { usualOpeningCashPoisha: 150_000 }) : sampleShop());
   const pages = step === "new-waiting" ? [{ documentId: "kit-page-1", state: "waiting" as const, waitingLines: 7, confirmedLines: 0 }] : [];
   const insights = todayInsights(
@@ -25,6 +27,7 @@ function view(step: Step): TodayView {
   );
   return {
     asOf: SAMPLE_TODAY,
+    today: step === "yesterday" ? addDays(SAMPLE_TODAY, 1) : SAMPLE_TODAY,
     shopName: fresh ? "রহমান স্টোর" : "মায়ের দোয়া স্টোর",
     sample: !fresh,
     isNewShop: insights.isNewShop,

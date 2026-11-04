@@ -22,7 +22,7 @@ import {
   reminderPhotoIds,
   whenLabel,
 } from "./dues-model";
-import { MergeSheet, ReminderSheet } from "./party-sheets";
+import { MergeSheet, ReminderSheet, RenameSheet } from "./party-sheets";
 
 export type PartyScreenView = {
   asOf: string;
@@ -64,7 +64,7 @@ export function PartyScreen(view: PartyScreenView) {
   const [extra, setExtra] = useState<LineDetail[]>([]);
   const [count, setCount] = useState(view.firstLines);
   const [more, setMore] = useState<"idle" | "loading" | "failed">("idle");
-  const [sheet, setSheet] = useState<"remind" | "merge" | null>(null);
+  const [sheet, setSheet] = useState<"remind" | "merge" | "rename" | null>(null);
   const [unmerging, setUnmerging] = useState<string | null>(null);
   const [unmergeFailed, setUnmergeFailed] = useState(false);
 
@@ -134,7 +134,7 @@ export function PartyScreen(view: PartyScreenView) {
           </div>
         </section>
 
-        {canRemind || view.mergeTargets.length > 0 ? (
+        {!view.sample ? (
           <div className="pl-acts">
             {canRemind ? (
               <Button variant="red" wide onClick={() => setSheet("remind")}>
@@ -146,6 +146,9 @@ export function PartyScreen(view: PartyScreenView) {
                 {t("pl.merge")}
               </Button>
             ) : null}
+            <Button variant="ghost" wide onClick={() => setSheet("rename")}>
+              {t("pl.rename")}
+            </Button>
           </div>
         ) : null}
 
@@ -226,6 +229,7 @@ export function PartyScreen(view: PartyScreenView) {
           lines={photoLines}
         />
       ) : null}
+      <RenameSheet key={party.name} open={sheet === "rename"} onClose={() => setSheet(null)} partyId={party.id} name={party.name} />
       {view.mergeTargets.length > 0 ? (
         <MergeSheet open={sheet === "merge"} onClose={() => setSheet(null)} partyId={party.id} name={party.name} targets={view.mergeTargets} />
       ) : null}

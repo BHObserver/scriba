@@ -37,7 +37,7 @@ const DATA = path.join(process.cwd(), "private-test-data");
  * S01–S04 are the line-ledger snippets; V01 and V02 (and their flattened pages) are the v3 pages
  * with blocks; P1–P5 are his five-page test (consented as test samples on 3 Nov).
  */
-const PHOTO_RE = /^(S\d{2}(-upright)?|V\d{2}(\.flat)?|P\d|f[2-4]-P\d)\.jpg$/;
+const PHOTO_RE = /^(S\d{2}(-upright)?|V\d{2}(\.flat)?|P\d|f[2-5]-P\d)\.jpg$/;
 const folderOf = (photo: string) => (/^[VP]/.test(photo) ? "v3" : "ledger-snippets");
 
 /** F2 fix 6: his pages and their stored readings, saved by scripts/fetch-pages.ts: f2 (4 Nov), f3 and f4 (5 Nov). */
@@ -62,7 +62,7 @@ async function loadFixture(photo: string, snap: boolean): Promise<Fixture | null
     let bytes: Uint8Array;
     let stored: { promptVersion: string; schemaVersion: string; processingMode: string; summary: Parameters<typeof parseModelResponse>[0] };
     let latest: string;
-    if (/^f[2-4]-/.test(photo)) {
+    if (/^f[2-5]-/.test(photo)) {
       const f2 = await loadF2(photo);
       if (!f2) return null;
       ({ bytes, stored, source: latest } = f2);

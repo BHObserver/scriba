@@ -278,7 +278,7 @@ describe("a name that may already be in the book", () => {
     expect(ids(start).slice(0, 2)).toEqual(["meaning:b1", "party:b1"]);
     const q = find(start, "party:b1");
     expect(sentenceText(bn, q.sentence)).toBe("“Praan” কি আপনার খাতার “প্রাণ”?");
-    expect(q.options.map((o) => sentenceText(en, o.label))).toEqual(["Yes, the same company", "No, a new supplier"]);
+    expect(q.options.map((o) => sentenceText(en, o.label))).toEqual(["Yes, the same company", "No, a new company"]);
     expect(q.why).toBeNull(); // the khata's due wasn't loaded
     expect(q.proposed).toBeNull();
     const yes = answer(answer(start, "meaning:b1", { option: "yes" }), "party:b1", { option: "party:p1" });
@@ -306,7 +306,7 @@ describe("a name that may already be in the book", () => {
     const pran2: KnownParty = { id: "p2", kind: "supplier", name: "Pran", key: normalizePartyName("Pran")! };
     const input = inputOf(read(), { parties: [pran, pran2] });
     const q = find({ ...input, dues: new Map([["p1", 280_000]]) }, "party:b1");
-    expect(q.options.map((o) => sentenceText(en, o.label))).toEqual(["প্রাণ", "Pran", "No, a new supplier"]);
+    expect(q.options.map((o) => sentenceText(en, o.label))).toEqual(["প্রাণ", "Pran", "No, a new company"]);
     expect(q.why).toBeNull();
     expect(bookPartiesOf(input)).toEqual([]);
   });

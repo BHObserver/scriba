@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-const NAME_RE = /^(S\d{2}(-upright)?|V\d{2}(\.flat)?|M\d{2}|P\d|f[2-4]-P\d)\.jpg$/;
+const NAME_RE = /^(S\d{2}(-upright)?|V\d{2}(\.flat)?|M\d{2}|P\d|f[2-5]-P\d)\.jpg$/;
 
 /**
  * Development only: serves one of the author's private test photos to the /kit/check board. The
@@ -11,8 +11,8 @@ export async function GET(_request: Request, ctx: RouteContext<"/kit/photo/[name
   const { name } = await ctx.params;
   if (process.env.NODE_ENV === "production" || !NAME_RE.test(name)) return new Response("Not found", { status: 404 });
   try {
-    // f2-P1.jpg: his pages saved by scripts/fetch-pages.ts into private-test-data/f2/ (4 Nov), f3/ and f4/ (5 Nov).
-    const file = /^f[2-4]-/.test(name) ? path.join(name.slice(0, 2), name.slice(3)) : path.join(/^[VMP]/.test(name) ? "v3" : "ledger-snippets", name);
+    // f2-P1.jpg: his pages saved by scripts/fetch-pages.ts into private-test-data/f2/ (4 Nov), f3/, f4/ and f5/ (5 Nov).
+    const file = /^f[2-5]-/.test(name) ? path.join(name.slice(0, 2), name.slice(3)) : path.join(/^[VMP]/.test(name) ? "v3" : "ledger-snippets", name);
     const bytes = await readFile(path.join(process.cwd(), "private-test-data", file));
     return new Response(new Uint8Array(bytes), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" } });
   } catch {

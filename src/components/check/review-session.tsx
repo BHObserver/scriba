@@ -29,7 +29,7 @@ import { AddSheet, PageSheet } from "./page-sheets";
 import type { Photo } from "./reading-view";
 import { ReopenSheet } from "./reopen-sheet";
 import { NothingView, RevealView } from "./reveal-view";
-import type { LinePatch, ReviewApi, SavedLine } from "./review-api";
+import { type LinePatch, type ReviewApi, type SavedLine, type StartedPage, withStarted } from "./review-api";
 import { lineSentences } from "./sentences";
 
 type Stage = "nothing" | "reveal" | "deck" | "summary" | "done";
@@ -120,8 +120,10 @@ export function ReviewSession({
 
   const withLine = (id: string, line: SavedLine): Review => ({ ...review, rows: review.rows.map((r) => (r.id === id ? { ...r, ...line } : r)) });
 
+  /** Marking review started bumps the page's version; a page saved later waits for it (F2 fix 10). */
+  const startedPage = useRef<Promise<StartedPage> | null>(null);
   function begin() {
-    if (!started.current && !review.page.reviewStartedAt) api.markStarted();
+    if (!started.current && !review.page.reviewStartedAt && !startedPage.current) startedPage.current = api.markStarted();
     started.current = true;
   }
 
@@ -242,7 +244,8 @@ export function ReviewSession({
   async function savePage(values: PageValues) {
     setBusy(true);
     setProblem(null);
-    const res = await api.savePage(review.page, values);
+    const page = startedPage.current ? withStarted(review.page, await startedPage.current) : review.page;
+    const res = await api.savePage(page, values);
     setBusy(false);
     if (!res.ok) return setProblem(res.reason === "conflict" ? "conflict" : "save");
     setReview({ ...review, page: res.page });

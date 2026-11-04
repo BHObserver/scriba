@@ -39,18 +39,24 @@ export function riskText(risk: Risk, kind: PartyKind, i18n: I18n): string {
   }
 }
 
-export function noteText(sentence: NoteSentence, i18n: I18n): string {
+/** `on` names the day when the note is about a day other than today ("গতকাল", "৩ নভেম্বর"). */
+export function noteText(sentence: NoteSentence, i18n: I18n, on: string | null = null): string {
   switch (sentence.kind) {
     case "pending_pages":
       return sentence.pageNumbers.length === 1
-        ? i18n.t("note.pending.one", sentence.pageNumbers[0]!)
-        : i18n.t("note.pending.many", sentence.pageNumbers.length);
+        ? i18n.t(on ? "note.pending.one.day" : "note.pending.one", sentence.pageNumbers[0]!)
+        : i18n.t(on ? "note.pending.many.day" : "note.pending.many", sentence.pageNumbers.length);
     case "sales":
+      if (on) {
+        return sentence.credit.poisha > 0
+          ? i18n.t("note.sales.on", on, i18n.money(sentence.sales.poisha), i18n.money(sentence.credit.poisha))
+          : i18n.t("note.sales.cash.on", on, i18n.money(sentence.sales.poisha));
+      }
       return sentence.credit.poisha > 0
         ? i18n.t("note.sales", i18n.money(sentence.sales.poisha), i18n.money(sentence.credit.poisha))
         : i18n.t("note.sales.cash", i18n.money(sentence.sales.poisha));
     case "no_sales":
-      return i18n.t("note.sales.none");
+      return i18n.t(on ? "note.sales.none.day" : "note.sales.none");
     case "due_risk":
       return i18n.t(
         "note.due",

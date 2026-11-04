@@ -28,7 +28,7 @@ import { LineActions, LineCard } from "./deck-view";
 import type { Photo } from "./reading-view";
 import { PartSheet } from "./part-sheet";
 import { ReopenSheet } from "./reopen-sheet";
-import type { ApiFailure, LinePatch, SavedLine } from "./review-api";
+import { type ApiFailure, type LinePatch, type SavedLine, type StartedPage, withStarted } from "./review-api";
 import { lineSentences } from "./sentences";
 
 /** The numbers screen first (F2), then the questions, then the page and its seal. */
@@ -61,6 +61,13 @@ function writeStored(runId: string, value: object | null) {
     // Storage full or blocked: acceptances last as long as the page.
   }
 }
+
+/**
+ * Marking a page's review started, per run, once per page load. That update bumps the page's
+ * version, so a page saved later waits for it and takes the new version (F2 fix 10: his second
+ * part rename was refused as "changed elsewhere").
+ */
+const startedMarks = new Map<string, Promise<StartedPage>>();
 
 /**
  * One page with blocks from the scan to the khata (B7, DESIGN_SPEC D5; reordered in F2, 4 Nov):
@@ -159,9 +166,13 @@ export function AskSession({
   }, [stage, landed, runId]);
 
   function begin() {
-    if (!started && !review.page.reviewStartedAt) api.markStarted();
+    if (!started && !review.page.reviewStartedAt && !startedMarks.has(runId)) startedMarks.set(runId, api.markStarted());
     setStarted(true);
   }
+  const pageNow = async (page: Review["page"]) => {
+    const mark = startedMarks.get(runId);
+    return mark ? withStarted(page, await mark) : page;
+  };
 
   /** Lines saved side by side (each has its own version), and the review as it then stands. */
   async function saveLines(from: Review, patches: ReadonlyArray<{ id: string; patch: LinePatch }>): Promise<{ review: Review; failed: ApiFailure | null }> {
@@ -198,6 +209,8 @@ export function AskSession({
     }
     let s: QuestionSet | null = null;
     const date = set.questions.find((q) => q.kind === "date" && q.proposed != null);
+    // The answer saves the page on the server, so the started mark must have landed first.
+    if (date) await startedMarks.get(runId);
     if (date) {
       const res = await api.answer(r, date.id, date.fp, { option: date.proposed! });
       if (res.ok) {
@@ -361,6 +374,7 @@ export function AskSession({
     setProblem(null);
     let r = review;
     const savePart = async (): Promise<boolean> => {
+      r = { ...r, page: await pageNow(r.page) };
       const res = await api.savePage(r.page, { ...r.page.values, blocks: change.blocks });
       if (!res.ok) {
         setProblem(res.reason === "conflict" ? "conflict" : "save");
@@ -740,8 +754,8 @@ export function AskSession({
         block={partFor ? blockOf(partFor) : null}
         canJoin={partFor != null && partAbove(review, partFor) != null}
         busy={busy}
-        onKind={(kind, name) => {
-          const c = partFor ? setPartKind(review, partFor, kind, name) : null;
+        onKind={(kind, name, rep) => {
+          const c = partFor ? setPartKind(review, partFor, kind, name, rep) : null;
           if (c) void changeParts(c);
           else setPartFor(null);
         }}

@@ -20,9 +20,17 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/runs/[id]/
   if (!parsed.success) return jsonError("Invalid page values.", 400);
 
   if ("markReviewStarted" in parsed.data) {
-    // Only the first opening counts; later visits leave the timestamp alone.
-    await supabase.from("page_reviews").update({ review_started_at: new Date().toISOString() }).eq("run_id", runId).is("review_started_at", null);
-    return NextResponse.json({ ok: true });
+    // Only the first opening counts; later visits leave the timestamp alone. The update bumps the
+    // page's version (a trigger), so the new one is sent back: a page saved after it must use it
+    // (F2 fix 10: his second part rename was refused as "changed elsewhere").
+    const { data } = await supabase
+      .from("page_reviews")
+      .update({ review_started_at: new Date().toISOString() })
+      .eq("run_id", runId)
+      .is("review_started_at", null)
+      .select("version, review_started_at")
+      .maybeSingle();
+    return NextResponse.json({ ok: true, version: data?.version ?? null, reviewStartedAt: data?.review_started_at ?? null });
   }
 
   // A client that predates blocks or questions sends the page fields only; keep the stored ones.

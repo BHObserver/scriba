@@ -322,7 +322,9 @@ function meaningQuestion(block: BlockValues, rows: ReviewRow[], memo: BlockMemo 
   let sentence: Sentence;
   if (block.kind === "supplier_visit") {
     const figures = visitFigures(rows);
-    const who: SentenceArg[] = person ? [{ text: person }, { text: party }] : [{ text: party }];
+    // The sentence says "কোম্পানি" itself: "ফ্রেশ কোম্পানি" isn't said twice (F2 fix 10).
+    const company = party.replace(/\s*(কোম্পানি|কোম্পানী|company)$/iu, "").trim() || party;
+    const who: SentenceArg[] = person ? [{ text: person }, { text: company }] : [{ text: company }];
     if (figures) sentence = { key: person ? "q.meaning.visit.rep.figures" : "q.meaning.visit.figures", args: [...who, { say: figures }] };
     else sentence = { key: person ? "q.meaning.visit.rep" : "q.meaning.visit", args: who };
   } else {

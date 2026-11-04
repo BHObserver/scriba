@@ -28,3 +28,21 @@ export function datesFrom(from: string, to: string): string[] {
 export function weekdayOf(iso: string): number {
   return new Date(toUtc(iso)).getUTCDay();
 }
+
+/** How far back the Today screen looks for the khata's last day (yesterday, the day before). */
+export const HOME_DAY_REACH = 2;
+
+/**
+ * The day the Today screen shows and closes, given the dates that have a page or a line.
+ * Today once it has one; before that, the khata's last day when it is at most
+ * `HOME_DAY_REACH` days back (pages carry the date written on them, and he often checks a
+ * day's pages after midnight or the next morning); otherwise today.
+ */
+export function homeDayOf(busy: ReadonlySet<string>, today: string): string {
+  if (busy.has(today)) return today;
+  for (let back = 1; back <= HOME_DAY_REACH; back++) {
+    const date = addDays(today, -back);
+    if (busy.has(date)) return date;
+  }
+  return today;
+}

@@ -23,7 +23,8 @@ export type ReopenPreview = { canReopen: boolean; reason: ReopenRefusal | null; 
 export type ReopenResult = { ok: true; review: Review } | { ok: false; reason: ReopenRefusal | "busy" | "failed" };
 
 export type ReviewApi = {
-  markStarted: () => void;
+  /** Marks when review began; resolves to the page's new version when that bumped it, else null. */
+  markStarted: () => Promise<StartedPage>;
   saveLine: (row: ReviewRow, patch: LinePatch) => Promise<{ ok: true; line: SavedLine } | ApiFailure>;
   /** Add a line after `afterId` (null: at the top). The server marks it as added by the reviewer. */
   addLine: (afterId: string | null, values: EntryValues) => Promise<{ ok: true; row: ReviewRow } | ApiFailure>;
@@ -34,6 +35,14 @@ export type ReviewApi = {
   /** Take the page's lines out of the khata so it can be fixed; returns the review as it now is. */
   reopen: (review: Review) => Promise<ReopenResult>;
 };
+
+/** The page's version after review was marked started (that update bumps it), or null. */
+export type StartedPage = { version: number; reviewStartedAt: string | null } | null;
+
+/** The page with the version marking it started gave it, when that is newer than the one held. */
+export function withStarted(page: PageState, started: StartedPage): PageState {
+  return started && started.version > page.version ? { ...page, version: started.version, reviewStartedAt: started.reviewStartedAt } : page;
+}
 
 const REFUSALS: readonly string[] = ["not_latest", "not_confirmed"] satisfies ReopenRefusal[];
 const refusal = (code: unknown): ReopenRefusal | null => (typeof code === "string" && REFUSALS.includes(code) ? (code as ReopenRefusal) : null);
@@ -49,8 +58,12 @@ async function send(path: string, method: string, body: unknown): Promise<{ stat
 
 export function httpReviewApi(runId: string): ReviewApi {
   return {
-    markStarted() {
-      void send(`/api/runs/${runId}/page`, "PATCH", { markReviewStarted: true });
+    async markStarted() {
+      const res = await send(`/api/runs/${runId}/page`, "PATCH", { markReviewStarted: true });
+      const version = res?.json.version;
+      if (typeof version !== "number") return null;
+      const at = res!.json.reviewStartedAt;
+      return { version, reviewStartedAt: typeof at === "string" ? at : null };
     },
     async saveLine(row, patch) {
       const res = await send(`/api/reviews/${row.id}`, "PATCH", { expectedVersion: row.version, ...patch });
@@ -106,7 +119,9 @@ export function httpReviewApi(runId: string): ReviewApi {
  */
 export function localReviewApi({ closedDays = [] }: { closedDays?: string[] } = {}): ReviewApi {
   return {
-    markStarted() {},
+    async markStarted() {
+      return null;
+    },
     async saveLine(row, patch) {
       let reviewFields = row.reviewFields;
       if (patch.values) reviewFields = remainingReviewFields(reviewFields, row.values, patch.values);

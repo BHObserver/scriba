@@ -36,6 +36,15 @@ export type Box = { x_min: number; y_min: number; x_max: number; y_max: number }
 /** A row of writing found on the page, on the 0–1000 grid. */
 export type InkRow = { top: number; bottom: number; center: number; x0: number; x1: number; mass: number };
 
+/**
+ * A pen stroke taken out of the ink (F2 fix 10): his line drawn between two parts, or an
+ * underline. On the 0–1000 grid: its middle height and how far it runs across.
+ */
+export type Stroke = { y: number; x0: number; x1: number; /** Top to bottom, in line pitches. */ tall: number };
+
+/** Strokes as found, in pixels: [middle row, first column, last column, top-to-bottom height]. */
+export type RawStroke = [number, number, number, number];
+
 /** A line as read: its box (null if the model gave none), its block, and whether it opens a titled block. */
 export type LineIn = { box: Box | null; block: string | null; opensTitledBlock: boolean };
 
@@ -52,6 +61,8 @@ export type SnapResult = {
   rows: InkRow[];
   /** The line pitch used, on the grid. */
   pitch: number;
+  /** The pen strokes taken out of the ink, top to bottom; empty when nothing was changed. */
+  strokes: Stroke[];
 };
 
 // --- 1. ink -------------------------------------------------------------------------------------
@@ -67,7 +78,7 @@ export function darkness(img: Gray): Uint8Array {
 }
 
 /** Pen ink: 1 where a pixel is ink, with page edges, long thin strokes and long vertical runs removed. */
-export function inkMask(img: Gray): Uint8Array {
+export function inkMask(img: Gray, found?: RawStroke[]): Uint8Array {
   const { width: w, height: h } = img;
   const d = darkness(img);
   const threshold = Math.max(30, 0.4 * percentile(d, 0.995));
@@ -77,7 +88,7 @@ export function inkMask(img: Gray): Uint8Array {
     for (let x = edge; x < w - edge; x++) if (d[y * w + x]! > threshold) m[y * w + x] = 1;
   }
   removeLongVerticals(m, w, h, Math.round(h * 0.08));
-  removeThinHorizontals(m, w, h, Math.round(w * 0.12));
+  removeThinHorizontals(m, w, h, Math.round(w * 0.12), found);
   return m;
 }
 
@@ -99,7 +110,7 @@ function removeLongVerticals(m: Uint8Array, w: number, h: number, minRun: number
  * Underlines and ruled lines: runs at least `minRun` long (gaps of 2 px bridged) with little ink
  * a few pixels above and below. The headline of a written word is as long, but letters hang under it.
  */
-function removeThinHorizontals(m: Uint8Array, w: number, h: number, minRun: number) {
+function removeThinHorizontals(m: Uint8Array, w: number, h: number, minRun: number, found?: RawStroke[]) {
   const off = Math.max(4, Math.round(w / 120));
   const kill: Array<[number, number, number]> = [];
   const density = (y: number, a: number, b: number) => {
@@ -132,6 +143,7 @@ function removeThinHorizontals(m: Uint8Array, w: number, h: number, minRun: numb
     }
   }
   for (const [y, a, b] of kill) for (let x = a; x < b; x++) m[y * w + x] = 0;
+  found?.push(...kill.map(([y, a, b]): RawStroke => [y, a, b - 1, 1]));
 }
 
 /**
@@ -140,7 +152,7 @@ function removeThinHorizontals(m: Uint8Array, w: number, h: number, minRun: numb
  * pen's width thick in nearly every column (a written word isn't: its letters hang below the
  * headline), and removed. Returns how many strokes were removed.
  */
-export function removeStrokes(m: Uint8Array, w: number, h: number, pitchPx: number): number {
+export function removeStrokes(m: Uint8Array, w: number, h: number, pitchPx: number, found?: RawStroke[]): number {
   const minWidth = Math.round(w * 0.06);
   const maxThick = Math.max(3, pitchPx * 0.22);
   const label = new Int32Array(w * h).fill(-1);
@@ -192,12 +204,68 @@ export function removeStrokes(m: Uint8Array, w: number, h: number, pitchPx: numb
     thick.sort((a, b) => a - b);
     const p85 = thick[Math.floor(thick.length * 0.85)] ?? 0;
     if (p85 <= maxThick) {
-      for (const p of pixels) m[p] = 0;
+      let ySum = 0;
+      let yTop = h;
+      let yBottom = 0;
+      for (const p of pixels) {
+        m[p] = 0;
+        const py = Math.floor(p / w);
+        ySum += py;
+        if (py < yTop) yTop = py;
+        if (py > yBottom) yBottom = py;
+      }
+      found?.push([ySum / pixels.length, x0, x1, yBottom - yTop + 1]);
       removed++;
     }
   }
   return removed;
 }
+
+/**
+ * The strokes taken out, one each, on the grid. A straight one comes as runs on a few pixel rows,
+ * joined here. One running most of the way across is a ruled line or the page's edge, not his.
+ */
+export function strokesOf(raw: readonly RawStroke[], w: number, h: number, pitchPx: number): Stroke[] {
+  const near = Math.max(3, Math.round(h / 400));
+  const groups: Array<{ ys: number[]; x0: number; x1: number; tall: number }> = [];
+  for (const [y, a, b, tall] of [...raw].sort((p, q) => p[0] - q[0])) {
+    const g = groups.find((s) => Math.abs(s.ys.at(-1)! - y) <= near && a <= s.x1 && b >= s.x0);
+    if (g) {
+      g.ys.push(y);
+      g.x0 = Math.min(g.x0, a);
+      g.x1 = Math.max(g.x1, b);
+      g.tall = Math.max(g.tall, tall, g.ys.at(-1)! - g.ys[0]! + 1);
+    } else groups.push({ ys: [y], x0: a, x1: b, tall });
+  }
+  // A stroke with a break in it (the pen skipped) comes as pieces at one height: joined across a
+  // small gap. So are the pieces of a ruled line, which then run too far to be his.
+  const meanY = (g: { ys: number[] }) => g.ys.reduce((s, v) => s + v, 0) / g.ys.length;
+  const gap = w * 0.04;
+  for (let joined = true; joined; ) {
+    joined = false;
+    for (let i = 0; i < groups.length && !joined; i++) {
+      for (let j = i + 1; j < groups.length && !joined; j++) {
+        const p = groups[i]!;
+        const q = groups[j]!;
+        const dy = Math.abs(meanY(p) - meanY(q));
+        if (dy > near * 2 || Math.max(p.x0, q.x0) - Math.min(p.x1, q.x1) > gap) continue;
+        groups[i] = { ys: [...p.ys, ...q.ys], x0: Math.min(p.x0, q.x0), x1: Math.max(p.x1, q.x1), tall: Math.max(p.tall, q.tall, dy + 1) };
+        groups.splice(j, 1);
+        joined = true;
+      }
+    }
+  }
+  return groups
+    .filter((g) => g.x1 - g.x0 + 1 <= w * 0.7 && g.tall <= STROKE_TALL * pitchPx)
+    .map((g) => ({ y: (g.ys.reduce((s, v) => s + v, 0) / g.ys.length / h) * 1000, x0: (g.x0 / w) * 1000, x1: (g.x1 / w) * 1000, tall: g.tall / pitchPx }))
+    .sort((p, q) => p.y - q.y);
+}
+
+/**
+ * How tall a stroke may be, top to bottom, as a share of the line pitch: his lines between parts are
+ * drawn nearly flat, while the headline of a word taken out as a stroke has its letters under it.
+ */
+export const STROKE_TALL = 0.4;
 
 // --- 2. rows ------------------------------------------------------------------------------------
 
@@ -565,6 +633,7 @@ export function snapLines(img: Gray, lines: LineIn[], trace?: (message: string) 
     rowOf: lines.map(() => null),
     rows,
     pitch,
+    strokes: [],
   });
   const boxed = lines.map((l, i) => ({ l, i })).filter((x) => x.l.box != null);
   if (boxed.length < 3) return unchanged("fewer than 3 lines with a box");
@@ -573,8 +642,9 @@ export function snapLines(img: Gray, lines: LineIn[], trace?: (message: string) 
 
   const heights = boxed.map(({ l }) => Math.abs(l.box!.y_max - l.box!.y_min)).sort((a, b) => a - b);
   const guessGrid = clampNum(heights[Math.floor(heights.length / 2)]!, 12, 120);
-  const mask = inkMask(img);
-  removeStrokes(mask, w, h, (guessGrid / 1000) * h);
+  const raw: RawStroke[] = [];
+  const mask = inkMask(img, raw);
+  removeStrokes(mask, w, h, (guessGrid / 1000) * h, raw);
   const pitchPx = estimatePitch(rowProfile(mask, w, h), (guessGrid / 1000) * h);
   const pitch = (pitchPx / h) * 1000;
   const rows = findRows(mask, w, h, pitchPx);
@@ -645,7 +715,7 @@ export function snapLines(img: Gray, lines: LineIn[], trace?: (message: string) 
       y_max: clampGrid(bottom),
     };
   });
-  return { boxes, applied: true, reason: null, matched, rowOf: rowOfLine, rows, pitch };
+  return { boxes, applied: true, reason: null, matched, rowOf: rowOfLine, rows, pitch, strokes: strokesOf(raw, w, h, pitchPx) };
 }
 
 // --- helpers ------------------------------------------------------------------------------------

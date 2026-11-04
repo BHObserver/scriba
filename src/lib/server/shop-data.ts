@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { STORAGE_BUCKET } from "@/lib/config";
 import { type PartyAccount, duesList, partyAccount } from "@/lib/insights/accounts";
 import { type Book, prepareBook, rootPartyId } from "@/lib/insights/book";
-import { addDays } from "@/lib/insights/calendar";
+import { addDays, homeDayOf } from "@/lib/insights/calendar";
 import { type DayCloseSnapshot, dayCloseSnapshot, daySummary } from "@/lib/insights/day";
 import { todayInsights } from "@/lib/insights/today";
 import { salesByDay } from "@/lib/insights/trends";
@@ -120,13 +120,22 @@ export async function loadShop(supabase: Supabase): Promise<Shop> {
 // Screens
 // ---------------------------------------------------------------------------
 
+/** The day the Today screen shows and closes: today, or the khata's last day (`homeDayOf`). */
+export function homeDay(shop: Shop, asOf: string): string {
+  const busy = new Set([...shop.pages.map((p) => p.businessDate), ...shop.book.records.map((r) => r.businessDate)]);
+  return homeDayOf(busy, asOf);
+}
+
 export function todayData(shop: Shop, asOf: string) {
+  const day = homeDay(shop, asOf);
   return {
     profile: shop.profile,
-    insights: todayInsights(shop.book, asOf, dayPages(shop.pages, asOf)),
-    /** The seven days ending today, oldest first, for the bars. */
-    week: salesByDay(shop.book, addDays(asOf, -6), asOf),
-    pages: shop.pages.filter((p) => p.businessDate === asOf),
+    /** The day shown: today, or the khata's last day (see `homeDay`). */
+    day,
+    insights: todayInsights(shop.book, day, dayPages(shop.pages, day)),
+    /** The seven days ending on the day shown, oldest first, for the bars. */
+    week: salesByDay(shop.book, addDays(day, -6), day),
+    pages: shop.pages.filter((p) => p.businessDate === day),
   };
 }
 

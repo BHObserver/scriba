@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Button, Sheet } from "@/components/kit";
 import { useI18n } from "@/lib/i18n/client";
 import type { BlockKind, BlockValues } from "@/lib/ledger/types";
-import { PART_KINDS, partNeedsName } from "./ask-model";
+import { PART_KINDS, partHasRep, partNeedsName } from "./ask-model";
 
 /**
  * What a part is, set by him (F2 fix 9): opened from the part's name on the numbers screen. He
@@ -24,7 +24,7 @@ export function PartSheet({
   block: BlockValues | null;
   canJoin: boolean;
   busy: boolean;
-  onKind: (kind: BlockKind, name: string | null) => void;
+  onKind: (kind: BlockKind, name: string | null, rep: string | null) => void;
   onJoin: () => void;
   onClose: () => void;
 }) {
@@ -36,13 +36,16 @@ export function PartSheet({
   );
 }
 
-function PartBody({ block, canJoin, busy, onKind, onJoin, onClose }: { block: BlockValues; canJoin: boolean; busy: boolean; onKind: (kind: BlockKind, name: string | null) => void; onJoin: () => void; onClose: () => void }) {
+function PartBody({ block, canJoin, busy, onKind, onJoin, onClose }: { block: BlockValues; canJoin: boolean; busy: boolean; onKind: (kind: BlockKind, name: string | null, rep: string | null) => void; onJoin: () => void; onClose: () => void }) {
   const { t } = useI18n();
   const [kind, setKind] = useState<BlockKind>(block.kind);
   const [name, setName] = useState(block.party ?? "");
+  const [rep, setRep] = useState(block.person ?? "");
   const kinds = PART_KINDS.includes(block.kind) ? PART_KINDS : [...PART_KINDS, block.kind];
   const needsName = partNeedsName(kind);
-  const changed = kind !== block.kind || (needsName && name.trim() !== (block.party ?? "").trim());
+  const hasRep = partHasRep(kind);
+  const changed =
+    kind !== block.kind || (needsName && name.trim() !== (block.party ?? "").trim()) || (hasRep && rep.trim() !== (block.person ?? "").trim());
   return (
     <div className="as-sheet">
       <div className="as-sheet-head">
@@ -64,13 +67,19 @@ function PartBody({ block, canJoin, busy, onKind, onJoin, onClose }: { block: Bl
         onSubmit={(e) => {
           e.preventDefault();
           if (!changed || (needsName && !name.trim())) return;
-          onKind(kind, needsName ? name.trim() : null);
+          onKind(kind, needsName ? name.trim() : null, hasRep ? rep.trim() : null);
         }}
       >
         {needsName ? (
           <label className="grid gap-1">
             <span className="t-small">{t(kind === "customer_account" ? "asks.pt.name.customer" : "asks.pt.name.supplier")}</span>
             <input className="as-input" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
+          </label>
+        ) : null}
+        {hasRep ? (
+          <label className="grid gap-1">
+            <span className="t-small">{t("asks.pt.rep")}</span>
+            <input className="as-input" value={rep} maxLength={80} onChange={(e) => setRep(e.target.value)} />
           </label>
         ) : null}
         <Button type="submit" variant="red" wide disabled={busy || !changed || (needsName && !name.trim())}>

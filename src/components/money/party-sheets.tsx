@@ -101,6 +101,54 @@ export function MergeSheet({
   );
 }
 
+/**
+ * A name Scriba misread, fixed after the page was confirmed (F2 fix 10): the customer or the
+ * company is shown under the name he writes. The lines keep the name as written on the page.
+ */
+export function RenameSheet({ open, onClose, partyId, name }: { open: boolean; onClose: () => void; partyId: string; name: string }) {
+  const { t } = useI18n();
+  const router = useRouter();
+  const [value, setValue] = useState(name);
+  const [state, setState] = useState<"idle" | "saving" | "failed">("idle");
+  const next = value.trim();
+  const save = async () => {
+    if (!next || next === name) return;
+    setState("saving");
+    const res = await fetch(`/api/parties/${partyId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ displayName: next }),
+    }).catch(() => null);
+    if (!res?.ok) return setState("failed");
+    setState("idle");
+    onClose();
+    router.refresh();
+  };
+  return (
+    <Sheet open={open} onClose={onClose} label={t("rn.title")}>
+      <form
+        className="sh-body"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <SheetHead title={t("rn.title")} onClose={onClose} />
+        <p className="t-body">{t("rn.body")}</p>
+        <input className="input" lang="bn" aria-label={t("rn.title")} value={value} maxLength={80} onChange={(e) => setValue(e.target.value)} />
+        {state === "failed" ? (
+          <p className="res-err" role="alert">
+            {t("rn.err")}
+          </p>
+        ) : null}
+        <Button type="submit" variant="red" wide disabled={!next || next === name || state === "saving"}>
+          {state === "saving" ? t("mg.saving") : t("rn.go")}
+        </Button>
+      </form>
+    </Sheet>
+  );
+}
+
 type Photo = { key: string; file: File | null };
 
 /**

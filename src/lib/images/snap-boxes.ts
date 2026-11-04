@@ -5,6 +5,7 @@
  */
 import sharp from "sharp";
 import type { NormalizedExtraction } from "@/lib/extraction/parse";
+import { splitAtStrokes } from "@/lib/extraction/separators";
 import { type Gray, type LineIn, type SnapResult, snapLines } from "./ink-rows";
 
 /** The width the photo is looked at: a line is about 15 px high, plenty to find its row. */
@@ -40,7 +41,11 @@ export function linesOf(extraction: NormalizedExtraction): LineIn[] {
   return extraction.entries.map((e) => ({ box: e.bbox, block: e.values.block ?? null, opensTitledBlock: opens.get(e.candidateId) ?? false }));
 }
 
-/** The reading with its boxes on the writing, and what the snapper found. */
+/**
+ * The reading with its boxes on the writing, and what the snapper found. A part with one of his
+ * strokes between two of its lines is then split there (F2 fix 10, `separators.ts`): only once the
+ * boxes are on the writing, since the model's own can be lines off.
+ */
 export function snapExtraction(
   gray: Gray,
   extraction: NormalizedExtraction,
@@ -49,7 +54,7 @@ export function snapExtraction(
   const snap = snapLines(gray, linesOf(extraction), trace);
   if (!snap.applied) return { extraction, snap };
   const entries = extraction.entries.map((e, i) => ({ ...e, bbox: snap.boxes[i] ?? e.bbox }));
-  return { extraction: { ...extraction, entries }, snap };
+  return { extraction: splitAtStrokes({ ...extraction, entries }, snap.strokes), snap };
 }
 
 /**

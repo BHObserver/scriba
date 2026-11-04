@@ -561,6 +561,17 @@ describe("parts and words he changes himself (F2 fix 9)", () => {
     expect(c.lines.map((l) => l.patch.values?.type)).toEqual(["cash_sale"]);
   });
 
+  test("a company's name and its SR's are fixed on their own (F2 fix 10)", () => {
+    const visit = (): Review =>
+      pageOf([{ type: "credit_purchase", item: "জুস", sourceText: "জুস ১ কার্টুন ১২০০", amountText: "১২০০" }], ["b1"], [
+        { id: "b1", kind: "supplier_visit", title: "সুপার (সেলিম) :", party: "সুপার", person: "সেলিম", dateText: null },
+      ]);
+    expect(setPartKind(visit(), "b1", "supplier_visit", "প্রাণ")!.blocks[0]).toMatchObject({ party: "প্রাণ", person: "সেলিম" }); // the SR kept
+    expect(setPartKind(visit(), "b1", "supplier_visit", "সুপার", "কামাল")!.blocks[0]).toMatchObject({ party: "সুপার", person: "কামাল" });
+    expect(setPartKind(visit(), "b1", "supplier_visit", "সুপার", " ")!.blocks[0]).toMatchObject({ person: null }); // cleared
+    expect(setPartKind(visit(), "b1", "supplier_visit", "সুপার", "সেলিম")).toBeNull(); // nothing changed
+  });
+
   test("a part joined to the one above: its lines move there and take its kinds; the part goes", () => {
     const c = joinAbove(page(), "b2")!;
     expect(c.linesFirst).toBe(true);

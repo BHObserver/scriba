@@ -8,6 +8,7 @@ import { cx } from "@/components/ui";
 import { useI18n } from "@/lib/i18n/client";
 import type { DaySummary } from "@/lib/insights/day";
 import type { NoteSentence } from "@/lib/insights/note";
+import { addDays } from "@/lib/insights/calendar";
 import { noteText } from "@/lib/insights/text";
 import type { DaySales } from "@/lib/insights/trends";
 import { type Drill, DrillSheet } from "./drill-sheet";
@@ -15,7 +16,10 @@ import { Split, WeekBars } from "./money-kit";
 import { type DayPageView, drawerEquation, outParts, plainMoney, waitingPages, weekLine } from "./money-model";
 
 export type TodayView = {
+  /** The day shown: today, or the khata's last day while today has no page (`homeDay`). */
   asOf: string;
+  /** The calendar day in Dhaka. */
+  today: string;
   shopName: string | null;
   sample: boolean;
   /** Nothing confirmed yet: only the morning cash and the way to the camera. */
@@ -46,7 +50,12 @@ export function TodayScreen(view: TodayView) {
     setDrill(next);
     setOpen(true);
   };
-  const title = t("today.title", `${i18n.weekday(view.asOf)}, ${i18n.dayMonth(view.asOf)}`);
+  const shownDay = `${i18n.weekday(view.asOf)}, ${i18n.dayMonth(view.asOf)}`;
+  const isToday = view.asOf === view.today;
+  const title = isToday ? t("today.title", shownDay) : t(view.asOf === addDays(view.today, -1) ? "today.title.yesterday" : "today.title.day", shownDay);
+  // A day other than today: the note names it, and closing goes to that day.
+  const on = isToday ? null : view.asOf === addDays(view.today, -1) ? t("du.yesterday") : i18n.dayMonth(view.asOf);
+  const closeHref = isToday ? "/close" : `/close?date=${view.asOf}`;
   const waiting = waitingPages(view.pages);
 
   if (view.isNewShop) {
@@ -69,7 +78,7 @@ export function TodayScreen(view: TodayView) {
               <span className="note-label">{t("td.note")}</span>
               {pending.map((s, i) => (
                 <p key={i} className="t-body">
-                  {noteText(s, i18n)}
+                  {noteText(s, i18n, on)}
                 </p>
               ))}
               <ButtonLink href={waiting.href} variant="red" wide>
@@ -136,7 +145,7 @@ export function TodayScreen(view: TodayView) {
             <span className="note-label">{t("td.note")}</span>
             {view.note.map((s, i) => (
               <p key={i} className="t-body">
-                {noteText(s, i18n)}
+                {noteText(s, i18n, on)}
               </p>
             ))}
             {waiting.href ? (
@@ -150,8 +159,8 @@ export function TodayScreen(view: TodayView) {
           <AskPill solo onOpen={() => setAsking(true)} />
         )}
 
-        {day.close ? <ClosedRow day={day} /> : (
-          <ButtonLink href="/close" variant="red" wide>
+        {day.close ? <ClosedRow day={day} href={closeHref} isToday={isToday} /> : (
+          <ButtonLink href={closeHref} variant="red" wide>
             {t("td.close")}
           </ButtonLink>
         )}
@@ -188,7 +197,7 @@ export function TodayScreen(view: TodayView) {
 }
 
 /** The day, once closed: the seal on a match, otherwise the gap in words. Opens the close screen. */
-function ClosedRow({ day }: { day: DaySummary }) {
+function ClosedRow({ day, href, isToday }: { day: DaySummary; href: string; isToday: boolean }) {
   const i18n = useI18n();
   const { t } = i18n;
   const close = day.close!;
@@ -196,13 +205,13 @@ function ClosedRow({ day }: { day: DaySummary }) {
   const counted = i18n.money(close.countedPoisha);
   const body =
     gap === 0
-      ? t("td.closed.matchB", counted)
+      ? t(isToday ? "td.closed.matchB" : "td.closed.matchB.day", counted)
       : t(gap < 0 ? "td.closed.short" : "td.closed.over", counted, i18n.money(Math.abs(gap)));
   return (
-    <Link href="/close" className="card closed">
+    <Link href={href} className="card closed">
       {gap === 0 && !close.changedSinceClose ? <Seal size={64} /> : <StatusMark kind="look" />}
       <span className="closed-t">
-        <b>{gap === 0 ? t("td.closed.match") : t("td.closed.done")}</b>
+        <b>{gap === 0 ? t(isToday ? "td.closed.match" : "td.closed.match.day") : t(isToday ? "td.closed.done" : "td.closed.done.day")}</b>
         <span className="t-small">{body}</span>
         {close.changedSinceClose ? <span className="why-look">{t("td.closed.changed")}</span> : null}
       </span>

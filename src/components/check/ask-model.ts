@@ -442,6 +442,8 @@ export const PART_KINDS: readonly BlockKind[] = ["day_sales", "customer_account"
 const NAMED_KINDS: ReadonlySet<BlockKind> = new Set(["customer_account", "supplier_visit", "supplier_account"]);
 /** A customer's credit or a company's visit is about someone: it needs the name. */
 export const partNeedsName = (kind: BlockKind): boolean => NAMED_KINDS.has(kind);
+/** A company's part also has its SR (এস.আর), the person who came: optional (F2 fix 10). */
+export const partHasRep = (kind: BlockKind): boolean => kind === "supplier_visit" || kind === "supplier_account";
 
 /**
  * A line's kind once its part is of `kind`. A part headed "X বাকি" is X's credit: a sale or a line of
@@ -459,21 +461,24 @@ export function typeInPart(kind: BlockKind, values: EntryValues): TransactionTyp
 export type PartChange = { blocks: BlockValues[]; lines: Array<{ id: string; patch: LinePatch }>; linesFirst: boolean };
 
 /** A part set to `kind` (with the name it needs): its lines take the kinds that go with it. Null when nothing would change or a name is missing. */
-export function setPartKind(review: Review, blockId: string, kind: BlockKind, name: string | null): PartChange | null {
+/**
+ * `rep`: the SR's name for a company's part (blank clears it); undefined keeps the one read.
+ */
+export function setPartKind(review: Review, blockId: string, kind: BlockKind, name: string | null, rep?: string | null): PartChange | null {
   const blocks = pageBlocks(review.page.values);
   const block = blocks.find((b) => b.id === blockId);
   if (!block) return null;
   const named = name?.trim() || null;
   if (partNeedsName(kind) && !named) return null;
   const party = partNeedsName(kind) ? named : kind === "other" ? block.party : null;
-  const person = partNeedsName(kind) ? block.person : null;
+  const person = partHasRep(kind) ? (rep === undefined ? block.person : rep?.trim() || null) : partNeedsName(kind) ? block.person : null;
   const lines = review.rows
     .filter((r) => r.values.block === blockId && r.status === "draft")
     .flatMap((r) => {
       const type = typeInPart(kind, r.values);
       return type === r.values.type ? [] : [{ id: r.id, patch: { values: { ...r.values, type } } }];
     });
-  if (kind === block.kind && party === block.party && lines.length === 0) return null;
+  if (kind === block.kind && party === block.party && person === block.person && lines.length === 0) return null;
   // The heading as written stays only while it still says what the part is.
   const title = kind === block.kind || partNeedsName(kind) ? block.title : null;
   return { blocks: blocks.map((b) => (b.id === blockId ? { ...b, kind, party, person, title } : b)), lines, linesFirst: false };

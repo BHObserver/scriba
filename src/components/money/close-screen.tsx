@@ -14,6 +14,8 @@ import { type DayPageView, closeMode, gapReasons, waitingPages } from "./money-m
 export type CloseView = {
   date: string;
   asOf: string;
+  /** The day the Today screen shows (`homeDay`): closing it goes back there. */
+  home: string;
   shopName: string | null;
   sample: boolean;
   day: DaySummary;
@@ -40,6 +42,7 @@ export function CloseScreen(view: CloseView) {
   const expected = day.expectedCash.poisha;
   const waiting = waitingPages(view.pages, "/close");
   const isToday = view.date === view.asOf;
+  const isHome = view.date === view.home;
 
   const show = (next: Drill) => {
     setDrill(next);
@@ -60,7 +63,7 @@ export function CloseScreen(view: CloseView) {
       setFailed(true);
       return;
     }
-    router.push(isToday ? "/" : `/close?date=${view.date}`);
+    router.push(isHome ? "/" : `/close?date=${view.date}`);
     router.refresh();
   };
 
@@ -103,7 +106,7 @@ export function CloseScreen(view: CloseView) {
           {view.pages.map((p, i) => (
             <PageRow key={p.documentId} page={p} n={i + 1} href={checkHref(p.documentId, { pages: waiting.ids, from: "/close" })} />
           ))}
-          {isToday ? (
+          {isToday || isHome ? (
             <Link href="/capture" className="cl-add">
               {t("cl.add")}
             </Link>

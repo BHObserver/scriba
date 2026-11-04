@@ -14,12 +14,13 @@ export const viewport: Viewport = { themeColor: "#972622" };
 export default async function TodayPage() {
   const { supabase } = await requireUser("/");
   const shop = await loadShop(supabase);
-  const asOf = dhakaDate(new Date());
-  const { profile, insights, pages } = todayData(shop, asOf);
+  const today = dhakaDate(new Date());
+  const { profile, day, insights, pages } = todayData(shop, today);
   const dues = insights.customerDues;
   return (
     <TodayScreen
-      asOf={asOf}
+      asOf={day}
+      today={today}
       shopName={profile?.shopName ?? null}
       sample={profile?.isSample ?? false}
       isNewShop={insights.isNewShop}
