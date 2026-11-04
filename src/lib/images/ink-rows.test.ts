@@ -121,6 +121,40 @@ describe("ink rows (F2 fix 6)", () => {
     snap.boxes.forEach((b, i) => expect(Math.abs(mid(b) - grid(truth[i]!))).toBeLessThan(grid(PITCH / 2)));
   });
 
+  test("a jump between two parts like his 5 Nov page 1 (empty paper put under the first part) goes back too (fix 8)", () => {
+    const p = page();
+    p.word(80, 300, 80); // the date
+    const block1 = [150, 195, 240, 285];
+    block1.forEach((y) => writeLine(p, y));
+    p.stroke(60, 200, 305, 310);
+    p.word(80, 260, 330); // "করিম বাকি"
+    const block2 = [375, 420];
+    block2.forEach((y) => writeLine(p, y));
+    p.stroke(60, 200, 440, 446);
+    const block3 = [480, 525];
+    block3.forEach((y) => writeLine(p, y));
+    p.stroke(60, 200, 545, 551);
+    p.word(80, 260, 585); // "ফ্রেশের কামাল:"
+    const block4 = [630, 675, 720, 765, 810];
+    block4.forEach((y) => writeLine(p, y));
+    p.stroke(60, 200, 830, 836);
+    const block5 = [870, 915, 960, 1005];
+    block5.forEach((y) => writeLine(p, y));
+
+    // The model: the first part right, then four and a half lines low from the second part on.
+    const parts = [block1, block2, block3, block4, block5];
+    const truth = parts.flat();
+    const lines: LineIn[] = parts.flatMap((ys, b) =>
+      ys.map((y, j) => {
+        const at = grid(y) + (b === 0 ? 0 : grid(PITCH * 4.5));
+        return { box: { x_min: 100, x_max: 840, y_min: at - 12, y_max: at + 12 }, block: `b${b + 1}`, opensTitledBlock: j === 0 && (b === 1 || b === 3) };
+      }),
+    );
+    const snap = snapLines(p, lines);
+    expect(snap.applied).toBe(true);
+    snap.boxes.forEach((b, i) => expect(Math.abs(mid(b) - grid(truth[i]!))).toBeLessThan(grid(PITCH / 2)));
+  });
+
   test("nothing is changed when the photo has no rows of writing, or there are too few lines", () => {
     const blank = page();
     const lines: LineIn[] = [100, 200, 300].map((y) => ({ box: { x_min: 100, x_max: 800, y_min: y, y_max: y + 25 }, block: null, opensTitledBlock: false }));

@@ -213,11 +213,35 @@ function normalizeDoubts(doubts: ModelOutputV3["doubts"], entries: NormalizedEnt
 type AnyModelOutput = ModelOutput | ModelOutputV3;
 const isV3 = (o: AnyModelOutput): o is ModelOutputV3 => "blocks" in o;
 
+/** How far past the bottom a page's boxes may run and still be scaled back onto it. */
+const TALL_LIMIT = 1500;
+
+/**
+ * F2 fix 8: on a tall page the model sometimes spreads its lines past the bottom of the grid (his
+ * 5 Nov page 1: to 1180, its last four lines below the page). Each box was judged alone, so those
+ * were dropped and their lines had no picture. When a page's boxes run past the bottom by up to
+ * half a page, every y on it is scaled to fit instead; the snapper then puts the lines on the
+ * writing (`snap-boxes.ts`). Further past than that, the boxes are judged one by one as before.
+ */
+function fitTallPage<T extends AnyModelOutput>(output: T, warnings: string[]): T {
+  type Box = ModelEntry["box"];
+  const blocks: Array<{ box: Box }> = isV3(output) ? output.blocks : [];
+  const bottoms = [...output.entries, ...blocks].map((x) => x.box?.y_max).filter((y): y is number => Number.isFinite(y));
+  const bottom = Math.max(0, ...bottoms);
+  if (bottom <= BOX_MAX + BOX_TOLERANCE || bottom > TALL_LIMIT) return output;
+  const k = BOX_MAX / bottom;
+  const fit = <B extends Box>(b: B): B => (b ? { ...b, y_min: b.y_min * k, y_max: b.y_max * k } : b);
+  warnings.push(`The boxes ran past the bottom of the page (to ${Math.round(bottom)}); every y was scaled by ${k.toFixed(3)}.`);
+  const entries = output.entries.map((e) => ({ ...e, box: fit(e.box) }));
+  return isV3(output) ? { ...output, entries, blocks: output.blocks.map((b) => ({ ...b, box: fit(b.box) })) } : { ...output, entries };
+}
+
 export function normalizeModelOutput(
   output: AnyModelOutput,
   profile: Pick<ExtractionProfile, "schemaVersion" | "promptVersion"> = getExtractionProfile(),
 ): NormalizedExtraction {
   const warnings = [...output.warnings.filter((w) => w.trim().length > 0)];
+  output = fitTallPage(output, warnings);
   const blocks = isV3(output) ? normalizeBlocks(output.blocks, warnings) : null;
   const blockIds = new Set(blocks?.map((b) => b.id));
   const idOf = new Map<string, string>();

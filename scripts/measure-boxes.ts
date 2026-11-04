@@ -69,12 +69,14 @@ function readings(): Reading[] {
       out.push({ page: `v3-${page}`, image, label: f.replace(`${page}.jpg.`, "").replace(".private.json", ""), outputText: text, promptVersion: j.promptVersion, schemaVersion: j.schemaVersion });
     }
   }
-  const f2 = join(ROOT, "f2");
-  if (existsSync(f2)) {
-    for (const f of readdirSync(f2).filter((f) => f.endsWith(".reading.private.json"))) {
+  // His pages scanned for the video, saved by scripts/fetch-pages.ts: f2 (4 Nov), f3 (5 Nov).
+  for (const set of ["f2", "f3"]) {
+    const dir = join(ROOT, set);
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir).filter((f) => f.endsWith(".reading.private.json"))) {
       const page = f.replace(".reading.private.json", "");
-      const j = JSON.parse(readFileSync(join(f2, f), "utf8"));
-      out.push({ page: `f2-${page}`, image: join(f2, `${page}.jpg`), label: "stored", outputText: j.rawOutputText, promptVersion: j.promptVersion, schemaVersion: j.schemaVersion ?? "scriba-extraction-3" });
+      const j = JSON.parse(readFileSync(join(dir, f), "utf8"));
+      out.push({ page: `${set}-${page}`, image: join(dir, `${page}.jpg`), label: "stored", outputText: j.rawOutputText, promptVersion: j.promptVersion, schemaVersion: j.schemaVersion ?? "scriba-extraction-3" });
     }
   }
   return out.filter((r) => !only || r.page === only);

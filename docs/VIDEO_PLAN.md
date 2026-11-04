@@ -174,8 +174,8 @@ Keep his face, glasses, stubble, the mole on his left cheek and his clothes exac
 ## Phone recordings (you make these, free)
 
 **Before recording:**
-- Deploy F2 fix 3 (`cc6c328`) first, so the video shows the current app.
-- Scan your real pages from a few different days first. Otherwise Today's week bars, dues and Scriba's note will be empty. Then record one fresh page.
+- Production already runs F2 fixes 1–7 (`0928d1d` from `f2-video-fixes`, live since 5 Nov 00:07 BD), so there is nothing to deploy.
+- Scan your real pages from a few different days first. Otherwise Today's week bars, dues and Scriba's note will be empty. Then record one fresh page. Today always shows the real date, and the week bars cover the last 7 days. A page goes to the date written on it. With no date written, it goes to the photo's day (the chip "পাতায় তারিখ নেই · ধরছি …", which you can change). So the recorded page needs today's date or no date at all.
 - Turn on Do Not Disturb and charge the phone. Set the screen recorder to 1080p. Turn on **Show taps** (Developer options) so viewers see your taps.
 - Move slowly and pause about 2 seconds on each screen. A long recording is easy to cut, but a rushed one can't be stretched.
 

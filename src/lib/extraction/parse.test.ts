@@ -107,6 +107,29 @@ describe("valid responses", () => {
     expect(r.extraction.warnings.length).toBe(2);
   });
 
+  test("boxes that run past the bottom of a tall page are scaled onto it, not dropped (F2 fix 8)", () => {
+    // His 5 Nov page 1: the model spread its lines to 1180, so its last lines fell off the grid.
+    const r = respond(output([
+      entry({ id: "e1", line: 1, box: { x_min: 60, y_min: 135, x_max: 570, y_max: 165 } }),
+      entry({ id: "e2", line: 2, box: { x_min: 150, y_min: 1120, x_max: 970, y_max: 1180 } }),
+    ]));
+    if (!r.ok) throw new Error("expected ok");
+    const k = 1000 / 1180;
+    expect(r.extraction.entries[0]!.bbox).toEqual({ x_min: 60, y_min: Math.round(135 * k), x_max: 570, y_max: Math.round(165 * k) });
+    expect(r.extraction.entries[1]!.bbox).toEqual({ x_min: 150, y_min: Math.round(1120 * k), x_max: 970, y_max: 1000 });
+    expect(r.extraction.warnings.some((w) => w.includes("past the bottom"))).toBe(true);
+  });
+
+  test("boxes far past the bottom are still judged one by one", () => {
+    const r = respond(output([
+      entry({ id: "e1", line: 1, box: { x_min: 60, y_min: 135, x_max: 570, y_max: 165 } }),
+      entry({ id: "e2", line: 2, box: { x_min: 150, y_min: 1900, x_max: 970, y_max: 1960 } }),
+    ]));
+    if (!r.ok) throw new Error("expected ok");
+    expect(r.extraction.entries[0]!.bbox).toEqual({ x_min: 60, y_min: 135, x_max: 570, y_max: 165 });
+    expect(r.extraction.entries[1]!.bbox).toBeNull();
+  });
+
   test("page-level balances are taken only from explicit balance lines", () => {
     const r = respond(output([
       entry({ id: "o", line: 1, type: "opening_balance", amount: "১,০০০", qty: null, rate: null }),

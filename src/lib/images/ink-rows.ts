@@ -24,6 +24,7 @@
  *
  * Measured with `bun scripts/measure-boxes.ts` on 20 stored readings of his 9 pages (277 lines,
  * truth checked by eye): the model's boxes showed their own line for 225, the snapped ones 276.
+ * Fix 8 (5 Nov): with his two 5 Nov pages, 22 readings and 316 lines: 293 before, 313 now.
  */
 
 /** A grey picture, one byte a pixel (0 black, 255 white), row by row. */
@@ -390,25 +391,30 @@ function sum(a: Float64Array, lo: number, hi: number): number {
 // --- 3. matching --------------------------------------------------------------------------------
 
 /*
- * The model's placing goes wrong in two ways, seen on his 4 Nov pages: it stretches or squeezes
+ * The model's placing goes wrong in three ways. Seen on his 4 Nov pages: it stretches or squeezes
  * its spacing (page 2: every gap a fifth too long, so the boxes ran five lines low by the bottom),
- * and it bulges (page 1: a line low in the middle, right again at the bottom). Both build up
- * slowly; neither jumps by a line between two neighbouring lines. So a match is judged by:
+ * and it bulges (page 1: a line low in the middle, right again at the bottom). Seen on his 5 Nov
+ * page 1 (fix 8): it jumps between two parts, putting four or five lines of empty paper under the
+ * first part, and every later part keeps that offset. Inside a part its spacing stays good. So a
+ * match is judged by:
  *  - where each line is against its model place: close at the top of the page, where the model
- *    has not drifted yet, and within a widening reach further down;
+ *    has not drifted yet, and within a widening reach further down. Far off only costs a little
+ *    (ABS_CAP): after a jump every later line is far off, and that is one mistake, not twenty;
  *  - each gap between neighbouring lines against the model's gap: within a stretch of about a
- *    third either way;
- *  - each gap against the stretch of the gap before it: the stretch keeps steady. Without this a
- *    steady stretch and "right, then a line off from one part on" would cost about the same.
+ *    third either way, and much looser between two parts (NEW_BLOCK), where the jumps are;
+ *  - inside a part, each gap against the stretch of the gap before it: the stretch keeps steady.
+ *    Without this a steady stretch and "right, then a line off from one part on" would cost
+ *    about the same. Across parts it isn't asked: there the model's gaps can't be trusted.
+ * ABS_CAP from 0.2 to 0.5 and NEW_BLOCK from 3 to 6 measure the same (313/316); the middle is used.
  */
 const REACH_TOP = 1.0; // pitches a line may be from its model place at the top of the page…
 const REACH_GROWTH = 6; // …plus this many more at the bottom
-const ABS_CAP = 4;
+const ABS_CAP = 0.3; // fix 8: was 4, which let one jump between parts outweigh the rows
 const GAP_BASE = 0.5; // pitches a gap may differ from the model's gap…
 const GAP_STRETCH = 0.35; // …plus this share of it
 const KEEP_BASE = 0.3; // pitches a gap may differ from the stretch of the gap before…
 const KEEP_STRETCH = 0.12; // …plus this share of it
-const NEW_BLOCK = 1.5; // the model's gaps between parts are rougher
+const NEW_BLOCK = 4; // the model's gaps between parts are rougher, and may jump (fix 8: was 1.5)
 const STEP_CAP = 6;
 const MISS = 5; // a line that finds no row
 const SHARE = 2; // two lines on one row (side by side)
@@ -455,7 +461,7 @@ export function matchLines(lines: Target[], rows: InkRow[], pitch: number): { co
     const gap = rows[r]!.center - rows[rp]!.center;
     const off = (gap - model) / ((pitch * GAP_BASE + GAP_STRETCH * model) * roughness);
     let c = Math.min(off * off, STEP_CAP);
-    if (pp >= 0 && r !== rp && rp !== rpp) {
+    if (pp >= 0 && r !== rp && rp !== rpp && a.block === b.block) {
       const modelBefore = lines[p]!.center - lines[pp]!.center;
       if (modelBefore >= pitch * 0.3) {
         const stretch = Math.min(2, Math.max(0.5, (rows[rp]!.center - rows[rpp]!.center) / modelBefore));
