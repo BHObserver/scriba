@@ -69,7 +69,8 @@ export function FixSheet({
   onSplit,
   onClose,
 }: {
-  target: { row: ReviewRow; field: FixField } | null;
+  /** `sum`: the balance figure is a running total (day sales, expenses). */
+  target: { row: ReviewRow; field: FixField; sum?: boolean } | null;
   photo: Photo;
   hint: string | null;
   /** What Scriba thought the figure might be (two or three readings), one tap each (F2). */
@@ -82,7 +83,7 @@ export function FixSheet({
   const { t } = useI18n();
   return (
     <Sheet open={target != null} onClose={onClose} label={target ? t("fx.title", target.row.values.item ?? t(`type.${target.row.values.type}`)) : ""}>
-      {target ? <FixBody key={`${target.row.id}:${target.field}`} row={target.row} field={target.field} photo={photo} hint={hint} readings={readings} busy={busy} onSave={onSave} onSplit={onSplit} onClose={onClose} /> : null}
+      {target ? <FixBody key={`${target.row.id}:${target.field}`} row={target.row} field={target.field} sum={target.sum ?? false} photo={photo} hint={hint} readings={readings} busy={busy} onSave={onSave} onSplit={onSplit} onClose={onClose} /> : null}
     </Sheet>
   );
 }
@@ -90,6 +91,7 @@ export function FixSheet({
 function FixBody({
   row,
   field,
+  sum,
   photo,
   hint,
   readings,
@@ -100,6 +102,7 @@ function FixBody({
 }: {
   row: ReviewRow;
   field: FixField;
+  sum: boolean;
   photo: Photo;
   hint: string | null;
   readings: readonly string[];
@@ -149,7 +152,7 @@ function FixBody({
     <div className="grid gap-1">
       <div className="fx-head">
         <span className="t-sec">
-          {row.values.item ?? t(`type.${row.values.type}`)} · {fieldLabel(i18n, field)}
+          {row.values.item ?? t(`type.${row.values.type}`)} · {fieldLabel(i18n, field, sum)}
         </span>
         <button type="button" className="back" onClick={onClose} aria-label={t("close")}>
           <X size={24} aria-hidden="true" />

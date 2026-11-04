@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/kit";
 import { useI18n } from "@/lib/i18n/client";
-import { pageBlocks } from "@/lib/ledger/blocks";
+import { pageBlocks, runsAsSum } from "@/lib/ledger/blocks";
 import type { TransactionType } from "@/lib/ledger/types";
 import { acceptedFindings } from "@/lib/questions/answer";
 import { splitHereQuestion } from "@/lib/questions/engine";
@@ -621,7 +621,7 @@ export function AskSession({
               <Kicker block={block} />
               <p className="as-q sm">{t("asks.line.title")}</p>
               <div className="as-line">
-                <LineCard row={row} rows={review.rows} findings={findings} status={status} photo={photo} lineNo={review.rows.indexOf(row) + 1} onTap={(f) => lineActions.openFix(row.id, f)} />
+                <LineCard row={row} rows={review.rows} findings={findings} status={status} photo={photo} lineNo={review.rows.indexOf(row) + 1} sum={runsAsSum(row.values, review.page.values)} onTap={(f) => lineActions.openFix(row.id, f)} />
               </div>
               <div className="as-acts">
                 <LineActions row={row} entry={entries.get(row.id)} findings={findings} status={status} busy={cardBusy} actions={lineActions} stack={i18n.locale === "en"} />
@@ -686,7 +686,7 @@ export function AskSession({
         onClose={() => setLines(null)}
       />
       <FixSheet
-        target={fixRow && fix ? { row: fixRow, field: fix.field } : null}
+        target={fixRow && fix ? { row: fixRow, field: fix.field, sum: runsAsSum(fixRow.values, review.page.values) } : null}
         photo={photo}
         hint={fixRow ? lineSentences(i18n, fixRow, review.rows, findings).hint : null}
         readings={readings}

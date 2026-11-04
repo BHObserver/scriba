@@ -6,6 +6,7 @@ import { Button, Segmented, Sheet, StatusMark, TopBar } from "@/components/kit";
 import { cx } from "@/components/ui";
 import { useI18n } from "@/lib/i18n/client";
 import type { MessageKey } from "@/lib/i18n/messages";
+import { sumsRunning } from "@/lib/ledger/blocks";
 import type { BlockValues, TransactionType } from "@/lib/ledger/types";
 import { fingerprint } from "@/lib/questions/engine";
 import { sentenceText } from "@/lib/questions/text";
@@ -13,7 +14,7 @@ import type { Question } from "@/lib/questions/types";
 import { ackFingerprint } from "@/lib/review/approval";
 import type { ReviewRow } from "@/lib/review/state";
 import type { Finding } from "@/lib/validation/engine";
-import { type NumberField, blockFigures, blockTone, checkable, isSaleLine, partChecked, partFailures, salesKind, unsureNumbers } from "./ask-model";
+import { type NumberField, blockFigures, blockTone, checkable, draftPoisha, isSaleLine, partChecked, partFailures, salesKind, unsureNumbers } from "./ask-model";
 import { blockName, nowLabel } from "./ask-parts";
 import { RowStrip } from "./deck-sheets";
 import { failsOn } from "./line-state";
@@ -137,6 +138,11 @@ function PartNumbers({
   // A sum he kept as written no longer marks its figure.
   const open = findings.filter((f) => !kept.has(ackFingerprint(f)));
   const figures = blockFigures(block, rows);
+  // F2 (4 Nov): an account with no "before" written showed "-৳200" here though the khata knew ৳225.
+  // The khata's due the opening question proposes stands in, said as such; with none known and the
+  // figure below zero (a payment with nothing before it), the card says what it needs instead.
+  const opening = figures.kind === "account" && figures.before == null ? questions.find((q) => q.id === `opening:${block?.id ?? "page"}`) : undefined;
+  const bookBefore = draftPoisha(opening?.options.find((o) => o.id === "book")?.value ?? undefined);
   return (
     <section className="as-nb" aria-label={blockName(i18n, block)}>
       <div className="as-nb-head">
@@ -196,6 +202,26 @@ function PartNumbers({
             <span>{t(block?.kind === "day_sales" ? "asks.total.sales" : block?.kind === "expenses" ? "asks.total.expenses" : "asks.total")}</span>
             <b className="as-num">{money(figures.total)}</b>
           </>
+        ) : opening && bookBefore == null && figures.known < 0 ? (
+          <>
+            <span>{t(nowLabel(figures))}</span>
+            <span className="as-gap">{t(`asks.nm.needBefore.${figures.party}`)}</span>
+          </>
+        ) : opening && bookBefore != null ? (
+          <>
+            <span className="as-now-who">
+              {t(nowLabel(figures))}
+              <small>{t("asks.nm.bookBefore", money(bookBefore))}</small>
+            </span>
+            {figures.now != null ? (
+              <b className="as-num">{money(bookBefore + figures.now)}</b>
+            ) : (
+              <span className="as-open">
+                <b className="as-num">{money(bookBefore + figures.known)}</b>
+                <span className="as-gap">{t("asks.gapNow")}</span>
+              </span>
+            )}
+          </>
         ) : (
           <>
             <span>{t(nowLabel(figures))}</span>
@@ -222,6 +248,7 @@ function NumberLine({ row, block, photo, look, busy, onFix }: { row: ReviewRow; 
   const open = checkable(row);
   const unsure = new Set(unsureNumbers(row));
   const credit = isSaleLine(block, row) && v.type === "credit_sale";
+  const sum = block != null && sumsRunning(block.kind);
   const label = [v.item ?? t(`type.${v.type}`), credit && v.customer ? t("asks.nm.creditTo", digits(v.customer)) : null].filter(Boolean).join(" · ");
   const fig = (field: NumberField, text: string | null, main: boolean) =>
     text == null ? null : (
@@ -230,7 +257,7 @@ function NumberLine({ row, block, photo, look, busy, onFix }: { row: ReviewRow; 
         className={cx("as-fig", main && "main", (unsure.has(field) || (main && look)) && "unsure")}
         disabled={!open || busy}
         onClick={() => onFix(row.id, field)}
-        aria-label={t("eq.tap", fieldLabel(i18n, field), digits(text))}
+        aria-label={t("eq.tap", fieldLabel(i18n, field, sum), digits(text))}
       >
         {digits(text)}
       </button>
@@ -249,7 +276,7 @@ function NumberLine({ row, block, photo, look, busy, onFix }: { row: ReviewRow; 
           {fig("rate", v.rateText, false)}
           {v.rateText && (amount || balance) ? <i aria-hidden="true">=</i> : null}
           {amount}
-          {amount && balance ? <i className="as-nl-bal">{t("field.balance")}</i> : null}
+          {amount && balance ? <i className="as-nl-bal">{fieldLabel(i18n, "balance", sum)}</i> : null}
           {balance}
           {amount == null && balance == null ? <span className="as-gap">{t("asks.gap")}</span> : null}
         </span>

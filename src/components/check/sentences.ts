@@ -117,11 +117,12 @@ function sentenceFor(i18n: I18n, f: Finding, row: ReviewRow, values: Map<string,
     }
     case "running_balance": {
       if (!isLast) return null;
-      if (f.status === "pass") return { s: { kind: "ok", text: t("chk.run.ok") } };
+      const sum = f.runningTotal === true;
+      if (f.status === "pass") return { s: { kind: "ok", text: t(sum ? "chk.sum.ok" : "chk.run.ok") } };
       if (f.status === "fail" && f.expected != null && f.observed != null) {
-        return { s: { kind: "look", text: t("chk.run.fail", taka(i18n, f.expected), taka(i18n, f.observed)) }, hint: t("chk.khataWrong") };
+        return { s: { kind: "look", text: t(sum ? "chk.sum.fail" : "chk.run.fail", taka(i18n, f.expected), taka(i18n, f.observed)) }, hint: t("chk.khataWrong") };
       }
-      return { s: { kind: "info", text: t("chk.run.na") } };
+      return { s: { kind: "info", text: t(sum ? "chk.sum.na" : "chk.run.na") } };
     }
     case "numeral_format":
       return { s: { kind: "look", text: t("chk.num") } };
@@ -158,8 +159,9 @@ export function lineSentences(i18n: I18n, row: ReviewRow, rows: readonly ReviewR
   return { checks, hint };
 }
 
-export function fieldLabel(i18n: I18n, field: ReviewableField): string {
-  return i18n.t(FIELD_KEY[field]);
+/** `sum`: the line sits in day sales or expenses, where the balance figure is a running total. */
+export function fieldLabel(i18n: I18n, field: ReviewableField, sum = false): string {
+  return i18n.t(field === "balance" && sum ? "field.running" : FIELD_KEY[field]);
 }
 
 /**

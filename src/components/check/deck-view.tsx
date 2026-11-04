@@ -11,7 +11,7 @@ import type { Finding, ValidationEntry } from "@/lib/validation/engine";
 import { type CardStatus, canAccept, editOf } from "./deck-model";
 import { type FixField, RowStrip } from "./deck-sheets";
 import type { Photo } from "./reading-view";
-import { lineSentences } from "./sentences";
+import { fieldLabel, lineSentences } from "./sentences";
 
 const SWIPE_PX = 110;
 
@@ -62,7 +62,7 @@ function firstFixField(row: ReviewRow): FixField {
   return (unsure as FixField | undefined) ?? "amount";
 }
 
-export function LineCard({ row, rows, findings, status, photo, lineNo, onTap }: { row: ReviewRow; rows: readonly ReviewRow[]; findings: readonly Finding[]; status: CardStatus; photo: Photo; lineNo: number; onTap: (field: FixField) => void }) {
+export function LineCard({ row, rows, findings, status, photo, lineNo, sum = false, onTap }: { row: ReviewRow; rows: readonly ReviewRow[]; findings: readonly Finding[]; status: CardStatus; photo: Photo; lineNo: number; /** The balance figure is a running total (day sales, expenses). */ sum?: boolean; onTap: (field: FixField) => void }) {
   const i18n = useI18n();
   const { t, digits } = i18n;
   const v = row.values;
@@ -91,8 +91,8 @@ export function LineCard({ row, rows, findings, status, photo, lineNo, onTap }: 
         <>
           <Equation qty={show(v.quantityText)} rate={show(v.rateText)} unit={v.unit} amount={show(v.amountText)} look={look} onTap={(f) => onTap(f)} />
           {v.balanceText != null ? (
-            <button type="button" className="dk-bal" onClick={() => onTap("balance")} aria-label={t("eq.tap", t("field.balance"), digits(v.balanceText))}>
-              <span>{t("field.balance")}</span>
+            <button type="button" className="dk-bal" onClick={() => onTap("balance")} aria-label={t("eq.tap", fieldLabel(i18n, "balance", sum), digits(v.balanceText))}>
+              <span>{fieldLabel(i18n, "balance", sum)}</span>
               <b className={cx(row.reviewFields.includes("balance") && "hl")}>{digits(v.balanceText)}</b>
             </button>
           ) : null}

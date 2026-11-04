@@ -322,6 +322,62 @@ describe("Rule D: running balance", () => {
   });
 });
 
+describe("Rule D in day sales and expenses: running totals (F2, 4 Nov)", () => {
+  // His page 1: চাল ১৫০, ডিম ৯৬ "= ২৪৬", তেল ১৮০, চিনি ১৪৫ "= ৬২৫" (the lines come to ৫৭১).
+  function parted(kind: "day_sales" | "expenses" | "customer_account" | "other", rows: Row[]) {
+    const l = ledger("unknown", rows);
+    for (const e of l.entries) e.values.block = "b1";
+    return { ...l, page: { ...l.page, blocks: [{ id: "b1", kind, title: null, party: kind === "customer_account" ? "করিম" : null, person: null, dateText: null }] } };
+  }
+  const sales: Row[] = [
+    { type: "cash_sale", item: "চাল", amountText: "১৫০" },
+    { type: "cash_sale", item: "ডিম", amountText: "৯৬", balanceText: "২৪৬" },
+    { type: "cash_sale", item: "তেল", amountText: "১৮০" },
+    { type: "cash_sale", item: "চিনি", amountText: "১৪৫", balanceText: "৬২৫" },
+  ];
+
+  test("a running total that follows passes; one that doesn't fails with what the lines give", () => {
+    const f = byRule(validateLedger(parted("day_sales", sales)), "running_balance");
+    expect(f.map((x) => x.status)).toEqual(["pass", "fail"]);
+    expect(f.every((x) => x.runningTotal === true)).toBe(true);
+    expect(f[1]!.expected).toBe(57100);
+    expect(f[1]!.observed).toBe(62500);
+    expect(f[1]!.entryIds).toEqual(["e2", "e4"]);
+  });
+
+  test("after a written total, the next one is judged from what is written", () => {
+    const rows = [...sales, { type: "cash_sale" as const, item: "লবণ", amountText: "৪৫", balanceText: "৬৭০" }];
+    const f = byRule(validateLedger(parted("day_sales", rows)), "running_balance");
+    expect(f.map((x) => x.status)).toEqual(["pass", "fail", "pass"]);
+  });
+
+  test("expenses sum the same way", () => {
+    const rows: Row[] = [
+      { type: "expense", item: "ভাড়া", amountText: "৫০" },
+      { type: "expense", item: "চা", amountText: "২০", balanceText: "৭০" },
+    ];
+    expect(byRule(validateLedger(parted("expenses", rows)), "running_balance").map((x) => x.status)).toEqual(["pass"]);
+  });
+
+  test("a line above with no amount makes the running total unverifiable", () => {
+    const rows: Row[] = [{ type: "cash_sale", item: "চাল" }, { type: "cash_sale", item: "ডিম", amountText: "৯৬", balanceText: "২৪৬" }];
+    const f = byRule(validateLedger(parted("day_sales", rows)), "running_balance");
+    expect(f.map((x) => x.status)).toEqual(["unverifiable"]);
+    expect(f[0]!.runningTotal).toBe(true);
+  });
+
+  test("an account still reads the figure as the due, and an 'other' part stays unchecked", () => {
+    const account: Row[] = [
+      { type: "credit_sale", item: "চাল", amountText: "১৫০" },
+      { type: "credit_sale", item: "ডাল", amountText: "৭৫", balanceText: "২২৫" },
+    ];
+    const a = byRule(validateLedger(parted("customer_account", account)), "running_balance");
+    expect(a.every((x) => x.runningTotal === undefined)).toBe(true);
+    const o = byRule(validateLedger(parted("other", sales)), "running_balance");
+    expect(o.every((x) => x.status === "unverifiable" && x.runningTotal === undefined)).toBe(true);
+  });
+});
+
 describe("Reading checks", () => {
   test("an unreadable amount is flagged as an error", () => {
     const f = byRule(

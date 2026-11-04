@@ -6,7 +6,7 @@
  * check shows arithmetic consistency only; it does not prove the handwriting was
  * read correctly.
  */
-import { blockPartyKind, groupByBlock, isUnpricedGoods, pageBlocks } from "@/lib/ledger/blocks";
+import { blockPartyKind, groupByBlock, isUnpricedGoods, pageBlocks, sumsRunning } from "@/lib/ledger/blocks";
 import type { PartyKind } from "@/lib/ledger/parties";
 import {
   type BlockValues,
@@ -26,8 +26,11 @@ import {
   parseRate,
 } from "@/lib/numerals";
 
-/** Version 3: on a page read in blocks, the balance, total and running-balance rules run per block. */
-export const VALIDATOR_VERSION = "scriba-validator-3";
+/**
+ * Version 3: on a page read in blocks, the balance, total and running-balance rules run per block.
+ * Version 4: in day sales and expenses, a figure written after a line is checked as a running total.
+ */
+export const VALIDATOR_VERSION = "scriba-validator-4";
 
 export const RULE_IDS = [
   "qty_x_rate",
@@ -79,6 +82,8 @@ export type Finding = {
   block?: string;
   /** Why a check could not run, for the questions Scriba asks (U2). */
   reason?: UnverifiableReason;
+  /** Running balance only: the figure is a running total of a sales or expenses part, not a due. */
+  runningTotal?: true;
 };
 
 export type UnverifiableReason =
@@ -557,10 +562,17 @@ function ruleBalanceEquation(g: Group): Finding | null {
 // Rule D: running balances written on transaction lines
 // ---------------------------------------------------------------------------
 
+/**
+ * In an account, the figure after a line is the due after it. In day sales or expenses it is the
+ * part's running total: its amounts so far (F2, 4 Nov: a wrong "= ৬২৫" under sales was never
+ * checked, and the page was sealed as adding up).
+ */
 function ruleRunningBalance(g: Group): Finding[] {
   const active = g.entries;
   const out: Finding[] = [];
-  let current: number | null = null;
+  const sums = g.convention == null && g.block != null && sumsRunning(g.block.kind);
+  const tag = sums ? { runningTotal: true as const } : {};
+  let current: number | null = sums ? 0 : null;
   let previousId: string | null = null;
 
   for (const e of active) {
@@ -578,6 +590,9 @@ function ruleRunningBalance(g: Group): Finding[] {
       const sign = accountSign(g.convention, type);
       const amount = valueOf(e.numbers.amount);
       current = current != null && sign != null && amount != null ? current + sign * amount : null;
+    } else if (sums) {
+      const amount = valueOf(e.numbers.amount);
+      current = current != null && amount != null ? current + amount : null;
     } else {
       current = null;
     }
@@ -593,7 +608,8 @@ function ruleRunningBalance(g: Group): Finding[] {
             severity: "info",
             expected: current,
             observed: null,
-            message: "The balance written on this line could not be read.",
+            message: sums ? "The running total written on this line could not be read." : "The balance written on this line could not be read.",
+            ...tag,
           }),
         );
       } else if (current == null) {
@@ -605,10 +621,12 @@ function ruleRunningBalance(g: Group): Finding[] {
             severity: "info",
             expected: null,
             observed: recorded,
-            message:
-              g.convention != null
+            message: sums
+              ? "A line above has no readable amount, so the running total cannot be checked."
+              : g.convention != null
                 ? "The previous balance or this line's effect is unknown, so the running balance cannot be checked."
                 : "The account convention is not known, so the running balance cannot be checked.",
+            ...tag,
           }),
         );
       } else {
@@ -621,9 +639,14 @@ function ruleRunningBalance(g: Group): Finding[] {
             severity: ok ? "info" : "error",
             expected: current,
             observed: recorded,
-            message: ok
-              ? `Running balance ${formatTaka(recorded)} follows from the previous balance.`
-              : `The previous balance and this line give ${formatTaka(current)}, but ${formatTaka(recorded)} is written.`,
+            message: sums
+              ? ok
+                ? `Running total ${formatTaka(recorded)} follows from the lines above.`
+                : `The lines above add up to ${formatTaka(current)}, but ${formatTaka(recorded)} is written.`
+              : ok
+                ? `Running balance ${formatTaka(recorded)} follows from the previous balance.`
+                : `The previous balance and this line give ${formatTaka(current)}, but ${formatTaka(recorded)} is written.`,
+            ...tag,
           }),
         );
       }

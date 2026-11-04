@@ -19,7 +19,7 @@ import type { Fixture } from "./check-board";
 const W = 1000;
 const H = 1400;
 
-type Line = { block: string; text: string; type: string; item?: string; amount: string; y: number };
+type Line = { block: string; text: string; type: string; item?: string; amount: string; balance?: string; y: number };
 type Drawn = { date: string; blocks: unknown[]; lines: Line[]; heads: Array<{ y: number; text: string }>; rules: number[] };
 
 const KARIM_P1: Drawn = {
@@ -37,7 +37,9 @@ const KARIM_P1: Drawn = {
     { block: "b1", text: "ডিম ১০০", type: "credit_sale", item: "ডিম", amount: "১০০", y: 660 },
     { block: "b1", text: "মোট ২৫০", type: "subtotal", amount: "২৫০", y: 750 },
     { block: "b2", text: "চা ২০", type: "cash_sale", item: "চা", amount: "২০", y: 960 },
-    { block: "b2", text: "বিস্কুট ৪০", type: "cash_sale", item: "বিস্কুট", amount: "৪০", y: 1040 },
+    { block: "b2", text: "বিস্কুট ৪০ = ৬০", type: "cash_sale", item: "বিস্কুট", amount: "৪০", balance: "৬০", y: 1040 },
+    // A running total written wrong, like his "চিনি … = ৬২৫" (F2, 4 Nov): the lines give ৳১১০.
+    { block: "b2", text: "সাবান ৫০ = ১২০", type: "cash_sale", item: "সাবান", amount: "৫০", balance: "১২০", y: 1120 },
   ],
   heads: [
     { y: 140, text: "করিম বাকি" },
@@ -110,7 +112,7 @@ function drawnFixture(d: Drawn, source: string): Fixture | null {
       unit: null,
       rate: null,
       amount: l.amount,
-      balance: null,
+      balance: l.balance ?? null,
       crossed_out: false,
       review: [],
       note: null,

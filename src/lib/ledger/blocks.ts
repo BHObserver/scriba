@@ -20,6 +20,20 @@ export function blockPartyKind(kind: BlockKind): PartyKind | null {
   return PARTY_KIND_OF[kind];
 }
 
+/**
+ * Parts where a figure written after a line ("= ২৪৬") is a running total of the part's amounts so
+ * far, not a due: day sales and expenses (F2, 4 Nov). In an account it stays the due after the line.
+ */
+export function sumsRunning(kind: BlockKind): boolean {
+  return kind === "day_sales" || kind === "expenses";
+}
+
+/** Whether a line's written balance is a running total: the line sits in day sales or expenses. */
+export function runsAsSum(values: EntryValues, page: PageValues): boolean {
+  const block = blockOf(values, page);
+  return block != null && sumsRunning(block.kind);
+}
+
 /** The page's blocks; empty on readings without blocks (prompt 4 and earlier). */
 export function pageBlocks(page: PageValues): BlockValues[] {
   return page.blocks ?? [];
