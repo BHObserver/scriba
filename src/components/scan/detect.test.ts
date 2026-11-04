@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { FAR_FRACTION, detectPage } from "./detect";
 import { type Quad, applyHomography, homography } from "./geometry";
 import { findKhataCorners } from "./markers";
-import { DARK, TILTED, WOOD, cornerError, khataSheet, newspaper, paper, render } from "./scan-fixture.test-util";
+import { DARK, type Rgb, TILTED, WOOD, cornerError, khataSheet, newspaper, paper, render } from "./scan-fixture.test-util";
 import { warpPage } from "./warp";
 
 const W = 360;
@@ -74,6 +74,41 @@ describe("detectPage", () => {
       [-20, 570],
     ];
     expect(detectPage(render({ width: W, height: H, quad: off, background: WOOD, page: paper(), noise: 4 })).status).toBe("cut");
+  });
+
+  // F2 fix 7: his pages lie on things as bright as paper, so the page and its neighbour are one
+  // bright region. These scenes are drawn after his photos of 2 and 4 Nov.
+  const laptop = (x: number, y: number): Rgb => (x > 14 && x < 346 && y > 40 && y < 380 ? [178, 178, 184] : DARK());
+
+  test("a page lying on a silver laptop", () => {
+    const d = detectPage(render({ width: W, height: H, quad: TILTED, background: laptop, page: paper({ strokes: true }), noise: 4 }));
+    expect(d.status).toBe("found");
+    expect(cornerError(d.quad!, TILTED)).toBeLessThan(1.5);
+  });
+
+  test("a narrow page across yellow files, on white sheets that run off the frame", () => {
+    const narrow: Quad = [
+      [118, 150],
+      [242, 146],
+      [252, 520],
+      [112, 526],
+    ];
+    const desk = (x: number, y: number): Rgb => {
+      if (x > 70 && x < 300 && y > 190 && y < 500) return [206, 178, 120]; // pale files under a warm lamp
+      if (x < 170 && y > 130 && y < 580 && y > 250 - 0.8 * x) return [205, 205, 200]; // white sheets, off the left edge
+      return DARK();
+    };
+    const d = detectPage(render({ width: W, height: H, quad: narrow, background: desk, page: paper({ strokes: true }), noise: 4 }));
+    expect(d.status).toBe("far"); // a narrow page this far off fills a fifth of the frame
+    expect(cornerError(d.quad!, narrow)).toBeLessThan(1.5);
+  });
+
+  test("a binding tape down one side: the side stays on one edge", () => {
+    const taped = (u: number, v: number): Rgb => (u < 0.05 ? [214, 226, 214] : paper({ strokes: true })(u, v));
+    const d = detectPage(render({ width: W, height: H, quad: TILTED, background: laptop, page: taped, noise: 4 }));
+    expect(d.status).toBe("found");
+    // The whole sheet, tape and all; above all both left corners on the same edge.
+    expect(cornerError(d.quad!, TILTED)).toBeLessThan(1.5);
   });
 
   test("no page", () => {

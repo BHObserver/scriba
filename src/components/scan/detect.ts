@@ -11,8 +11,14 @@
  *    quadrilateral inside it.
  * 4. Each side is then snapped to the strongest bright-to-dark edge at full resolution and the
  *    corners are re-made where the sides meet, so a corner under a thumb still lands right.
+ *
+ * That fails when something beside the page is as bright as paper: a silver laptop, white
+ * sheets, yellow files (F2 fix 7: 6 of his 7 page photos). So the page is also looked for as four
+ * straight edges (`edges.ts`). When the two finders disagree, the quad more of whose outline is
+ * an edge with paper inside wins.
  */
 
+import { type EdgeQuad, findEdgeQuads, scoreQuad } from "./edges";
 import {
   type Point,
   type Quad,
@@ -23,6 +29,7 @@ import {
   largestInscribedQuad,
   polygonArea,
   refineQuad,
+  scaleQuad,
 } from "./geometry";
 
 export type Pixels = { readonly data: Uint8ClampedArray; readonly width: number; readonly height: number };
@@ -223,9 +230,17 @@ const EDGE_RUN = 16;
  * until the next 8 px are mostly paper (above the threshold that split the frame). The edge is
  * then where the score crosses halfway between the levels just outside and just inside, which
  * a symmetric blur leaves in place. Pen strokes inside the page are never reached; stray points
- * (newsprint, a thumb) are left to the robust line fit.
+ * (newsprint, a thumb) are left to the robust line fit. `thresholds` is one level, or one per
+ * side when what lies beside the page differs from side to side.
  */
-export function snapEdges(score: Float32Array, width: number, height: number, q: Quad, band: number, threshold: number): Point[][] {
+export function snapEdges(
+  score: Float32Array,
+  width: number,
+  height: number,
+  q: Quad,
+  band: number,
+  thresholds: number | readonly number[],
+): Point[][] {
   const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4;
   const cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
   const sides: Point[][] = [];
@@ -233,6 +248,7 @@ export function snapEdges(score: Float32Array, width: number, height: number, q:
   for (let s = 0; s < 4; s++) {
     const out: Point[] = [];
     sides.push(out);
+    const threshold = typeof thresholds === "number" ? thresholds : thresholds[s]!;
     const p = q[s]!;
     const r = q[(s + 1) % 4]!;
     const len = dist(p, r) || 1;
@@ -284,10 +300,95 @@ export function snapEdges(score: Float32Array, width: number, height: number, q:
   return sides;
 }
 
+/** The edge finder's grid: about this many pixels on the long side. */
+const EDGE_GRID_SIDE = 320;
+/** An edge-found page has edges with the paper inside along at least this share of its outline… */
+const EDGE_SUPPORT = 0.6;
+/** …and the paper inside along at least this share (no edge where it lies on white sheets). */
+const EDGE_PAPER = 0.85;
+/** The finders agree when no two corners are further apart than this share of the frame's diagonal. */
+const AGREE = 0.02;
+/** A region quad must score within this of the edge quad to be kept over it. */
+const PREFER_REGION = 0.05;
+
+const cornerGap = (a: Quad, b: Quad) => Math.max(...a.map((p, i) => dist(p, b[i]!)));
+
 /** Find the page in one frame or photo. The quad is in the input's pixels. */
 export function detectPage(px: Pixels): Detection {
   const { width, height } = px;
+  const none: Detection = { status: "none", quad: null, fraction: 0 };
   const score = paperScore(px);
+  const region = regionPage(score, width, height);
+
+  const fe = Math.max(1, Math.round(Math.max(width, height) / EDGE_GRID_SIDE));
+  const { grid, gw, gh } = shrink(score, width, height, fe);
+  const best = findEdgeQuads(grid, gw, gh, { minFraction: MIN_FRACTION, max: 1 })[0];
+  const edge = best && best.support >= EDGE_SUPPORT && best.paper >= EDGE_PAPER ? best : null;
+
+  let quad: Quad;
+  let touches = 0;
+  let margin: number;
+  if (region && (!edge || keepRegion(region, edge, grid, gw, gh, fe, width, height))) {
+    quad = region.quad;
+    touches = region.touches;
+    margin = 0.5 * region.f;
+  } else if (edge) {
+    quad = refineEdgeQuad(score, width, height, edge, fe);
+    margin = 0.5 * fe;
+  } else return none;
+
+  const fraction = polygonArea(quad) / (width * height);
+  const offFrame = touches > 0 || quad.some(([x, y]) => x < margin || y < margin || x > width - margin || y > height - margin);
+  const status: PageStatus = offFrame ? "cut" : fraction < FAR_FRACTION ? "far" : "found";
+  return { status, quad, fraction };
+}
+
+/**
+ * Keep the bright-region finder's page over the edge finder's: when they're the same page (the
+ * region's is already snapped), or when the region's outline is as much an edge with paper
+ * inside. A region that took in a laptop or a file beside the page has sides running over them,
+ * not along edges. Its sides on the frame's border (a page running off it) aren't counted.
+ */
+function keepRegion(
+  region: { quad: Quad },
+  edge: EdgeQuad,
+  grid: Float32Array,
+  gw: number,
+  gh: number,
+  fe: number,
+  width: number,
+  height: number,
+): boolean {
+  if (cornerGap(region.quad, scaleQuad(edge.quad, fe)) <= AGREE * Math.hypot(width, height)) return true;
+  const q = region.quad;
+  const near = 0.01 * Math.max(width, height);
+  const onBorder = (a: Point, b: Point) =>
+    (a[0] < near && b[0] < near) || (a[1] < near && b[1] < near) || (a[0] > width - near && b[0] > width - near) || (a[1] > height - near && b[1] > height - near);
+  const skip = [0, 1, 2, 3].map((i) => onBorder(q[i]!, q[(i + 1) % 4]!));
+  const s = scoreQuad(grid, gw, gh, scaleQuad(q, 1 / fe), skip);
+  return Boolean(s) && s!.support * s!.paper >= edge.support * edge.paper - PREFER_REGION;
+}
+
+/**
+ * The edge finder's quad is on its small grid, its sides already fitted to their edge pixels:
+ * snap them to the edges at full size. The band is tight, a grid pixel and a bit, so a side stays
+ * on its own edge when another runs beside it (a notebook's binding tape beside the page).
+ */
+function refineEdgeQuad(score: Float32Array, width: number, height: number, edge: EdgeQuad, fe: number): Quad {
+  const rough = scaleQuad(edge.quad, fe);
+  const smooth = boxBlur(score, width, height, Math.max(1, Math.round(fe / 2)));
+  const band = fe + 2;
+  let quad = rough;
+  for (let pass = 0; pass < 2; pass++) quad = refineQuad(quad, snapEdges(smooth, width, height, quad, band, edge.thresholds));
+  return isConvexQuad(quad) ? quad : rough;
+}
+
+/**
+ * The bright-region finder (C2): the largest region of paper that isn't the background and is
+ * page-shaped, its sides snapped to the real edges. `touches` is how many frame sides the region
+ * reaches; `f` is its grid's scale.
+ */
+function regionPage(score: Float32Array, width: number, height: number): { quad: Quad; touches: number; f: number } | null {
   const f = Math.max(1, Math.round(Math.max(width, height) / GRID_SIDE));
   const shrunk = shrink(score, width, height, f);
   const { gw, gh } = shrunk;
@@ -309,8 +410,7 @@ export function detectPage(px: Pixels): Detection {
   const page = found
     .filter((r) => r.area >= minArea && r.sides <= 2)
     .sort((a, b) => b.area - a.area)[0];
-  const none: Detection = { status: "none", quad: null, fraction: 0 };
-  if (!page) return none;
+  if (!page) return null;
 
   // The region's outline: the first and last cell of each row and column.
   const edge: Point[] = [];
@@ -331,26 +431,20 @@ export function detectPage(px: Pixels): Detection {
   for (let x = 0; x < gw; x++) if (colMin[x]! >= 0) edge.push([x, colMin[x]!], [x + 1, colMin[x]!], [x, colMax[x]! + 1], [x + 1, colMax[x]! + 1]);
   const hull = convexHull(edge);
   const rough = largestInscribedQuad(simplifyHull(hull, MAX_HULL));
-  if (!rough) return none;
+  if (!rough) return null;
   const hullArea = polygonArea(hull);
   const quadArea = polygonArea(rough);
   // Page-shaped: solid, four-sided (a plate or a hand isn't), corners not too sharp.
-  if (page.area / hullArea < 0.7 || hullArea / quadArea > 1.15) return none;
+  if (page.area / hullArea < 0.7 || hullArea / quadArea > 1.15) return null;
   const angles = cornerAngles(rough);
-  if (angles.some((a) => a < 35 || a > 145)) return none;
+  if (angles.some((a) => a < 35 || a > 145)) return null;
 
-  const scale = (q: Quad) => q.map(([x, y]) => [x * f, y * f]) as unknown as Quad;
   const band = 2 * f + 2;
-  const coarse = scale(rough);
   const smooth = boxBlur(score, width, height, Math.max(1, Math.round(f / 2)));
-  let quad = coarse;
+  let quad = scaleQuad(rough, f);
   // Each pass starts from a better quad. The first reaches further, so a side cut short by a
   // thumb (its rough line tilted off the real edge) still finds the edge it should follow.
   for (let pass = 0; pass < 3; pass++) quad = refineQuad(quad, snapEdges(smooth, width, height, quad, pass === 0 ? band * 2.5 : band, t));
-  if (!isConvexQuad(quad)) return none;
-  const fraction = polygonArea(quad) / (width * height);
-  const margin = 0.5 * f;
-  const offFrame = page.sides > 0 || quad.some(([x, y]) => x < margin || y < margin || x > width - margin || y > height - margin);
-  const status: PageStatus = offFrame ? "cut" : fraction < FAR_FRACTION ? "far" : "found";
-  return { status, quad, fraction };
+  if (!isConvexQuad(quad)) return null;
+  return { quad, touches: page.sides, f };
 }
