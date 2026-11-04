@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { stripVars } from "./strip-geometry";
+import { lineWindow, stripVars } from "./strip-geometry";
 
 const vars = (s: object) => s as Record<string, number>;
 
@@ -26,5 +26,16 @@ describe("stripVars", () => {
 
   test("unknown photo size falls back to a portrait page", () => {
     expect(vars(stripVars({ x_min: 0, y_min: 0, x_max: 10, y_max: 10 }, 0, 0))["--ar"]).toBe(0.75);
+  });
+});
+
+describe("lineWindow (F2)", () => {
+  test("a line's strip reaches 0.3 of its height above and below the model's box", () => {
+    expect(lineWindow({ x_min: 100, y_min: 400, x_max: 600, y_max: 440 })).toEqual({ x_min: 100, y_min: 388, x_max: 600, y_max: 452 });
+  });
+
+  test("it stays on the page, and a swapped box is put in order", () => {
+    expect(lineWindow({ x_min: 0, y_min: 990, x_max: 500, y_max: 960 })).toEqual({ x_min: 0, y_min: 951, x_max: 500, y_max: 999 });
+    expect(lineWindow({ x_min: 0, y_min: 5, x_max: 500, y_max: 45 }).y_min).toBe(0);
   });
 });

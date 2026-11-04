@@ -3,6 +3,7 @@
 import { Mic, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button, ButtonLink, Keypad, LineStrip, Sheet, applyKey, groupTyped, type KeypadKey } from "@/components/kit";
+import { lineWindow } from "@/components/kit/strip-geometry";
 import { cx } from "@/components/ui";
 import { useI18n } from "@/lib/i18n/client";
 import type { I18n } from "@/lib/i18n/format";
@@ -30,13 +31,17 @@ export const PICKABLE: readonly TransactionType[] = [
   "subtotal",
 ];
 
-/** The line's handwriting; a line he added has none, and the strip says so. */
+/**
+ * The line's handwriting; a line he added has none, and the strip says so. The strip reaches a
+ * little past the model's box (`lineWindow`), which is often off by a third of a line (F2).
+ */
 export function RowStrip({ row, photo, height, tag }: { row: ReviewRow; photo: Photo; height?: number; tag?: boolean }) {
   const { t } = useI18n();
+  const box = row.candidate?.bbox;
   return (
     <LineStrip
       src={photo.src}
-      box={row.candidate?.bbox ?? null}
+      box={box ? lineWindow(box) : null}
       photoWidth={photo.width}
       photoHeight={photo.height}
       turns={photo.turns}

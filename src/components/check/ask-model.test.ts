@@ -129,7 +129,8 @@ describe("ask deck", () => {
     });
     const sales = blockLines(review).find((g) => g.block?.id === "b1")!;
     expect(blockFigures(sales.block, sales.rows)).toEqual({ kind: "total", total: 23000, lines: 2 });
-    expect(blockRegion(sales.rows)).toEqual({ x_min: 100, y_min: 100, x_max: 500, y_max: 210 });
+    // The box round the lines, reaching 0.6 of a line (৫০ high here) further up and down (F2).
+    expect(blockRegion(sales.rows)).toEqual({ x_min: 100, y_min: 70, x_max: 500, y_max: 240 });
   });
 
   test("block by block: questions, then the rest", () => {
@@ -151,6 +152,18 @@ describe("ask deck", () => {
     const set = buildQuestions(inputOf(review));
     const acc = acceptRest(review, ["r1", "r2"], {});
     expect(deckItems(review, set, acc).map(itemKey)[0]).toBe("question:meaning:b2");
+  });
+
+  test("a part's picture reaches past its first and last line, but never halfway into another part's line", () => {
+    const sales = blockLines(pranPage()).find((g) => g.block?.id === "b1")!.rows;
+    const withBox = (id: string, box: { x_min: number; y_min: number; x_max: number; y_max: number }) => ({ ...sales[0]!, id, candidate: { ...sales[0]!.candidate!, bbox: box } });
+    const below = withBox("x1", { x_min: 150, y_min: 230, x_max: 450, y_max: 270 });
+    const beside = withBox("x2", { x_min: 600, y_min: 215, x_max: 900, y_max: 255 });
+    // The line just below stops it halfway (210 → 230: at 220); one beside the part doesn't.
+    expect(blockRegion(sales, [...sales, below, beside])).toEqual({ x_min: 100, y_min: 70, x_max: 500, y_max: 220 });
+    // At the top of the page it stops at the edge.
+    const top = sales.map((r) => ({ ...r, candidate: { ...r.candidate!, bbox: { ...r.candidate!.bbox!, y_min: r.candidate!.bbox!.y_min - 90, y_max: r.candidate!.bbox!.y_max - 90 } } }));
+    expect(blockRegion(top)!.y_min).toBe(0);
   });
 
   test("yes to the visit settles what it is, not its lines: they come on the quick confirm", () => {

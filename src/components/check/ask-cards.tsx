@@ -101,7 +101,7 @@ function Visual({ q, rows, photo, capturedOn, memo }: { q: Question; rows: reado
       </div>
     ) : null;
   }
-  return <BlockCrop rows={of(q.entries)} photo={photo} />;
+  return <BlockCrop rows={of(q.entries)} page={rows} photo={photo} />;
 }
 
 /** The question's options as the card shows them: the proposed one, readings, plain choices, "later", "show me". */

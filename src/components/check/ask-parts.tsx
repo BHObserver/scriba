@@ -19,8 +19,9 @@ export function blockName({ t, digits }: I18n, block: BlockValues | null): strin
 
 /** The photo with each block's part of the page tinted in its tone (overview, page seal). */
 export function PageRegions({ photo, groups, maxHeightVh }: { photo: Photo; groups: ReadonlyArray<{ block: BlockValues | null; rows: readonly ReviewRow[] }>; maxHeightVh?: number }) {
+  const page = groups.flatMap((g) => g.rows);
   const regions = groups.flatMap(({ block, rows }) => {
-    const box = block ? blockRegion(rows) : null;
+    const box = block ? blockRegion(rows, page) : null;
     return box && block ? [{ id: block.id, box, tone: blockTone(block) }] : [];
   });
   if (!photo.src) return <div className="as-page" style={{ aspectRatio: "3 / 4", background: "var(--photo)", borderRadius: 4 }} aria-hidden="true" />;
@@ -39,9 +40,9 @@ export function PageRegions({ photo, groups, maxHeightVh }: { photo: Photo; grou
   );
 }
 
-/** A block's part of the photo, cut round its lines' boxes. */
-export function BlockCrop({ rows, photo, height = 112 }: { rows: readonly ReviewRow[]; photo: Photo; height?: number }) {
-  const box = blockRegion(rows);
+/** A block's part of the photo, cut round its lines' boxes; `page` is every line, so no other part comes in. */
+export function BlockCrop({ rows, page, photo, height = 112 }: { rows: readonly ReviewRow[]; page: readonly ReviewRow[]; photo: Photo; height?: number }) {
+  const box = blockRegion(rows, page);
   if (!box || !photo.src) return null;
   return (
     <div className="as-crop">

@@ -372,9 +372,32 @@ export function blockFigures(block: BlockValues | null, rows: readonly ReviewRow
   return { kind: "account", party, before, paid, goods, known, now: goods.every((g) => g.amount != null) ? known : null };
 }
 
-/** The part of the page a block covers: the box round its lines' boxes (blocks keep none of their own). */
-export function blockRegion(rows: readonly ReviewRow[]): GridBox | null {
-  return unionBox(rows.map((r) => r.candidate?.bbox));
+/**
+ * How far a part's picture reaches above its first line and below its last, in line heights (its
+ * lines' median). The model's boxes are often off by a third of a line, so the box round them cut
+ * the first or last line of 6 of 60 parts on his five pages (F2, 4 Nov); with this, none.
+ */
+export const PART_REACH = 0.6;
+
+/**
+ * The part of the page a block covers: the box round its lines' boxes (blocks keep none of their
+ * own), reaching `PART_REACH` of a line further up and down, but never past halfway to a line of
+ * the page that isn't one of them (`page`) and sits above or below, so no other part comes in.
+ */
+export function blockRegion(rows: readonly ReviewRow[], page: readonly ReviewRow[] = []): GridBox | null {
+  const boxes = rows.map((r) => r.candidate?.bbox).filter((b): b is GridBox => b != null);
+  const box = unionBox(boxes);
+  if (!box) return null;
+  const heights = boxes.map((b) => Math.abs(b.y_max - b.y_min)).sort((a, b) => a - b);
+  const reach = heights[Math.floor(heights.length / 2)]! * PART_REACH;
+  const mine = new Set(rows.map((r) => r.id));
+  const beside = page
+    .filter((r) => !mine.has(r.id))
+    .map((r) => r.candidate?.bbox)
+    .filter((b): b is GridBox => b != null && b.x_max > box.x_min && b.x_min < box.x_max);
+  const above = Math.max(0, ...beside.filter((b) => b.y_max <= box.y_min).map((b) => (b.y_max + box.y_min) / 2));
+  const below = Math.min(1000, ...beside.filter((b) => b.y_min >= box.y_max).map((b) => (b.y_min + box.y_max) / 2));
+  return { ...box, y_min: Math.max(box.y_min - reach, above), y_max: Math.min(box.y_max + reach, below) };
 }
 
 /** The box round several boxes; null when there are none. */

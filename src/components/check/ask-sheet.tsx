@@ -173,7 +173,7 @@ function SheetBody({ target, rows, photo, busy, onAnswer, onPrice, onClose }: { 
           <X size={24} aria-hidden="true" />
         </button>
       </div>
-      {moving.length > 0 ? <BlockCrop rows={moving} photo={photo} /> : null}
+      {moving.length > 0 ? <BlockCrop rows={moving} page={rows} photo={photo} /> : null}
       {row ? <RowStrip row={row} photo={photo} /> : options.length > 0 ? <p className="t-body">{sentenceText(i18n, q.sentence)}</p> : null}
       {row && memoPrices.length > 0 ? (
         <div className="as-opts">

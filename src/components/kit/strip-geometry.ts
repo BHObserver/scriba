@@ -26,6 +26,19 @@ export function stripVars(box: GridBox, photoWidth: number, photoHeight: number)
   } as CSSProperties;
 }
 
+/**
+ * How far a line's strip reaches past the model's box, above and below, as a share of the box's
+ * height. The model's boxes are often off by a third of a line either way: on his five pages
+ * (F2, 4 Nov) the ink fell outside 17 of 194 boxes, and outside 1 with this much more room.
+ */
+export const LINE_REACH = 0.3;
+
+/** A line's box with room above and below for the model being a little off. */
+export function lineWindow(box: GridBox): GridBox {
+  const pad = Math.abs(box.y_max - box.y_min) * LINE_REACH;
+  return { ...box, y_min: clamp(Math.min(box.y_min, box.y_max) - pad), y_max: clamp(Math.max(box.y_min, box.y_max) + pad) };
+}
+
 function widen(a: number, b: number): [number, number] {
   const mid = (a + b) / 2;
   const lo = Math.max(0, Math.min(mid - MIN_SPAN / 2, 1000 - MIN_SPAN));
