@@ -58,6 +58,16 @@ export function nextBlockId(blocks: readonly BlockValues[]): string {
   return `b${Math.max(0, ...blocks.map((b) => Number(/^b(\d+)$/.exec(b.id)?.[1] ?? 0))) + 1}`;
 }
 
+/**
+ * In the day's sales, a sale is for cash unless বাকি is written: the shop's rule (F2, 4 Nov). The
+ * reading leaves such a line's kind unknown (the prompt says never to guess a credit sale), so
+ * code makes it a cash sale instead of asking; he can still mark a line বাকি from the numbers
+ * screen. Only a line with something on it (an amount or an item) and no kind.
+ */
+export function cashByDefault(kind: BlockKind, values: EntryValues): boolean {
+  return kind === "day_sales" && values.type === "unknown" && ((values.amountText?.trim().length ?? 0) > 0 || (values.item?.trim().length ?? 0) > 0);
+}
+
 /** Goods with no price yet: an item is written and no amount. Never counted as zero. */
 export function isUnpricedGoods(values: EntryValues): boolean {
   return (values.item?.trim().length ?? 0) > 0 && (values.amountText?.trim().length ?? 0) === 0;

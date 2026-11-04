@@ -32,9 +32,12 @@ const STEPS = [
 
 const DATA = path.join(process.cwd(), "private-test-data");
 
-/** S01–S04 are the line-ledger snippets; V01 and V02 (and their flattened pages) are the v3 pages with blocks. */
-const PHOTO_RE = /^(S\d{2}(-upright)?|V\d{2}(\.flat)?)\.jpg$/;
-const folderOf = (photo: string) => (photo.startsWith("V") ? "v3" : "ledger-snippets");
+/**
+ * S01–S04 are the line-ledger snippets; V01 and V02 (and their flattened pages) are the v3 pages
+ * with blocks; P1–P5 are his five-page test (consented as test samples on 3 Nov).
+ */
+const PHOTO_RE = /^(S\d{2}(-upright)?|V\d{2}(\.flat)?|P\d)\.jpg$/;
+const folderOf = (photo: string) => (/^[VP]/.test(photo) ? "v3" : "ledger-snippets");
 /** M01, M02: the synthetic company memos for V01 and V02 (U4). */
 const MEMO_RE = /^M\d{2}\.jpg$/;
 
@@ -95,6 +98,7 @@ async function loadMemo(photo: string): Promise<KitMemo | null> {
 /**
  * Development only: the check flow's screens on a stored reading of a private test photo (S04 by
  * default, `&photo=S01.jpg` for another; the ask deck on V01.flat by default, `&photo=V02.flat.jpg`;
+ * `&photo=P1.jpg` … `P5.jpg` his five-page test (F2: the numbers screen on real pages);
  * `&memo=M01.jpg` adds a company memo's stored reading, as if photographed with the page;
  * `&photo=karim` is a drawn page shaped like the five-page test's first, for splitting a part;
  * `&photo=karim2` one shaped like its second, with a pretend khata for the "before" questions;

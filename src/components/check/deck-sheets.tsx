@@ -8,6 +8,7 @@ import { useI18n } from "@/lib/i18n/client";
 import type { I18n } from "@/lib/i18n/format";
 import type { TransactionType } from "@/lib/ledger/types";
 import type { ReviewRow } from "@/lib/review/state";
+import { toAsciiDigits } from "@/lib/numerals";
 import { FIELD_TO_VALUE_KEY } from "@/lib/review/values";
 import type { Photo } from "./reading-view";
 import { fieldLabel } from "./sentences";
@@ -57,6 +58,7 @@ export function FixSheet({
   target,
   photo,
   hint,
+  readings = [],
   busy,
   onSave,
   onSplit,
@@ -65,6 +67,8 @@ export function FixSheet({
   target: { row: ReviewRow; field: FixField } | null;
   photo: Photo;
   hint: string | null;
+  /** What Scriba thought the figure might be (two or three readings), one tap each (F2). */
+  readings?: readonly string[];
   busy: boolean;
   onSave: (typed: string) => void;
   onSplit?: () => void;
@@ -73,7 +77,7 @@ export function FixSheet({
   const { t } = useI18n();
   return (
     <Sheet open={target != null} onClose={onClose} label={target ? t("fx.title", target.row.values.item ?? t(`type.${target.row.values.type}`)) : ""}>
-      {target ? <FixBody key={`${target.row.id}:${target.field}`} row={target.row} field={target.field} photo={photo} hint={hint} busy={busy} onSave={onSave} onSplit={onSplit} onClose={onClose} /> : null}
+      {target ? <FixBody key={`${target.row.id}:${target.field}`} row={target.row} field={target.field} photo={photo} hint={hint} readings={readings} busy={busy} onSave={onSave} onSplit={onSplit} onClose={onClose} /> : null}
     </Sheet>
   );
 }
@@ -83,6 +87,7 @@ function FixBody({
   field,
   photo,
   hint,
+  readings,
   busy,
   onSave,
   onSplit,
@@ -92,6 +97,7 @@ function FixBody({
   field: FixField;
   photo: Photo;
   hint: string | null;
+  readings: readonly string[];
   busy: boolean;
   onSave: (typed: string) => void;
   onSplit?: () => void;
@@ -110,9 +116,11 @@ function FixBody({
   const { reset: resetVoice } = voice;
   const listening = voice.state.s === "listening";
   const sending = voice.state.s === "sending";
-  const picks = voice.state.s === "heard" && voice.state.number.kind === "many" ? voice.state.number.values.filter(fits) : [];
+  const heardMany = voice.state.s === "heard" && voice.state.number.kind === "many" ? voice.state.number.values.filter(fits) : [];
+  // Spoken numbers to pick from, else the readings Scriba doubted between (as keypad digits).
+  const picks = heardMany.length > 0 ? heardMany : readings.length >= 2 ? readings.map((r) => toAsciiDigits(r).replace(/[^0-9.]/g, "")).filter((v) => v.length > 0 && fits(v)) : [];
   // Turmeric only while the field holds what this clip said, never a number left from before.
-  const heardInField = voice.state.s === "heard" && (voice.state.number.kind === "one" ? voice.state.number.value === draft : picks.includes(draft));
+  const heardInField = voice.state.s === "heard" && (voice.state.number.kind === "one" ? voice.state.number.value === draft : heardMany.includes(draft));
   const press = (k: KeypadKey) => {
     resetVoice();
     setDraft((d) => applyKey(d, k));
@@ -151,7 +159,7 @@ function FixBody({
         <span className="fx-old">{t("fx.old", old ? digits(old) : "—")}</span>
       </div>
       <p className="fx-msg" aria-live="polite">
-        {voiceMessage(i18n, voice.state, fits, decimal) ?? hint ?? t("fx.msg")}
+        {voiceMessage(i18n, voice.state, fits, decimal) ?? (heardMany.length === 0 && picks.length > 0 ? t("fx.readings") : null) ?? hint ?? t("fx.msg")}
       </p>
       {picks.length > 0 ? (
         <div className="fx-picks">

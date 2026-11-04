@@ -24,7 +24,7 @@
  * is proposed as "before" when none is written, and a written "before" is compared with it.
  */
 import type { NormalizedDoubt } from "@/lib/extraction/parse";
-import { type BlockGroup, blockPartyKind, groupByBlock, isUnpricedGoods } from "@/lib/ledger/blocks";
+import { type BlockGroup, blockPartyKind, cashByDefault, groupByBlock, isUnpricedGoods } from "@/lib/ledger/blocks";
 import { type PartyKind, type PartyLink, partyLinkFor } from "@/lib/ledger/parties";
 import {
   type AnswerRecord,
@@ -293,10 +293,14 @@ function meaningQuestion(block: BlockValues, rows: ReviewRow[], memo: BlockMemo 
   if (block.kind === "day_sales" || block.kind === "expenses") return null;
   const party = block.party?.trim() || null;
   const person = block.person?.trim() || null;
+  // A part that is the day's sales takes the shop's rule with it: no kind written is cash (F2).
   const kindOption = (kind: BlockKind): QuestionOption => ({
     id: `kind:${kind}`,
     label: { key: KIND_LABEL[kind] },
-    changes: [{ op: "block", block: block.id, values: { kind } }],
+    changes: [
+      { op: "block", block: block.id, values: { kind } },
+      ...rows.filter((r) => cashByDefault(kind, r.values)).map((r): Change => ({ op: "edit", entry: r.id, values: { type: "cash_sale" } })),
+    ],
   });
   // "A line is wrong" opens the part's lines, so a figure can be fixed from this card (T1).
   const wrongLine: QuestionOption[] = rows.length > 0 ? [{ id: "line", label: { key: "q.meaning.line" }, changes: [], local: true }] : [];
@@ -669,7 +673,8 @@ const EXPENSE_TYPES: ReadonlySet<TransactionType> = new Set(["expense", "purchas
 
 /**
  * A line's kind in the part it moves to. In day sales or expenses, a sale or a purchase on nobody's
- * account was paid there and then; a kind that can't be in the part becomes unknown, so Scriba asks.
+ * account was paid there and then, and in day sales a line of no kind is a cash sale (F2,
+ * `cashByDefault`); a kind that can't be in the part becomes unknown, so Scriba asks.
  * An account or "something else" keeps the kinds: the line-kind questions ask about any that point
  * the other way.
  */
@@ -677,7 +682,7 @@ function kindIn(kind: BlockKind, values: EntryValues): TransactionType {
   const type = values.type;
   const named = (values.customer?.trim().length ?? 0) > 0;
   if (kind === "day_sales") {
-    if (type === "credit_sale" && !named) return "cash_sale";
+    if ((type === "credit_sale" && !named) || cashByDefault(kind, values)) return "cash_sale";
     return DAY_SALES_TYPES.has(type) && (type !== "repayment" || named) ? type : "unknown";
   }
   if (kind === "expenses") {

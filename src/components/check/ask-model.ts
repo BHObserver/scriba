@@ -1,6 +1,6 @@
 import type { GridBox } from "@/components/kit/strip-geometry";
-import { blockPartyKind, groupByBlock, isUnpricedGoods, pageBlocks } from "@/lib/ledger/blocks";
-import type { BlockValues, PageValues } from "@/lib/ledger/types";
+import { blockPartyKind, cashByDefault, groupByBlock, isUnpricedGoods, pageBlocks } from "@/lib/ledger/blocks";
+import type { BlockValues, PageValues, ReviewableField } from "@/lib/ledger/types";
 import { acceptedFindings } from "@/lib/questions/answer";
 import { parseMoney } from "@/lib/numerals";
 import type { Answer, Question, QuestionKind, QuestionOption, QuestionSet } from "@/lib/questions/types";
@@ -8,13 +8,15 @@ import { ackFingerprint, assessEntry } from "@/lib/review/approval";
 import type { ReviewRow } from "@/lib/review/state";
 import { type Finding, type ValidationEntry, accountSign, deriveNumbers } from "@/lib/validation/engine";
 import { type Acceptances, type Review, acceptanceFor, cardStatus, checkReview, isAccepted, typedText } from "./deck-model";
+import type { LinePatch } from "./review-api";
 
 /**
  * The "Scriba asks" deck (B7, DESIGN_SPEC D5) over a reading with blocks, kept pure so it is
  * tested. The questions come from the engine (`src/lib/questions`); this decides the order they
- * are shown in, which lines an answer accepts, what is left for the quick confirm, and when a
- * block gets its stamp. Acceptance is still the approval model of `deck-model.ts`: the server
- * re-checks every line at confirmation, so nothing here can confirm a line on its own.
+ * are shown in, which lines an answer accepts, and what is left for the quick confirm. Since F2
+ * (4 Nov) every figure is checked first, all together, on the numbers screen; the questions come
+ * after. Acceptance is still the approval model of `deck-model.ts`: the server re-checks every
+ * line at confirmation, so nothing here can confirm a line on its own.
  */
 
 /** A reading the ask deck handles: one with blocks (prompt 6). Others keep the line cards. */
@@ -29,12 +31,10 @@ export type AskItem =
   /** A line with a problem no question covers: it needs its own look. */
   | { kind: "line"; id: string; block: string | null }
   /** The block's other lines, confirmed together. */
-  | { kind: "rest"; ids: string[]; block: string | null }
-  /** The block is through the deck: its stamp (or its open due, with prices left for later). */
-  | { kind: "stamp"; block: string };
+  | { kind: "rest"; ids: string[]; block: string | null };
 
 export const itemKey = (item: AskItem): string =>
-  item.kind === "question" || item.kind === "line" ? `${item.kind}:${item.id}` : item.kind === "prices" ? `prices:${item.ids[0]}` : `${item.kind}:${item.block}`;
+  item.kind === "question" || item.kind === "line" ? `${item.kind}:${item.id}` : item.kind === "prices" ? `prices:${item.ids[0]}` : `rest:${item.block}`;
 
 /**
  * The questions the deck goes through. Normally the open ones; after "Answer them now" (`revisit`)
@@ -59,11 +59,12 @@ export function blockLines(review: Review): Array<{ block: BlockValues | null; r
 
 /**
  * What is still to go through, in order: the page's own questions (the date) first, then block
- * by block: its questions, its problem lines, a quick confirm of the rest, its stamp. Items
- * that are done drop out, so the first item is always the current card. A stamp stays until
- * it has been seen (`seen` holds item keys).
+ * by block: its questions, its problem lines, a quick confirm of the rest. Items that are done
+ * drop out, so the first item is always the current card. After the numbers screen (F2) the
+ * lines he saw there are accepted as each part's questions are answered (`acceptSeen`), so a
+ * quick confirm only comes for lines an answer changed or added.
  */
-export function deckItems(review: Review, set: QuestionSet, acceptances: Acceptances, seen: ReadonlySet<string>): AskItem[] {
+export function deckItems(review: Review, set: QuestionSet, acceptances: Acceptances): AskItem[] {
   const { findings, entries } = checkReview(review);
   const covered = coveredLines(set);
   const kept = acceptedFindings(review.page.values);
@@ -81,7 +82,6 @@ export function deckItems(review: Review, set: QuestionSet, acceptances: Accepta
     items.push(...look.map((r): AskItem => ({ kind: "line", id: r.id, block: id })));
     const rest = waiting.filter((r) => !look.includes(r)).map((r) => r.id);
     if (rest.length > 0) items.push({ kind: "rest", ids: rest, block: id });
-    if (id != null && !seen.has(`stamp:${id}`)) items.push({ kind: "stamp", block: id });
   }
   return items;
 }
@@ -186,6 +186,118 @@ export function acceptRest(review: Review, ids: readonly string[], acceptances: 
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// The numbers screen (F2, 4 Nov): every figure first, all together, then the questions
+// ---------------------------------------------------------------------------
+
+/** The figures a line can hold, as the fix sheet names them. */
+export const NUMBER_FIELDS = ["qty", "rate", "amount", "balance"] as const satisfies readonly ReviewableField[];
+export type NumberField = (typeof NUMBER_FIELDS)[number];
+
+/** The figures on a line that Scriba wasn't sure of: the numbers screen marks them. */
+export const unsureNumbers = (row: ReviewRow): NumberField[] => NUMBER_FIELDS.filter((f) => row.reviewFields.includes(f));
+
+/** A line the numbers screen shows him to check: a draft that isn't crossed out. */
+export const checkable = (row: ReviewRow): boolean => row.status === "draft" && !row.values.crossedOut;
+
+/** In the day's sales, a line that is a sale: cash, credit, or of no kind yet (cash by default). */
+export function isSaleLine(block: BlockValues | null, row: ReviewRow): boolean {
+  if (block?.kind !== "day_sales" || row.status === "rejected") return false;
+  return row.values.type === "cash_sale" || row.values.type === "credit_sale" || cashByDefault(block.kind, row.values);
+}
+
+/** What the day's sales are, as the part's tag says: all cash (the default), all on credit, or both. Null: no sales. */
+export function salesKind(block: BlockValues | null, rows: readonly ReviewRow[]): "cash" | "credit" | "mixed" | null {
+  const sales = rows.filter((r) => isSaleLine(block, r));
+  if (sales.length === 0) return null;
+  const credit = sales.filter((r) => r.values.type === "credit_sale").length;
+  return credit === 0 ? "cash" : credit === sales.length ? "credit" : "mixed";
+}
+
+/**
+ * What "all the numbers are right" saves, line by line: the figures Scriba was unsure of, which he
+ * has now seen beside the writing (checked), and in the day's sales a line of no kind as the cash
+ * sale its part's tag showed (`cashByDefault`). Lines with nothing to save are left out.
+ */
+export function numbersPatches(review: Review): Array<{ id: string; patch: LinePatch }> {
+  const out: Array<{ id: string; patch: LinePatch }> = [];
+  for (const { block, rows } of blockLines(review)) {
+    for (const row of rows.filter(checkable)) {
+      const markChecked = unsureNumbers(row);
+      const cash = block != null && cashByDefault(block.kind, row.values);
+      if (markChecked.length === 0 && !cash) continue;
+      out.push({ id: row.id, patch: { ...(cash ? { values: { ...row.values, type: "cash_sale" as const } } : {}), ...(markChecked.length > 0 ? { markChecked } : {}) } });
+    }
+  }
+  return out;
+}
+
+/**
+ * Questions the numbers screen settles, so the deck won't ask them: a figure Scriba doubted (he
+ * has seen it beside the writing; a mix of Bangla and English digits is still asked), the day's
+ * sales as cash, and the photo's day when no date is written (shown at the top, he can change it).
+ */
+export function settledByNumbers(q: Question): boolean {
+  if (q.kind === "doubt") return q.field != null && (NUMBER_FIELDS as readonly string[]).includes(q.field) && !q.options.some((o) => o.accepts);
+  if (q.kind === "date") return q.proposed != null;
+  return q.kind === "block_kind" && q.options.some((o) => o.id === "cash");
+}
+
+/**
+ * How many questions the deck will ask after the numbers screen, for its "then N questions": not
+ * those it settles, nor a line's kind in a part whose "what is this part?" is still open with no
+ * answer to propose: his answer to that one usually decides the lines' kinds (F2: the day's sales
+ * are cash), so they would only make the count look long.
+ */
+export function questionsAhead(set: QuestionSet): number {
+  const open = new Set(set.questions.filter((q) => q.kind === "meaning" && q.proposed == null).map((q) => q.block));
+  return set.questions.filter((q) => !settledByNumbers(q) && !(q.kind === "direction" && open.has(q.block))).length;
+}
+
+/** A line's figures and part: what he saw on the numbers screen, compared later by `acceptSeen`. */
+export const figuresKey = (row: ReviewRow): string => JSON.stringify([row.values.block ?? null, ...FIGURES.map((k) => row.values[k] ?? null)]);
+
+/** What he has seen: each line he could check, with its figures as they stand. */
+export type SeenFigures = Readonly<Record<string, string>>;
+export function seenNow(review: Review): SeenFigures {
+  return Object.fromEntries(review.rows.filter(checkable).map((r) => [r.id, figuresKey(r)]));
+}
+
+/**
+ * Every line whose figures he saw (and that haven't changed since) is accepted once nothing else
+ * is open about it: no question left on it (answered, not put off for later), no blocker, no
+ * problem he hasn't kept. Run after the numbers screen and after each answer or edit, so the
+ * deck only asks; a line moved to another part (T2) or changed by an answer comes on its quick
+ * confirm instead.
+ */
+export function acceptSeen(review: Review, set: QuestionSet, seen: SeenFigures, acceptances: Acceptances): Acceptances {
+  const { findings, entries } = checkReview(review);
+  const kept = acceptedFindings(review.page.values);
+  const covered = coveredLines(set);
+  const out = { ...acceptances };
+  for (const row of review.rows) {
+    if (row.status !== "draft" || covered.has(row.id) || seen[row.id] !== figuresKey(row)) continue;
+    const entry = entries.get(row.id);
+    if (!entry || isAccepted(entry, findings, out[row.id]) || needsOwnCard(row, entry, findings, kept)) continue;
+    out[row.id] = acceptanceFor(entry, findings, "ok");
+  }
+  return out;
+}
+
+/** The sums on a part that don't come out, as code worked them out: the numbers screen shows them under the part. */
+export function partFailures(findings: readonly Finding[], rows: readonly ReviewRow[]): Finding[] {
+  const ids = new Set(rows.map((r) => r.id));
+  return findings.filter((f) => f.status === "fail" && OFF_RULES.has(f.ruleId) && f.expected != null && f.observed != null && f.entryIds.some((id) => ids.has(id)));
+}
+
+/** True when some sum on the part was checked and came out. */
+export function partChecked(findings: readonly Finding[], rows: readonly ReviewRow[]): boolean {
+  const ids = new Set(rows.map((r) => r.id));
+  return findings.some((f) => f.status === "pass" && OFF_RULES.has(f.ruleId) && f.entryIds.some((id) => ids.has(id)));
+}
+
+const OFF_RULES: ReadonlySet<string> = new Set(["balance_equation", "running_balance", "written_total", "qty_x_rate"]);
+
 /** A typed price as poisha, or null while it isn't a whole number yet. */
 export function draftPoisha(text: string | undefined): number | null {
   if (!text) return null;
@@ -284,21 +396,3 @@ export function blockTone(block: BlockValues | null): "blue" | "green" | "plain"
   return block.kind === "day_sales" ? "green" : "plain";
 }
 
-/**
- * A block is done (it gets its stamp) when nothing about it is open or set aside and each of its
- * draft lines is accepted. With a question put off for later it isn't: the card shows what is
- * still open instead.
- */
-export function blockDone(review: Review, set: QuestionSet, acceptances: Acceptances, blockId: string): boolean {
-  if ([...set.questions, ...set.later].some((q) => q.block === blockId)) return false;
-  const { findings, entries } = checkReview(review);
-  const group = blockLines(review).find((g) => g.block?.id === blockId);
-  return (group?.rows ?? []).every((r) => r.status !== "draft" || isAccepted(entries.get(r.id), findings, acceptances[r.id]));
-}
-
-/** Questions per block for the overview's chips; the page's own under null. */
-export function questionCounts(set: QuestionSet): Map<string | null, number> {
-  const out = new Map<string | null, number>();
-  for (const q of set.questions) out.set(q.block, (out.get(q.block) ?? 0) + 1);
-  return out;
-}

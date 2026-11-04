@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button, ButtonLink, Seal, StatusMark, TopBar } from "@/components/kit";
 import { cx } from "@/components/ui";
@@ -8,56 +8,10 @@ import { useI18n } from "@/lib/i18n/client";
 import type { BlockValues } from "@/lib/ledger/types";
 import type { ReviewRow } from "@/lib/review/state";
 import { blockFigures, blockTone } from "./ask-model";
-import { BlockCard, PageRegions, blockName, nowLabel } from "./ask-parts";
+import { PageRegions, blockName, nowLabel } from "./ask-parts";
 import type { Photo } from "./reading-view";
 
 type Group = { block: BlockValues | null; rows: ReviewRow[] };
-
-/**
- * The block overview (D5): the page with its parts tinted, how many parts and questions, one
- * card per part with its question count, and a row for the page's own questions.
- */
-export function OverviewView({ photo, groups, regions, counts, pageQuestions, sub, backHref, onStart }: { photo: Photo; groups: Group[]; regions: Group[]; counts: ReadonlyMap<string | null, number>; pageQuestions: number; sub: string; backHref: string; onStart: () => void }) {
-  const { t, count } = useI18n();
-  const blocks = groups.filter((g) => g.block != null);
-  const questions = [...counts.values()].reduce((s, n) => s + n, 0);
-  return (
-    <div className="flow column">
-      <TopBar title={t("asks.kicker")} sub={sub} backHref={backHref} />
-      <div className="pad as-scroll">
-        <div className="as-hero">
-          <PageRegions photo={photo} groups={regions} />
-          <div>
-            <h1 className="as-title">{blocks.length === 1 ? t("asks.ov.title1") : t("asks.ov.title", blocks.length)}</h1>
-            <p className="t-body">{questions > 0 ? t("asks.ov.sub", questions) : t("asks.ov.none")}</p>
-          </div>
-        </div>
-        {pageQuestions > 0 ? (
-          <div className="as-pagerow">
-            <span>{t("asks.ov.nodate")}</span>
-            <span className="as-qchip">{t("asks.ov.q", count(pageQuestions))}</span>
-          </div>
-        ) : null}
-        {blocks.map(({ block, rows }, i) => {
-          const n = counts.get(block!.id) ?? 0;
-          return (
-            <button key={block!.id} type="button" className="as-block" onClick={onStart}>
-              <span className={`as-n r-${blockTone(block)}`} aria-hidden="true">
-                {count(i + 1)}
-              </span>
-              <BlockCard block={block} rows={rows} compact aside={n > 0 ? <span className="as-qchip">{t("asks.ov.q", count(n))}</span> : null} />
-            </button>
-          );
-        })}
-      </div>
-      <div className="pad column as-dock">
-        <Button variant="red" wide onClick={onStart}>
-          {t("asks.ov.start")}
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 /** The deck's frame: back to the overview, progress segments tinted by block, ghost cards behind. */
 export function DeckFrame({ segments, now, notice, onBack, children }: { segments: ReadonlyArray<{ key: string; tone: string; done: boolean }>; now: number; notice: ReactNode; onBack: () => void; children: ReactNode }) {
@@ -88,6 +42,7 @@ export function DeckFrame({ segments, now, notice, onBack, children }: { segment
  * The page seal (D5): the page with its parts, the big seal only when nothing is left open, one
  * row per part, then "Add to the khata". With questions left for later, no seal: how many, and
  * "Answer them now"; confirming then sends only the accepted lines (unpriced goods stay out).
+ * Before that, each part opens its lines, so a wrong figure seen here can still be fixed (F2).
  * Once the page is in the khata, "Fix this page" (T5) offers to take it out again.
  */
 export function PageSealView({
@@ -107,6 +62,7 @@ export function PageSealView({
   onBack,
   onLater,
   onConfirm,
+  onPart,
   onFix,
 }: {
   photo: Photo;
@@ -126,6 +82,8 @@ export function PageSealView({
   onBack: () => void;
   onLater: () => void;
   onConfirm: () => void;
+  /** A part tapped before the page is in the khata: its lines, to fix a figure. */
+  onPart: (block: string) => void;
   /** The page is in the khata: "Fix this page" opens the reopen sheet. */
   onFix: () => void;
 }) {
@@ -163,17 +121,28 @@ export function PageSealView({
             const f = blockFigures(block, rows);
             const label = f.kind === "account" ? `${blockName(i18n, block)} · ${t(nowLabel(f))}` : blockName(i18n, block);
             const figure = f.kind === "total" ? money(f.total) : f.now != null ? money(f.now) : `${money(f.known)} +`;
-            return (
-              <div key={block.id} className="as-ps-row">
+            const inner = (
+              <>
                 <span className={`as-avatar r-${blockTone(block)}`} aria-hidden="true">
                   {f.kind === "total" ? count(f.lines) : Array.from(blockName(i18n, block)).slice(0, 2).join("")}
                 </span>
                 <span>{label}</span>
                 <b className="as-num">{figure}</b>
+              </>
+            );
+            return done ? (
+              <div key={block.id} className="as-ps-row">
+                {inner}
               </div>
+            ) : (
+              <button key={block.id} type="button" className="as-ps-row tap" disabled={busy} onClick={() => onPart(block.id)}>
+                {inner}
+                <ChevronRight size={18} aria-hidden="true" />
+              </button>
             );
           })}
         </div>
+        {done ? null : <p className="as-hint">{t("asks.ps.tap")}</p>}
       </div>
       <div className="pad column as-dock">
         {notice}

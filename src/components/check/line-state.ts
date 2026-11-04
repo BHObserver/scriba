@@ -28,6 +28,11 @@ function blames(f: Finding, id: string): boolean {
   return id === f.entryIds.at(-1) || (mode === "ends" && id === f.entryIds[0]);
 }
 
+/** A check failed on this line's written figure (for a sum, the total or the ends it compares). */
+export function failsOn(findings: readonly Finding[], id: string): boolean {
+  return findings.some((f) => f.status === "fail" && f.entryIds.includes(id) && blames(f, id));
+}
+
 export function lineState(findings: readonly Finding[], row: Pick<ReviewRow, "id" | "reviewFields">): LineState {
   const own = findings.filter((f) => f.entryIds.includes(row.id));
   const needsLook = own.some(

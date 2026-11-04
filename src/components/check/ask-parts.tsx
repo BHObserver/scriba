@@ -1,16 +1,14 @@
 "use client";
 
 import { ReceiptText } from "lucide-react";
-import type { ReactNode } from "react";
 import { LineStrip } from "@/components/kit";
 import { OrientedImage } from "@/components/photo-orientation";
-import { cx } from "@/components/ui";
 import { useI18n } from "@/lib/i18n/client";
 import type { I18n } from "@/lib/i18n/format";
 import type { BlockValues } from "@/lib/ledger/types";
 import type { ReviewRow } from "@/lib/review/state";
 import { type MemoView, memoRegion } from "./ask-memo";
-import { type AccountFigures, blockFigures, blockRegion, blockTone } from "./ask-model";
+import { type AccountFigures, blockRegion, blockTone } from "./ask-model";
 import type { Photo } from "./reading-view";
 
 /** What a block is called on its tag and card: the party as written, else its kind. */
@@ -18,9 +16,6 @@ export function blockName({ t, digits }: I18n, block: BlockValues | null): strin
   if (!block) return t("asks.ov.page");
   return block.party?.trim() ? digits(block.party.trim()) : t(`q.kind.${block.kind}`);
 }
-
-/** The first two letters of the party (or the line count) for the card's avatar. */
-const initials = (text: string) => Array.from(text.replace(/\s+/g, "")).slice(0, 2).join("");
 
 /** The photo with each block's part of the page tinted in its tone (overview, page seal). */
 export function PageRegions({ photo, groups, maxHeightVh }: { photo: Photo; groups: ReadonlyArray<{ block: BlockValues | null; rows: readonly ReviewRow[] }>; maxHeightVh?: number }) {
@@ -75,16 +70,6 @@ export function MemoStrip({ memo, lines, height = 92 }: { memo: MemoView; lines:
   );
 }
 
-/** The small stamp a block gets when its part is done; the page keeps the big seal. */
-export function Stamp({ land }: { land?: boolean }) {
-  const { t } = useI18n();
-  return (
-    <div className={cx("as-stamp", land && "land")} role="img" aria-label={t("asks.stamp")}>
-      <span>{t("asks.stamp")}</span>
-    </div>
-  );
-}
-
 export function Kicker({ block }: { block: BlockValues | null }) {
   const i18n = useI18n();
   return (
@@ -109,130 +94,7 @@ export function DateTile({ day }: { day: string }) {
   );
 }
 
-const ACCOUNT_LABELS = {
-  supplier: { before: "asks.visit.before", paid: "asks.visit.paid", goods: "asks.visit.goods", now: "asks.visit.now" },
-  customer: { before: "asks.cust.before", paid: "asks.cust.paid", goods: "asks.cust.goods", now: "asks.cust.now" },
-} as const;
+const NOW_LABEL = { supplier: "asks.visit.now", customer: "asks.cust.now" } as const;
 
-export const nowLabel = (figures: AccountFigures) => ACCOUNT_LABELS[figures.party].now;
-
-/** A goods line as the card names it: the item and its quantity, as written. */
-function goodsName(i18n: I18n, row: ReviewRow | undefined): { item: string; qty: string } {
-  const v = row?.values;
-  const qty = [v?.quantityText, v?.unit].filter(Boolean).join(" ");
-  return { item: i18n.digits(v?.item ?? v?.sourceText ?? ""), qty: i18n.digits(qty) };
-}
-
-/**
- * A block worked out by code: for a visit or an account, owed before, paid, the goods (a missing
- * price is a gap, never a zero) and owed now; for sales or spending, the total. `compact` lists the
- * goods on one line. `onGap` makes a gap tappable (to price it). `aside` sits at the end of the
- * header, where the stamp goes (the overview's question count).
- */
-export function BlockCard({ block, rows, compact, stamp, aside, onGap }: { block: BlockValues | null; rows: readonly ReviewRow[]; compact?: boolean; stamp?: "land" | "still"; aside?: ReactNode; onGap?: (rowId: string) => void }) {
-  const i18n = useI18n();
-  const { t, money, count } = i18n;
-  const figures = blockFigures(block, rows);
-  const tone = blockTone(block);
-  const name = blockName(i18n, block);
-  const stampEl = stamp ? <Stamp land={stamp === "land"} /> : aside;
-
-  if (figures.kind === "total") {
-    const items = rows.map((r) => r.values.item).filter((x): x is string => !!x);
-    const label = block?.kind === "day_sales" ? "asks.total.sales" : block?.kind === "expenses" ? "asks.total.expenses" : "asks.total";
-    return (
-      <div className="as-vc">
-        <div className="as-vc-head">
-          <span className={`as-avatar r-${tone}`} aria-hidden="true">
-            {count(figures.lines)}
-          </span>
-          <div className="as-who">
-            <b>{name}</b>
-            <span>{[t("asks.lines", figures.lines), i18n.digits(items.slice(0, 4).join(", "))].filter(Boolean).join(" · ")}</span>
-          </div>
-          {stampEl}
-        </div>
-        <div className="as-now">
-          <span>{t(label)}</span>
-          <b className="as-num as-big">{money(figures.total)}</b>
-        </div>
-      </div>
-    );
-  }
-
-  const labels = ACCOUNT_LABELS[figures.party];
-  const person = block?.person?.trim();
-  const rowOf = (id: string) => rows.find((r) => r.id === id);
-  return (
-    <div className="as-vc">
-      <div className="as-vc-head">
-        <span className={`as-avatar r-${tone}`} aria-hidden="true">
-          {initials(name)}
-        </span>
-        <div className="as-who">
-          <b>{name}</b>
-          <span>{[person ? t("asks.visit.rep", i18n.digits(person)) : null, block ? t(`q.kind.${block.kind}`) : null].filter(Boolean).join(" · ")}</span>
-        </div>
-        {stampEl}
-      </div>
-      <div className="as-vc-rows">
-        {figures.before != null ? (
-          <div className="as-vc-row">
-            <span>{t(labels.before)}</span>
-            <b className="as-num">{money(figures.before)}</b>
-          </div>
-        ) : null}
-        {figures.paid > 0 ? (
-          <div className="as-vc-row">
-            <span>{t(labels.paid)}</span>
-            <b className="as-num">− {money(figures.paid)}</b>
-          </div>
-        ) : null}
-        {figures.goods.length > 0 && compact ? (
-          <div className="as-vc-row">
-            <span>{t(labels.goods)}</span>
-            <span className="t-small text-right">{figures.goods.map((g) => goodsName(i18n, rowOf(g.id)).item).join(", ")}</span>
-          </div>
-        ) : null}
-        {figures.goods.length > 0 && !compact ? (
-          <>
-            <div className="as-vc-row as-goods-h">
-              <span>{t(labels.goods)}</span>
-            </div>
-            {figures.goods.map((g) => {
-              const { item, qty } = goodsName(i18n, rowOf(g.id));
-              return (
-                <div key={g.id} className="as-vc-row">
-                  <span className="as-good-name">
-                    {item}
-                    {qty ? <i>{qty}</i> : null}
-                  </span>
-                  {g.amount != null ? (
-                    <b className="as-num">+ {money(g.amount)}</b>
-                  ) : onGap ? (
-                    <button type="button" className="as-gap" onClick={() => onGap(g.id)}>
-                      {t("asks.gap")}
-                    </button>
-                  ) : (
-                    <span className="as-gap">{t("asks.gap")}</span>
-                  )}
-                </div>
-              );
-            })}
-          </>
-        ) : null}
-      </div>
-      <div className="as-now">
-        <span>{t(labels.now)}</span>
-        {figures.now != null ? (
-          <b className="as-num as-big">{money(figures.now)}</b>
-        ) : (
-          <span className="as-open">
-            <b className="as-num">{money(figures.known)}</b>
-            <span className="as-gap">{t("asks.gapNow")}</span>
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
+/** "Owed now" or "due now", by who is on the other side of the account. */
+export const nowLabel = (figures: AccountFigures) => NOW_LABEL[figures.party];

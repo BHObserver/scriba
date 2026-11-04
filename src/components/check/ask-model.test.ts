@@ -5,10 +5,28 @@ import { buildQuestions, splitHereQuestion } from "@/lib/questions/engine";
 import type { Answer, Question, QuestionInput } from "@/lib/questions/types";
 import { normalizePartyName } from "@/lib/ledger/parties";
 import type { BlockValues } from "@/lib/ledger/types";
-import { acceptAnswered, acceptRest, answeredLines, blockDone, blockFigures, blockLines, blockRegion, deckItems, deckSet, isBlockReading, itemKey } from "./ask-model";
+import {
+  acceptAnswered,
+  acceptRest,
+  acceptSeen,
+  answeredLines,
+  blockFigures,
+  blockLines,
+  blockRegion,
+  deckItems,
+  deckSet,
+  isBlockReading,
+  itemKey,
+  numbersPatches,
+  partFailures,
+  questionsAhead,
+  salesKind,
+  seenNow,
+  settledByNumbers,
+} from "./ask-model";
 import { type Line, reviewOf } from "./deck-fixture.test-util";
-import { type Acceptances, type Review, checkReview, confirmEntries, isAccepted } from "./deck-model";
-import { localReviewApi } from "./review-api";
+import { type Acceptances, type Review, checkReview, confirmEntries, isAccepted, linesLeft } from "./deck-model";
+import { type LinePatch, localReviewApi } from "./review-api";
 
 const BLOCKS: BlockValues[] = [
   { id: "b1", kind: "day_sales", title: null, party: null, person: null, dateText: null },
@@ -84,7 +102,7 @@ function answered(review: Review, id: string, choice: Answer, acceptances: Accep
 
 /** The lines on a block's quick confirm. */
 function restOf(review: Review, acc: Acceptances, block: string): string[] {
-  const item = deckItems(review, buildQuestions(inputOf(review)), acc, new Set()).find((i) => i.kind === "rest" && i.block === block);
+  const item = deckItems(review, buildQuestions(inputOf(review)), acc).find((i) => i.kind === "rest" && i.block === block);
   return item?.kind === "rest" ? item.ids : [];
 }
 
@@ -114,26 +132,25 @@ describe("ask deck", () => {
     expect(blockRegion(sales.rows)).toEqual({ x_min: 100, y_min: 100, x_max: 500, y_max: 210 });
   });
 
-  test("block by block: questions, then the rest, then the stamp", () => {
+  test("block by block: questions, then the rest", () => {
     const review = pranPage();
     const set = buildQuestions(inputOf(review));
-    const keys = deckItems(review, set, {}, new Set()).map(itemKey);
-    // The sales lines are typed, so b1 has nothing to ask: a quick confirm and its stamp.
-    expect(keys.slice(0, 2)).toEqual(["rest:b1", "stamp:b1"]);
-    expect(keys).toContain("question:meaning:b2");
-    expect(keys.at(-1)).toBe("stamp:b2");
+    const keys = deckItems(review, set, {}).map(itemKey);
+    // The sales lines are typed, so b1 has nothing to ask: only its quick confirm.
+    expect(keys[0]).toBe("rest:b1");
+    expect(keys[1]).toBe("question:meaning:b2");
+    // No stamp cards since F2: the page seal shows the parts.
+    expect(keys.some((k) => k.startsWith("stamp:"))).toBe(false);
     // Lines a question is about never show again on the quick confirm.
-    const rest = deckItems(review, set, {}, new Set()).filter((i) => i.kind === "rest");
+    const rest = deckItems(review, set, {}).filter((i) => i.kind === "rest");
     expect(rest.flatMap((i) => (i.kind === "rest" ? i.ids : []))).toEqual(["r1", "r2"]);
   });
 
-  test("a seen stamp and confirmed lines drop out", () => {
+  test("accepted lines drop out", () => {
     const review = pranPage();
     const set = buildQuestions(inputOf(review));
     const acc = acceptRest(review, ["r1", "r2"], {});
-    expect(deckItems(review, set, acc, new Set(["stamp:b1"])).map(itemKey)[0]).toBe("question:meaning:b2");
-    expect(blockDone(review, set, acc, "b1")).toBe(true);
-    expect(blockDone(review, set, acc, "b2")).toBe(false);
+    expect(deckItems(review, set, acc).map(itemKey)[0]).toBe("question:meaning:b2");
   });
 
   test("yes to the visit settles what it is, not its lines: they come on the quick confirm", () => {
@@ -167,12 +184,12 @@ describe("ask deck", () => {
     expect(restOf(review, acc, "b1")).toEqual(["r1", "r2", "r3", "r4", "r5", "r6", "r7"]);
   });
 
-  test("a P1-shaped page: “a separate sale” makes two parts, each with its own quick confirm and stamp", () => {
+  test("a P1-shaped page: “a separate sale” makes two parts, each with its own quick confirm", () => {
     const meaning = answered(karimPage(), "meaning:b1", { option: "yes" });
     const { after, acc } = answered(meaning.after, "split:b1", { option: "apart" }, meaning.acc);
     expect(acc).toEqual({});
-    const keys = deckItems(after, buildQuestions(inputOf(after)), acc, new Set()).map(itemKey);
-    expect(keys).toEqual(["question:opening:b1", "stamp:b1", "rest:b2", "stamp:b2"]);
+    const keys = deckItems(after, buildQuestions(inputOf(after)), acc).map(itemKey);
+    expect(keys).toEqual(["question:opening:b1", "rest:b2"]);
     expect(restOf(after, acc, "b2")).toEqual(["r4", "r5", "r6", "r7"]);
     // Once Karim's "before" is answered, his own three lines come on his quick confirm.
     const opened = answered(after, "opening:b1", { option: "none" }, acc);
@@ -182,7 +199,7 @@ describe("ask deck", () => {
     expect(blockFigures(parts[0]!.block, parts[0]!.rows)).toMatchObject({ kind: "account", known: 26000, now: 26000 });
     expect(blockFigures(parts[1]!.block, parts[1]!.rows)).toEqual({ kind: "total", total: 25000, lines: 4 });
     const all = acceptRest(after, ["r4", "r5", "r6", "r7"], acc);
-    expect(blockDone(after, buildQuestions(inputOf(after)), all, "b2")).toBe(true);
+    expect(restOf(after, all, "b2")).toEqual([]);
   });
 
   test("lines moved to a new part lose their acceptance; the ones left keep it", () => {
@@ -241,7 +258,7 @@ describe("ask deck", () => {
     // Kept as written: the total isn't a card of its own again; it waits on the quick confirm.
     const kept = answered(review, q.id, { option: "keep" });
     expect(kept.acc).toEqual({});
-    expect(deckItems(kept.after, buildQuestions(inputOf(kept.after)), kept.acc, new Set()).map(itemKey)).toEqual(["rest:b1", "stamp:b1"]);
+    expect(deckItems(kept.after, buildQuestions(inputOf(kept.after)), kept.acc).map(itemKey)).toEqual(["rest:b1"]);
     const all = acceptRest(kept.after, ["r1", "r2", "r3"], kept.acc);
     const { findings, entries } = checkReview(kept.after);
     expect(["r1", "r2", "r3"].every((id) => isAccepted(entries.get(id), findings, all[id]))).toBe(true);
@@ -263,8 +280,9 @@ describe("ask deck", () => {
     review = answer(review, delivery.id, { option: delivery.options.find((o) => o.later)!.id });
     const set = buildQuestions(inputOf(review));
     expect(set.later.map((q) => q.id)).toEqual([delivery.id]);
-    expect(blockDone(review, set, acceptRest(review, ["r3", "r4"], {}), "b2")).toBe(false);
-    expect(deckItems(review, set, {}, new Set()).some((i) => i.kind === "line" && (i.id === "r5" || i.id === "r6"))).toBe(false);
+    // The goods have no price, so they can't be accepted: the page can't seal.
+    expect(linesLeft(review, acceptRest(review, ["r1", "r2", "r3", "r4", "r5", "r6"], {}))).toBe(2);
+    expect(deckItems(review, set, {}).some((i) => i.kind === "line" && (i.id === "r5" || i.id === "r6"))).toBe(false);
   });
 
   test("answering them now brings the later prices back, until put off again", () => {
@@ -274,11 +292,10 @@ describe("ask deck", () => {
     review = answer(review, delivery.id, { option: delivery.options.find((o) => o.later)!.id });
     const set = buildQuestions(inputOf(review));
     const acc = acceptRest(review, ["r1", "r2"], {});
-    const seen = new Set(["stamp:b1"]);
-    expect(deckItems(review, deckSet(set, false, []), acc, seen).map(itemKey)).not.toContain(`question:${delivery.id}`);
-    expect(deckItems(review, deckSet(set, true, []), acc, seen).map(itemKey)).toContain(`question:${delivery.id}`);
+    expect(deckItems(review, deckSet(set, false, []), acc).map(itemKey)).not.toContain(`question:${delivery.id}`);
+    expect(deckItems(review, deckSet(set, true, []), acc).map(itemKey)).toContain(`question:${delivery.id}`);
     const again = deckSet(set, true, [delivery.id]);
-    expect(deckItems(review, again, acc, seen).map(itemKey)).not.toContain(`question:${delivery.id}`);
+    expect(deckItems(review, again, acc).map(itemKey)).not.toContain(`question:${delivery.id}`);
     expect(again.later.map((q) => q.id)).toEqual([delivery.id]);
   });
 });
@@ -304,7 +321,7 @@ describe("a page reopened (T5)", () => {
       review = answer(review, q.id, { option: q.proposed ?? q.options.find((o) => !o.later && !o.local)!.id });
     }
     const confirmed = confirmAll(review);
-    expect(deckItems(confirmed, buildQuestions(inputOf(confirmed)), {}, new Set()).map(itemKey)).toEqual(["stamp:b1"]);
+    expect(deckItems(confirmed, buildQuestions(inputOf(confirmed)), {}).map(itemKey)).toEqual([]);
 
     const reopened = await reopen(confirmed);
     expect(reopened.rows.every((r) => r.status === "draft")).toBe(true);
@@ -312,7 +329,7 @@ describe("a page reopened (T5)", () => {
     expect(reopened.rows.map((r) => r.version)).toEqual(confirmed.rows.map((r) => r.version + 1));
     const set = buildQuestions(inputOf(reopened));
     expect(set).toEqual({ questions: [], later: [] });
-    expect(deckItems(reopened, set, {}, new Set()).map(itemKey)).toEqual(["rest:b1", "stamp:b1"]);
+    expect(deckItems(reopened, set, {}).map(itemKey)).toEqual(["rest:b1"]);
     expect(restOf(reopened, {}, "b1")).toEqual(reopened.rows.map((r) => r.id));
   });
 
@@ -325,7 +342,7 @@ describe("a page reopened (T5)", () => {
     const set = buildQuestions(inputOf(reopened));
     expect(set.questions.map((q) => q.id)).toEqual(["split:b1"]);
     const apart = answered(reopened, "split:b1", { option: "apart" });
-    expect(deckItems(apart.after, buildQuestions(inputOf(apart.after)), apart.acc, new Set()).map(itemKey)).toEqual(["rest:b1", "stamp:b1", "rest:b2", "stamp:b2"]);
+    expect(deckItems(apart.after, buildQuestions(inputOf(apart.after)), apart.acc).map(itemKey)).toEqual(["rest:b1", "rest:b2"]);
     const [karim, sale] = blockLines(apart.after);
     expect(blockFigures(karim!.block, karim!.rows)).toMatchObject({ kind: "account", before: 0, known: 26000, now: 26000 });
     expect(blockFigures(sale!.block, sale!.rows)).toEqual({ kind: "total", total: 25000, lines: 4 });
@@ -338,5 +355,159 @@ describe("a page reopened (T5)", () => {
     expect(await api.reopenPreview(confirmed)).toEqual({ canReopen: true, reason: null, records: 7, closedDays: ["2026-11-01"] });
     expect(await api.reopenPreview(karimPage())).toMatchObject({ canReopen: false, reason: "not_confirmed", records: 0 });
     expect(await api.reopen(karimPage())).toEqual({ ok: false, reason: "not_confirmed" });
+  });
+});
+
+describe("the numbers first (F2, 4 Nov)", () => {
+  /** "All the numbers are right" as the dev board's API saves it: each line's patch applied in memory. */
+  async function saveNumbers(review: Review): Promise<Review> {
+    const api = localReviewApi();
+    const rows = await Promise.all(
+      review.rows.map(async (r) => {
+        const patch: LinePatch | undefined = numbersPatches(review).find((p) => p.id === r.id)?.patch;
+        if (!patch) return r;
+        const res = await api.saveLine(r, patch);
+        if (!res.ok) throw new Error(res.reason);
+        return { ...r, ...res.line };
+      }),
+    );
+    return { ...review, rows };
+  }
+
+  /** The numbers screen said right, then the deck: what is asked, and what is accepted on the way. */
+  async function afterNumbers(review: Review) {
+    const saved = await saveNumbers(review);
+    const set = buildQuestions(inputOf(saved));
+    const seen = seenNow(saved);
+    return { review: saved, set, seen, acc: acceptSeen(saved, set, seen, {}) };
+  }
+
+  /** His P1 shape: two parts of the day's sales, kinds not written, one figure Scriba doubted. */
+  const salesPage = (): Review => {
+    const page = pageOf(
+      [
+        { type: "unknown", sourceText: "চাল ১৪০", item: "চাল", amountText: "১৪০" },
+        { type: "unknown", sourceText: "ডাল ৯০", item: "ডাল", amountText: "৯০" },
+        { type: "subtotal", sourceText: "মোট ২৩০", amountText: "২৩০" },
+        { type: "unknown", sourceText: "তেল ১৭০", item: "তেল", amountText: "১৭০" },
+        { type: "unknown", sourceText: "চিনি ১৩০", item: "চিনি", amountText: "১৩০" },
+        { type: "subtotal", sourceText: "মোট ৩০০", amountText: "৩০০" },
+      ],
+      ["b1", "b1", "b1", "b2", "b2", "b2"],
+      [
+        { id: "b1", kind: "day_sales", title: null, party: null, person: null, dateText: null },
+        { id: "b2", kind: "day_sales", title: null, party: null, person: null, dateText: null },
+      ],
+    );
+    return { ...page, rows: page.rows.map((r) => (r.id === "r5" ? { ...r, reviewFields: ["amount" as const] } : r)) };
+  };
+
+  test("the day's sales are cash unless বাকি is written: the tag says so, and nothing asks", async () => {
+    const before = salesPage();
+    const [b1] = blockLines(before);
+    expect(salesKind(b1!.block, b1!.rows)).toBe("cash");
+    // Before the numbers, the old "are these all cash?" question per part, and the doubted ১৩০.
+    const asked = buildQuestions(inputOf(before)).questions;
+    expect(asked.map((q) => q.id)).toEqual(["kind:b1", "kind:b2", "doubt:r5:amount"]);
+    expect(asked.every(settledByNumbers)).toBe(true);
+
+    const patches = numbersPatches(before);
+    expect(patches.map((p) => p.id)).toEqual(["r1", "r2", "r4", "r5"]);
+    expect(patches.find((p) => p.id === "r5")!.patch).toMatchObject({ values: { type: "cash_sale" }, markChecked: ["amount"] });
+
+    const { review, set, acc } = await afterNumbers(before);
+    expect(review.rows.filter((r) => r.values.item).every((r) => r.values.type === "cash_sale")).toBe(true);
+    expect(set).toEqual({ questions: [], later: [] });
+    // Every line is accepted: the deck has nothing left and the page goes to its seal.
+    expect(deckItems(review, set, acc)).toEqual([]);
+    expect(linesLeft(review, acc)).toBe(0);
+  });
+
+  test("“then N questions” leaves out the lines' kinds while “what is this part?” is open (V01's shape)", () => {
+    const page = pageOf(
+      [
+        { type: "unknown", item: "চাল", amountText: "১৪০" },
+        { type: "unknown", item: "ডাল", amountText: "১২০" },
+        { type: "unknown", item: "তেল", amountText: "১৭০" },
+      ],
+      ["b1", "b1", "b1"],
+      [{ id: "b1", kind: "other", title: null, party: null, person: null, dateText: null }],
+    );
+    const set = buildQuestions(inputOf(page));
+    expect(set.questions.map((q) => q.kind)).toEqual(["meaning", "direction", "direction", "direction"]);
+    expect(questionsAhead(set)).toBe(1);
+    // "The day's sales": the lines are cash, and nothing more is asked.
+    const sales = answer(page, "meaning:b1", { option: "kind:day_sales" });
+    expect(sales.rows.map((r) => r.values.type)).toEqual(["cash_sale", "cash_sale", "cash_sale"]);
+    expect(buildQuestions(inputOf(sales)).questions).toEqual([]);
+  });
+
+  test("a sale marked বাকি on the sheet stays on credit, and the tag says both", () => {
+    const review = salesPage();
+    const rows = review.rows.map((r) => (r.id === "r4" ? { ...r, values: { ...r.values, type: "credit_sale" as const, customer: "করিম" } } : r));
+    const marked = { ...review, rows };
+    const [, b2] = blockLines(marked);
+    expect(salesKind(b2!.block, b2!.rows)).toBe("mixed");
+    expect(numbersPatches(marked).map((p) => p.id)).not.toContain("r4");
+  });
+
+  test("Pran's page after the numbers: the deck only asks, and the lines settle as it goes", async () => {
+    const { review, set, seen, acc } = await afterNumbers(pranPage());
+    // The cash sales were seen and need nothing else; the visit's lines wait for its questions.
+    expect(Object.keys(acc).sort()).toEqual(["r1", "r2"]);
+    const keys = deckItems(review, set, acc).map(itemKey);
+    expect(keys[0]).toBe("question:meaning:b2");
+    expect(keys.some((k) => k.startsWith("rest:") || k.startsWith("stamp:"))).toBe(false);
+
+    // "Yes, Selim came": the "before" and "paid" he saw are accepted; the goods wait for prices.
+    const q = questionOf(review, "meaning:b2");
+    const after = answer(review, q.id, { option: "yes" });
+    const next = acceptSeen(after, buildQuestions(inputOf(after)), seen, acceptAnswered(review, after, q, { option: "yes" }, acc));
+    expect(Object.keys(next).sort()).toEqual(["r1", "r2", "r3", "r4"]);
+    expect(restOf(after, next, "b2")).toEqual([]);
+  });
+
+  test("a figure an answer changes comes back on the quick confirm; keeping it as written does not", async () => {
+    const page = pageOf(
+      [
+        { type: "cash_sale", item: "চাল", amountText: "১৪০" },
+        { type: "cash_sale", item: "চিনি", amountText: "৯০" },
+        { type: "subtotal", amountText: "২৪০" },
+      ],
+      ["b1", "b1", "b1"],
+      [BLOCKS[0]!],
+    );
+    const { review, set, seen, acc } = await afterNumbers(page);
+    // The total doesn't come out: the sum's lines wait for its question.
+    expect(acc).toEqual({});
+    expect(partFailures(checkReview(review).findings, review.rows).map((f) => f.ruleId)).toEqual(["written_total"]);
+    const q = set.questions.find((x) => x.kind === "unbalanced")!;
+
+    const kept = answer(review, q.id, { option: "keep" });
+    const keptAcc = acceptSeen(kept, buildQuestions(inputOf(kept)), seen, acceptAnswered(review, kept, q, { option: "keep" }, acc));
+    expect(deckItems(kept, buildQuestions(inputOf(kept)), keptAcc)).toEqual([]);
+
+    const used = answer(review, q.id, { option: "use" });
+    const usedAcc = acceptSeen(used, buildQuestions(inputOf(used)), seen, acceptAnswered(review, used, q, { option: "use" }, acc));
+    // "Use ৳230" changed the total, and that answer accepts it.
+    expect(Object.keys(usedAcc).sort()).toEqual(["r1", "r2", "r3"]);
+  });
+
+  test("a question put off for later keeps its lines out of the khata", async () => {
+    let review = answer(karimPage(), "meaning:b1", { option: "yes" });
+    review = answer(review, "split:b1", { option: "yes" });
+    const opening = questionOf(review, "opening:b1");
+    review = answer(review, opening.id, { option: opening.options.find((o) => o.later)!.id });
+    const set = buildQuestions(inputOf(review));
+    expect(set.later.map((q) => q.id)).toEqual(["opening:b1"]);
+    expect(acceptSeen(review, set, seenNow(review), {})).toEqual({});
+  });
+
+  test("a line moved to another part comes on its quick confirm (T2)", async () => {
+    const { review, seen } = await afterNumbers(karimPage());
+    const meaning = answer(review, "meaning:b1", { option: "yes" });
+    const apart = answer(meaning, "split:b1", { option: "apart" });
+    const acc = acceptSeen(apart, buildQuestions(inputOf(apart)), seen, {});
+    expect(restOf(apart, acc, "b2")).toEqual(["r4", "r5", "r6", "r7"]);
   });
 });

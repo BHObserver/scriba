@@ -6,7 +6,7 @@
  * malformed response is reported as a failure, with the raw text preserved by the
  * caller for diagnosis.
  */
-import { blockPartyKind, splitPartyPerson } from "@/lib/ledger/blocks";
+import { blockPartyKind, cashByDefault, splitPartyPerson } from "@/lib/ledger/blocks";
 import {
   type BlockValues,
   type BoundingBox,
@@ -293,7 +293,23 @@ export function normalizeModelOutput(
     for (const e of entries) if (orphans.includes(e.candidateId)) e.values.block = id;
     warnings.push(`${orphans.join(", ")} named no block of this reading, so ${orphans.length === 1 ? "it was" : "they were"} put in block ${id} ("other").`);
   }
-  const doubts = isV3(output) ? normalizeDoubts(output.doubts, entries, idOf, warnings) : null;
+  let doubts = isV3(output) ? normalizeDoubts(output.doubts, entries, idOf, warnings) : null;
+
+  // The shop's rule (F2): in the day's sales, no বাকি written means a cash sale. The model leaves
+  // the kind unknown there, as it is told not to guess credit; code applies the rule, so nothing
+  // asks "cash or credit?". Any doubt about the kind goes with it.
+  if (blocks) {
+    const kindOf = new Map(blocks.map((b) => [b.id, b.kind]));
+    const cash = new Set<string>();
+    for (const e of entries) {
+      const kind = e.values.block ? kindOf.get(e.values.block) : undefined;
+      if (!kind || !cashByDefault(kind, e.values)) continue;
+      e.values.type = "cash_sale";
+      e.reviewFields = e.reviewFields.filter((f) => f !== "type");
+      cash.add(e.candidateId);
+    }
+    if (doubts && cash.size > 0) doubts = doubts.filter((d) => d.field !== "type" || !cash.has(d.entryId));
+  }
 
   const single = (type: string) => {
     const matches = entries.filter((e) => e.values.type === type && !e.values.crossedOut);

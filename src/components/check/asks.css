@@ -1,5 +1,6 @@
-/* B7: "Scriba asks" (DESIGN_SPEC D5). Ported from the D5 prototype's proto/scan.css (overview, visit
-   card, stamp, deck, keypad sheet, page seal) with the HTML's review fixes folded in. Classes are
+/* B7: "Scriba asks" (DESIGN_SPEC D5). Ported from the D5 prototype's proto/scan.css (deck, keypad
+   sheet, page seal) with the HTML's review fixes folded in; F2 put the numbers screen in place of
+   the overview and dropped the per-part stamp cards. Classes are
    prefixed `as-` because P2's Ask Scriba owns `ask-`. No hairlines on cards: layered depth, soft fills. */
 
 /* the page with its block regions (overview, page seal) */
@@ -9,42 +10,24 @@
 .as-region.r-green { background: oklch(0.47 0.15 150 / 0.09); box-shadow: inset 0 0 0 2px oklch(0.47 0.15 150 / 0.7); }
 .as-region.r-plain { background: oklch(0.48 0.015 60 / 0.07); box-shadow: inset 0 0 0 2px oklch(0.48 0.015 60 / 0.45); }
 
-/* overview */
+/* the numbers screen's scroll and dock */
 .as-scroll { flex: 1; min-height: 0; padding-top: 6px; padding-bottom: 120px; display: grid; gap: 16px; align-content: start; }
-.as-hero { display: grid; grid-template-columns: 112px 1fr; gap: 16px; align-items: center; }
-.as-hero .as-page > div { border: 0; border-radius: 4px; box-shadow: var(--depth); }
 .as-title { font: 700 30px/1.1 var(--font-ui); font-stretch: 90%; margin: 0 0 6px; text-wrap: balance; }
-.as-block { position: relative; display: block; width: 100%; text-align: left; }
-.as-n { position: absolute; left: -7px; top: -7px; z-index: 1; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 700 14px var(--font-ui); color: var(--cream); background: var(--ink-soft); }
-.as-n.r-blue { background: var(--blue); }
-.as-n.r-green { background: var(--green); }
-.as-qchip { padding: 3px 11px; border-radius: 999px; font: 600 13px/1.5 var(--font-ui); background: var(--turmeric); box-shadow: inset 0 -2px 0 var(--turmeric-edge); white-space: nowrap; }
-.as-vc-head > .as-qchip { margin-left: auto; align-self: flex-start; flex: none; }
-.as-pagerow { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 56px; padding: 0 16px; border-radius: 20px; background: var(--tint); font: 600 16px var(--font-ui); }
 .as-dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; margin: 0 auto; padding-top: 18px; padding-bottom: calc(26px + var(--safe-b)); background: linear-gradient(oklch(0.972 0.014 85 / 0), var(--paper) 34%); }
 
-/* company-visit and total cards */
-.as-vc { background: var(--paper-card); border-radius: 26px; box-shadow: var(--depth); padding: 16px 18px; display: grid; gap: 10px; }
-.as-vc-head { display: flex; align-items: center; gap: 12px; min-height: 48px; }
+/* part cards */
 .as-avatar { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font: 700 16px var(--font-ui); flex: none; background: var(--tint); color: var(--ink-soft); }
 .as-avatar.r-blue { background: var(--blue-soft); color: var(--blue); }
 .as-avatar.r-green { background: var(--green-soft); color: var(--green); }
 .as-who { display: grid; flex: 1; min-width: 0; }
 .as-who > b { font: 700 22px/1.15 var(--font-ui); }
 .as-who > span { font: 500 14px/1.4 var(--font-ui); color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.as-vc-rows { display: grid; gap: 2px; }
-.as-vc-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 32px; font: 500 16px/1.4 var(--font-ui); }
 .as-num { font: 700 20px var(--font-ui); font-stretch: 85%; color: var(--blue); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.as-goods-h { min-height: 24px; margin-top: 4px; font-size: 14px; font-weight: 600; color: var(--ink-soft); }
-.as-good-name i { font-style: normal; color: var(--ink-soft); margin-left: 4px; }
 .as-now { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 58px; padding: 8px 14px; margin: 2px -6px -4px; border-radius: 18px; background: var(--tint); font: 600 16px var(--font-ui); }
 .as-now .as-big { font-size: 30px; }
 .as-open { display: flex; align-items: center; gap: 8px; }
 .as-gap { display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px; border-radius: 10px; font: 600 14px var(--font-ui); color: var(--ink); background: var(--turmeric-soft); outline: 2px dashed var(--turmeric-edge); outline-offset: -2px; white-space: nowrap; }
 button.as-gap { min-height: 40px; }
-.as-stamp { margin-left: auto; width: 66px; height: 66px; border-radius: 50%; display: grid; place-items: center; flex: none; color: var(--red); font: 800 13px var(--font-cover); transform: rotate(-12deg); box-shadow: inset 0 0 0 3px var(--red), inset 0 0 0 7px var(--paper-card), inset 0 0 0 8.5px var(--red); }
-.as-stamp.land { animation: asStamp 420ms var(--spring) both; }
-@keyframes asStamp { from { opacity: 0; transform: scale(1.6) rotate(-20deg); } to { opacity: 1; transform: rotate(-12deg); } }
 
 /* the deck */
 .as-top { display: flex; align-items: center; gap: 8px; height: 52px; flex: none; }
@@ -118,8 +101,6 @@ button.as-gap { min-height: 40px; }
 .as-rest-row { display: grid; grid-template-columns: 150px 1fr auto; align-items: center; gap: 10px; min-height: 56px; padding: 5px 12px 5px 5px; border-radius: 16px; background: var(--tint); text-align: left; font: 600 16px var(--font-ui); }
 .as-rest-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .as-rest-row .as-num { font-size: 19px; }
-.as-bs { display: grid; gap: 14px; }
-.as-bs .as-vc { background: var(--paper); box-shadow: none; }
 .as-line { display: grid; gap: 10px; }
 
 /* U4: the company's memo beside a question, and a price taken from it (blue: the supplier's paper) */
@@ -157,10 +138,52 @@ button.as-gap { min-height: 40px; }
 .as-ps-text { display: grid; gap: 12px; padding-bottom: 140px; }
 .as-ps-rows { display: grid; gap: 8px; }
 .as-ps-row { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 12px; padding: 9px 14px 9px 9px; border-radius: 20px; background: var(--paper-card); box-shadow: var(--depth); font: 600 16px var(--font-ui); text-align: left; }
+.as-ps-row.tap { grid-template-columns: 42px 1fr auto 18px; width: 100%; }
+.as-ps-row.tap > svg { color: var(--ink-soft); }
+.as-ps-row:disabled { opacity: 0.6; }
 .as-ps-done { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 56px; margin: 0; font: 600 17px var(--font-ui); color: var(--green); }
+
+/* F2: the numbers screen (every figure first, under its handwriting) and the cash-or-বাকি sheet */
+.as-nm-lead { margin: 0; color: var(--ink-soft); }
+.as-datechip { justify-self: start; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px; background: var(--tint); font: 600 15px var(--font-ui); color: var(--ink); }
+.as-datechip > svg:first-child { color: var(--red); flex: none; }
+.as-nb { display: grid; gap: 8px; padding: 12px 10px 10px; border-radius: 24px; background: var(--paper-card); box-shadow: var(--depth); }
+.as-nb-head { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 2px 0 4px; }
+.as-nb-head .as-who > b { font-size: 19px; }
+.as-avatar.sm { width: 32px; height: 32px; border-radius: 11px; font-size: 15px; }
+.as-kind { flex: none; display: inline-flex; align-items: center; gap: 4px; min-height: 38px; padding: 0 10px 0 14px; border-radius: 999px; font: 700 14px var(--font-ui); background: var(--green-soft); color: var(--green); transition: transform 120ms var(--ease); }
+.as-kind.credit, .as-kind.mixed { background: oklch(0.47 0.15 27 / 0.1); color: var(--red); }
+.as-kind:active { transform: scale(0.96); }
+.as-nl { display: grid; gap: 4px; padding: 5px 5px 4px; border-radius: 16px; background: var(--tint); }
+.as-nl .strip { border-radius: 12px; }
+.as-nl.off { opacity: 0.55; }
+.as-nl-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 2px 0 6px; }
+.as-nl-label { min-width: 0; flex: 1; display: flex; align-items: baseline; gap: 8px; font: 600 15px/1.3 var(--font-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.as-nl-label .as-num { font-size: 16px; }
+.as-nl-figs { flex: none; display: flex; align-items: center; gap: 4px; }
+.as-nl-figs > i { font: 500 15px var(--font-ui); font-style: normal; color: var(--ink-soft); }
+.as-nl-figs > i.as-nl-bal { margin-left: 4px; font-size: 12px; }
+.as-fig { min-width: 38px; min-height: 38px; padding: 0 9px; border-radius: 11px; background: var(--paper-card); box-shadow: inset 0 0 0 1.5px var(--hair); font: 700 16px var(--font-ui); font-stretch: 85%; font-variant-numeric: tabular-nums; color: var(--blue); white-space: nowrap; transition: transform 120ms var(--ease); }
+.as-fig.main { min-height: 44px; padding: 0 12px; font-size: 22px; }
+.as-fig.unsure { background: var(--turmeric-soft); box-shadow: inset 0 0 0 2px var(--turmeric-edge); color: var(--ink); }
+.as-fig:active { transform: scale(0.96); }
+.as-fig:disabled { background: transparent; box-shadow: none; color: var(--ink-soft); }
+.as-now.sm { min-height: 48px; margin: 2px 0 0; }
+.as-now.sm .as-num { font-size: 22px; }
+.as-off { display: grid; gap: 10px; padding: 12px 14px; border-radius: 16px; background: var(--tint); }
+.as-off.look { background: var(--turmeric-soft); }
+.as-off > .as-why { color: var(--ink); }
+.as-off-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.as-off-acts .as-pill { min-height: 42px; background: var(--paper-card); }
+.as-sl-list { display: grid; gap: 8px; max-height: 52vh; overflow-y: auto; }
+.as-sl-row { display: grid; gap: 6px; padding: 5px 5px 8px; border-radius: 16px; background: var(--tint); }
+.as-sl-row .strip { border-radius: 12px; }
+.as-sl-line { display: flex; align-items: center; gap: 10px; padding: 0 2px 0 6px; }
+.as-sl-line .segs { flex: none; }
+.as-sl-who { padding: 0 6px; font: 600 13px var(--font-ui); color: var(--red); }
+.as-sl-name { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8px; padding: 0 4px; }
 
 @media (prefers-reduced-motion: reduce) {
   .as-card { animation: none; }
   .as-card.leave { transform: none; }
-  .as-stamp.land { animation: none; }
 }

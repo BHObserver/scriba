@@ -109,6 +109,16 @@ function answer(input: QuestionInput, id: string, a: Answer): QuestionInput {
 }
 
 const ids = (input: QuestionInput) => buildQuestions(input).questions.map((q) => q.id);
+
+/**
+ * The same page as a reading stored before F2 (4 Nov), when the day's sales kept the kind the
+ * model left unknown. Such a page still asks "were these all cash?" until the numbers screen
+ * saves them as cash, so the question is tested on it.
+ */
+const beforeF2 = (input: QuestionInput): QuestionInput => ({
+  ...input,
+  rows: input.rows.map((r) => (r.values.block === "b2" && r.values.type === "cash_sale" ? { ...r, values: { ...r.values, type: "unknown" as const } } : r)),
+});
 const row = (input: QuestionInput, id: string) => input.rows.find((r) => r.id === id)!;
 const findings = (input: QuestionInput) => validateLedger(toValidationInput({ page: { values: input.page, version: 1, reviewStartedAt: null }, rows: input.rows }));
 const bn = makeI18n("bn");
@@ -116,9 +126,13 @@ const en = makeI18n("en");
 
 describe("the Pran page", () => {
   const start = inputOf(read());
+  const old = beforeF2(start);
 
-  test("asks four things, block by block, then the date", () => {
-    expect(ids(start)).toEqual(["meaning:b1", "delivery:b1", "kind:b2", "date"]);
+  test("asks three things, block by block, then the date: the day's sales are cash, as no বাকি is written (F2)", () => {
+    expect(ids(start)).toEqual(["meaning:b1", "delivery:b1", "date"]);
+    expect(["r6", "r7", "r8"].map((id) => row(start, id).values.type)).toEqual(["cash_sale", "cash_sale", "cash_sale"]);
+    // A reading stored before F2 still asks about them.
+    expect(ids(old)).toEqual(["meaning:b1", "delivery:b1", "kind:b2", "date"]);
   });
 
   test("the visit is put to him in one sentence, with one button to confirm", () => {
@@ -154,8 +168,8 @@ describe("the Pran page", () => {
     expect(sentenceText(bn, q.options.find((o) => o.later)!.label)).toBe("পরে দেব");
   });
 
-  test("seven type cards become one: were these sales all cash?", () => {
-    const q = find(start, "kind:b2");
+  test("seven type cards become one: were these sales all cash? (a reading from before F2)", () => {
+    const q = find(old, "kind:b2");
     expect(q.entries).toEqual(["r6", "r7", "r8"]);
     expect(q.options.map((o) => o.id)).toEqual(["cash", "each"]); // no names, so not "all on credit"
     expect(sentenceText(en, q.sentence)).toBe("Were these 3 sales all cash?");
@@ -182,12 +196,12 @@ describe("the Pran page", () => {
     const balance = findings(next).find((f) => f.ruleId === "balance_equation" && f.block === "b1")!;
     expect(balance.reason).toBe("no_closing");
     expect(balance.expected).toBe(475_000); // 2,800 − 1,500 + 3,450
-    expect(ids(next)).toEqual(["meaning:b1", "kind:b2", "date"]);
+    expect(ids(next)).toEqual(["meaning:b1", "date"]);
   });
 
   test("“I'll price each one” asks line by line instead", () => {
     const next = answer(start, "delivery:b1", { option: "each" });
-    expect(ids(next)).toEqual(["meaning:b1", "price:r3", "price:r4", "price:r5", "kind:b2", "date"]);
+    expect(ids(next)).toEqual(["meaning:b1", "price:r3", "price:r4", "price:r5", "date"]);
     const priced = answer(next, "price:r3", { value: "৫৫০" });
     expect(row(priced, "r3").values.amountText).toBe("৫৫০");
     expect(ids(priced)).not.toContain("price:r3");
@@ -196,18 +210,18 @@ describe("the Pran page", () => {
   test("“later” puts the question aside, not away", () => {
     const next = answer(start, "delivery:b1", { option: "later" });
     const set = buildQuestions(next);
-    expect(set.questions.map((q) => q.id)).toEqual(["meaning:b1", "kind:b2", "date"]);
+    expect(set.questions.map((q) => q.id)).toEqual(["meaning:b1", "date"]);
     expect(set.later.map((q) => q.id)).toEqual(["delivery:b1"]);
     const back = answer(next, "delivery:b1", { value: "3450" });
     expect(buildQuestions(back).later).toEqual([]);
   });
 
-  test("“all cash” sets every unread sale; “some on credit” asks line by line", () => {
-    const cash = answer(start, "kind:b2", { option: "cash" });
+  test("“all cash” sets every unread sale; “some on credit” asks line by line (a reading from before F2)", () => {
+    const cash = answer(old, "kind:b2", { option: "cash" });
     expect(["r6", "r7", "r8"].map((id) => row(cash, id).values.type)).toEqual(["cash_sale", "cash_sale", "cash_sale"]);
     expect(ids(cash)).toEqual(["meaning:b1", "delivery:b1", "date"]);
 
-    const each = answer(start, "kind:b2", { option: "each" });
+    const each = answer(old, "kind:b2", { option: "each" });
     expect(ids(each)).toEqual(["meaning:b1", "delivery:b1", "direction:r6", "direction:r7", "direction:r8", "date"]);
     const q = find(each, "direction:r6");
     expect(q.options.map((o) => o.value)).toEqual(["cash_sale", "credit_sale", "repayment"]);
@@ -246,7 +260,6 @@ describe("the Pran page", () => {
   test("after every answer, the lines can be confirmed by the approval rules unchanged", () => {
     let s = answer(start, "meaning:b1", { option: "yes" });
     s = answer(s, "delivery:b1", { value: "3450" });
-    s = answer(s, "kind:b2", { option: "cash" });
     s = answer(s, "date", { option: "photo" });
     expect(ids(s)).toEqual([]);
     const input = toValidationInput({ page: { values: s.page, version: 1, reviewStartedAt: null }, rows: s.rows });
@@ -802,7 +815,7 @@ describe("sums that don't come out", () => {
 });
 
 describe("answers are checked against the page as it is", () => {
-  const start = inputOf(read());
+  const start = beforeF2(inputOf(read()));
 
   test("an answer to a question that changed since it was shown is stale", () => {
     const q = find(start, "kind:b2");
@@ -893,7 +906,7 @@ describe("spoken answers", () => {
     expect(spokenAnswer(find(start, "doubt:r6:amount"), "দুশো চল্লিশ")).toEqual({ kind: "option", option: "value:1" });
     expect(spokenAnswer(find(start, "doubt:r6:amount"), "একশো পঞ্চাশ")).toEqual({ kind: "value", value: "150" });
     expect(spokenAnswer(find(start, "delivery:b1"), "তিন হাজার চারশো পঞ্চাশ টাকা")).toEqual({ kind: "value", value: "3450" });
-    expect(spokenAnswer(find(start, "kind:b2"), "আচ্ছা")).toEqual({ kind: "option", option: "cash" });
+    expect(spokenAnswer(find(beforeF2(start), "kind:b2"), "আচ্ছা")).toEqual({ kind: "option", option: "cash" });
     expect(spokenAnswer(find(start, "delivery:b1"), "হুম")).toEqual({ kind: "none" }); // nothing proposed to agree with
   });
 });
@@ -926,4 +939,23 @@ test("every sentence and option renders in both languages with no placeholder le
       }
     }
   }
+});
+
+describe("the day's sales are cash unless বাকি is written (F2, 4 Nov)", () => {
+  test("a part he says is the day's sales takes its unread lines as cash, with no second question", () => {
+    const other = { ...SALES, kind: "other" };
+    const start = inputOf(read({ blocks: [other], entries: SALES_LINES }));
+    expect(["r1", "r2", "r3"].map((id) => row(start, id).values.type)).toEqual(["unknown", "unknown", "unknown"]);
+    const sales = answer(start, "meaning:b2", { option: "kind:day_sales" });
+    expect(["r1", "r2", "r3"].map((id) => row(sales, id).values.type)).toEqual(["cash_sale", "cash_sale", "cash_sale"]);
+    expect(ids(sales)).toEqual(["date"]);
+  });
+
+  test("a doubt about a sale's kind goes with the rule; a credit sale the model read stays", () => {
+    const credit = line("e9", "b2", "করিম তেল ১৮০ বাকি", "credit_sale", { customer: "করিম", item: "তেল", amount: "১৮০" });
+    const x = read({ blocks: [SALES], entries: [...SALES_LINES, credit], doubts: [{ entry: "e6", field: "type", options: ["cash_sale", "credit_sale"], note: null }] });
+    expect(x.entries.map((e) => e.values.type)).toEqual(["cash_sale", "cash_sale", "cash_sale", "credit_sale"]);
+    expect(x.entries[0]!.reviewFields).toEqual([]);
+    expect(x.doubts).toEqual([]);
+  });
 });

@@ -11,7 +11,7 @@ import type { Question, QuestionOption } from "@/lib/questions/types";
 import type { ReviewRow } from "@/lib/review/state";
 import { type MemoView, pricesWhy, proposedPrices } from "./ask-memo";
 import { blockFigures, draftPoisha, slotOption, slotText } from "./ask-model";
-import { BlockCard, BlockCrop, DateTile, Kicker, MemoStrip, nowLabel } from "./ask-parts";
+import { BlockCrop, DateTile, Kicker, MemoStrip, nowLabel } from "./ask-parts";
 import { RowStrip } from "./deck-sheets";
 import type { Photo } from "./reading-view";
 
@@ -376,38 +376,6 @@ export function RestCard({ ids, other, block, rows, photo, busy, onFix, onAll }:
           {t("asks.rest.ok")}
         </Button>
         <p className="as-hint">{t("asks.rest.tap")}</p>
-      </div>
-    </>
-  );
-}
-
-/**
- * A block through the deck (D5 "Block done"): its card with the small stamp when it is done.
- * With a price left for later, no stamp: the open due as the title and a note; with other
- * questions left for later, a note saying how many.
- */
-export function StampCard({ block, rows, done, later, last, onNext }: { block: BlockValues; rows: readonly ReviewRow[]; done: boolean; later: number; last: boolean; onNext: () => void }) {
-  const i18n = useI18n();
-  const { t, money } = i18n;
-  const figures = blockFigures(block, rows);
-  const gap = figures.kind === "account" && figures.now == null;
-  const title = (() => {
-    if (gap) return `${t(nowLabel(figures))}: ${money(figures.known)} ${t("asks.gapNow")}`;
-    if (!done) return t("asks.bs.part");
-    if (figures.kind === "account") return t("asks.bs.party", block.party?.trim() ? i18n.digits(block.party.trim()) : t(`q.kind.${block.kind}`));
-    return block.kind === "day_sales" ? t("asks.bs.sales") : t("asks.bs.part");
-  })();
-  return (
-    <>
-      <div className="as-bs">
-        <BlockCard block={block} rows={rows} stamp={done ? "land" : undefined} />
-        <h2 className="as-q">{title}</h2>
-        {gap ? <p className="as-why look">{t("asks.bs.gap")}</p> : later > 0 ? <p className="as-why look">{t("asks.bs.later", later)}</p> : <p className="as-why">{t("asks.bs.code")}</p>}
-      </div>
-      <div className="as-acts">
-        <Button variant="red" wide onClick={onNext}>
-          {t(last ? "asks.bs.end" : "asks.bs.next")}
-        </Button>
       </div>
     </>
   );

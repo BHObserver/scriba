@@ -7,6 +7,7 @@ import { Button } from "@/components/kit";
 import { useI18n } from "@/lib/i18n/client";
 import { pageBlocks } from "@/lib/ledger/blocks";
 import type { TransactionType } from "@/lib/ledger/types";
+import { acceptedFindings } from "@/lib/questions/answer";
 import { splitHereQuestion } from "@/lib/questions/engine";
 import type { Answer, Question, QuestionSet } from "@/lib/questions/types";
 import { ackFingerprint, assessEntry } from "@/lib/review/approval";
@@ -14,21 +15,41 @@ import type { ReviewRow } from "@/lib/review/state";
 import { FIELD_TO_VALUE_KEY } from "@/lib/review/values";
 import { voiceSupported } from "@/lib/voice/recorder";
 import type { AskApi } from "./ask-api";
-import { AskFrame, PricesCard, QuestionCard, RestCard, StampCard } from "./ask-cards";
+import { AskFrame, PricesCard, QuestionCard, RestCard } from "./ask-cards";
 import { type MemoView, memoOf } from "./ask-memo";
-import { type AskItem, acceptAnswered, acceptRest, blockDone, blockFigures, blockLines, blockTone, deckItems, deckSet, itemKey, questionCounts, slotAnswer, slotText } from "./ask-model";
+import {
+  type AskItem,
+  type SeenFigures,
+  acceptAnswered,
+  acceptRest,
+  acceptSeen,
+  blockFigures,
+  blockLines,
+  blockTone,
+  deckItems,
+  deckSet,
+  figuresKey,
+  itemKey,
+  numbersPatches,
+  questionsAhead,
+  seenNow,
+  slotAnswer,
+  slotText,
+} from "./ask-model";
+import { NumbersView, type SaleKindChange, SalesSheet } from "./ask-numbers";
 import { Kicker } from "./ask-parts";
 import { AskSheet, type AskSheetTarget, LinesSheet } from "./ask-sheet";
-import { DeckFrame, OverviewView, PageSealView } from "./ask-views";
+import { DeckFrame, PageSealView } from "./ask-views";
 import { type Acceptances, type Review, acceptanceFor, cardStatus, checkReview, confirmEntries, linesLeft, restoreAcceptances, storedAcceptances, typedText } from "./deck-model";
 import { FixSheet, type FixField, TypeSheet } from "./deck-sheets";
 import { LineActions, LineCard } from "./deck-view";
 import type { Photo } from "./reading-view";
 import { ReopenSheet } from "./reopen-sheet";
-import type { LinePatch } from "./review-api";
+import type { ApiFailure, LinePatch, SavedLine } from "./review-api";
 import { lineSentences } from "./sentences";
 
-type Stage = "overview" | "deck" | "page" | "done";
+/** The numbers screen first (F2), then the questions, then the page and its seal. */
+type Stage = "numbers" | "deck" | "page" | "done";
 type Problem = "save" | "conflict" | "stale" | "bad" | "some" | "fail";
 
 /** The card leaves right in this long before the next one rises in (D5). */
@@ -59,13 +80,14 @@ function writeStored(runId: string, value: object | null) {
 }
 
 /**
- * One page with blocks from the overview to the khata (B7, DESIGN_SPEC D5): the block overview,
- * the "Scriba asks" deck, the page seal. Answers are saved at once through `api.answer` (the
- * server works the question out again and saves its changes as review edits); a line edited by
- * hand asks the questions again. Lines are accepted here and confirmed through the review API,
- * whose approval rules re-check everything, as in the line deck. A page in the khata can be
- * reopened from its seal ("Fix this page", T5): the deck then starts again on the lines, with
- * his answers kept.
+ * One page with blocks from the scan to the khata (B7, DESIGN_SPEC D5; reordered in F2, 4 Nov):
+ * first the numbers screen, every figure under its handwriting, fixed and then said to be right
+ * all together; then the "Scriba asks" deck, which only asks; then the page seal. Answers are
+ * saved at once through `api.answer` (the server works the question out again and saves its
+ * changes as review edits); a line edited by hand asks the questions again. Lines are accepted
+ * here and confirmed through the review API, whose approval rules re-check everything, as in the
+ * line deck. A page in the khata can be reopened from its seal ("Fix this page", T5): it then
+ * starts again on the numbers screen, with his answers kept.
  */
 export function AskSession({
   api,
@@ -102,12 +124,12 @@ export function AskSession({
   const [review, setReview] = useState(initial);
   const [set, setSet] = useState(initialSet);
   const [acceptances, setAcceptances] = useState<Acceptances>({});
-  /** Stamps already shown, by item key. */
-  const [seen, setSeen] = useState<string[]>([]);
+  /** The figures he said were right on the numbers screen (and those he typed since): see `acceptSeen`. */
+  const [seen, setSeen] = useState<SeenFigures>({});
   /** Cards gone through in this visit, for the progress segments. */
   const [passed, setPassed] = useState<Array<{ key: string; block: string | null }>>([]);
   const alreadyIn = initial.rows.some((r) => r.status === "confirmed") && initial.rows.every((r) => r.status !== "draft");
-  const [stage, setStage] = useState<Stage>(alreadyIn ? "done" : "overview");
+  const [stage, setStage] = useState<Stage>(alreadyIn ? "done" : "numbers");
   const [landed, setLanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -116,6 +138,8 @@ export function AskSession({
   const [fix, setFix] = useState<{ id: string; field: FixField } | null>(null);
   const [typeFor, setTypeFor] = useState<string | null>(null);
   const [lines, setLines] = useState<string[] | null>(null);
+  /** The day's sales part whose cash-or-বাকি sheet is open. */
+  const [salesFor, setSalesFor] = useState<string | null>(null);
   /** Prices typed on the prices card, by line, until "Save the prices". */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   /** "Answer them now": the questions put off for later come back into the deck… */
@@ -134,7 +158,7 @@ export function AskSession({
   // The page's parts as tinted regions: round every line the reading put in the part, even one since replaced.
   const regions = blocks.map((block) => ({ block, rows: review.rows.filter((r) => r.values.block === block.id) }));
   const asking = deckSet(set, revisit, skipped);
-  const items = deckItems(review, asking, acceptances, new Set(seen));
+  const items = deckItems(review, asking, acceptances);
   const item = items[0] ?? null;
   const view: Stage = stage === "deck" && !item ? "page" : stage;
   const questionById = (id: string) => [...asking.questions, ...asking.later].find((q) => q.id === id);
@@ -154,11 +178,57 @@ export function AskSession({
     setStarted(true);
   }
 
-  function start() {
+  /** Lines saved side by side (each has its own version), and the review as it then stands. */
+  async function saveLines(from: Review, patches: ReadonlyArray<{ id: string; patch: LinePatch }>): Promise<{ review: Review; failed: ApiFailure | null }> {
+    const results = await Promise.all(patches.map(async ({ id, patch }) => ({ id, res: await api.saveLine(from.rows.find((r) => r.id === id)!, patch) })));
+    const saved = new Map<string, SavedLine>();
+    let failed: ApiFailure | null = null;
+    for (const { id, res } of results) {
+      if (res.ok) saved.set(id, res.line);
+      else failed ??= res;
+    }
+    if (saved.size === 0) return { review: from, failed };
+    return { review: { ...from, rows: from.rows.map((r) => (saved.has(r.id) ? { ...r, ...saved.get(r.id)! } : r)) }, failed };
+  }
+
+  /**
+   * "All the numbers are right": the figures Scriba doubted are marked seen, the day's sales of no
+   * kind are saved as cash (their tag said so), the photo's day is taken when none is written
+   * (shown at the top), and every line he saw that needs nothing else is accepted. Then the deck
+   * asks what is left. Nothing moves on if a save fails: he can press again.
+   */
+  async function submitNumbers() {
     const fresh = !started;
-    begin();
-    if (fresh) setAcceptances({ ...restoreAcceptances(review, readStored(runId)), ...acceptances });
+    setBusy(true);
     setProblem(null);
+    begin();
+    const saved = await saveLines(review, numbersPatches(review));
+    let r = saved.review;
+    if (saved.failed) {
+      const asked = await api.questions(r);
+      setBusy(false);
+      setReview(r);
+      if (asked) setSet(asked);
+      return setProblem(saved.failed.reason === "conflict" ? "conflict" : "save");
+    }
+    let s: QuestionSet | null = null;
+    const date = set.questions.find((q) => q.kind === "date" && q.proposed != null);
+    if (date) {
+      const res = await api.answer(r, date.id, date.fp, { option: date.proposed! });
+      if (res.ok) {
+        r = res.review;
+        s = res.set;
+      }
+    }
+    s ??= await api.questions(r);
+    setBusy(false);
+    setReview(r);
+    if (!s) return setProblem("save");
+    const figures = seenNow(r);
+    const kept = fresh ? { ...restoreAcceptances(r, readStored(runId)), ...acceptances } : acceptances;
+    setSet(s);
+    setSeen(figures);
+    setAcceptances(acceptSeen(r, s, figures, kept));
     setStage("deck");
   }
 
@@ -195,7 +265,7 @@ export function AskSession({
     if (!res.ok) return setProblem(failure(res.reason));
     begin();
     setSheet(null);
-    const acc = acceptAnswered(review, res.review, q, a, acceptances);
+    const acc = acceptSeen(res.review, res.set, seen, acceptAnswered(review, res.review, q, a, acceptances));
     advance(() => {
       setReview(res.review);
       setSet(res.set);
@@ -228,6 +298,7 @@ export function AskSession({
     }
     setBusy(false);
     begin();
+    acc = acceptSeen(r, s, seen, acc);
     const apply = () => {
       setReview(r);
       setSet(s);
@@ -261,23 +332,43 @@ export function AskSession({
     });
   }
 
-  /** A line changed by hand: saved at once, its acceptance taken back, and the questions asked again. */
-  async function change(id: string, patch: LinePatch) {
+  /**
+   * Lines changed by hand: saved at once, their acceptance taken back, and the questions asked
+   * again. Past the numbers screen, a figure he typed counts as seen, so the line is accepted
+   * again once nothing else is open about it.
+   */
+  async function changeLines(patches: ReadonlyArray<{ id: string; patch: LinePatch }>) {
     setBusy(true);
     setProblem(null);
-    const res = await api.saveLine(rowById(id), patch);
-    if (!res.ok) {
+    const { review: next, failed } = await saveLines(review, patches);
+    if (failed && next === review) {
       setBusy(false);
-      return setProblem(res.reason === "conflict" ? "conflict" : "save");
+      return setProblem(failed.reason === "conflict" ? "conflict" : "save");
     }
     begin();
-    const next: Review = { ...review, rows: review.rows.map((r) => (r.id === id ? { ...r, ...res.line } : r)) };
     const fresh = await api.questions(next);
     setBusy(false);
     setReview(next);
     if (fresh) setSet(fresh);
-    setAcceptances((a) => without(a, id));
+    let acc = acceptances;
+    for (const { id } of patches) acc = without(acc, id);
+    if (stage !== "numbers") {
+      const figures: Record<string, string> = { ...seen };
+      for (const { id } of patches) {
+        const row = next.rows.find((r) => r.id === id);
+        if (row && row.status === "draft") figures[id] = figuresKey(row);
+      }
+      setSeen(figures);
+      acc = acceptSeen(next, fresh ?? set, figures, acc);
+    }
+    setAcceptances(acc);
+    if (failed) setProblem(failed.reason === "conflict" ? "conflict" : "save");
   }
+  const change = (id: string, patch: LinePatch) => changeLines([{ id, patch }]);
+
+  /** The day's sales marked cash or বাকি on the sales sheet (F2). */
+  const saleKinds = (changes: readonly SaleKindChange[]) =>
+    changeLines(changes.map(({ row, type, customer }) => ({ id: row.id, patch: { values: { ...rowById(row.id).values, type, customer } } })));
 
   const lineActions = {
     accept(id: string) {
@@ -336,10 +427,8 @@ export function AskSession({
     setTypeFor(null);
   }
 
-  /** The questions put off for later come back, and their blocks get their stamp card again. */
+  /** The questions put off for later come back. */
   function answerLater() {
-    const blocksLater = new Set(set.later.map((q) => q.block));
-    setSeen((s) => s.filter((k) => !blocksLater.has(k.replace(/^stamp:/, ""))));
     setSkipped([]);
     setRevisit(true);
     setProblem(null);
@@ -380,7 +469,7 @@ export function AskSession({
     setReview(fresh);
     setSet(asked);
     setAcceptances({});
-    setSeen([]);
+    setSeen({});
     setPassed([]);
     setRevisit(false);
     setSkipped([]);
@@ -388,7 +477,7 @@ export function AskSession({
     setLanded(false);
     setProblem(null);
     setStarted(true);
-    setStage("deck");
+    setStage("numbers");
   }
 
   const notice = problem ? (
@@ -419,10 +508,29 @@ export function AskSession({
   const details = [accountName, dateText && digits(dateText)].filter(Boolean).join(" · ");
   const sub = [pageTitle, details].filter(Boolean).join(" · ");
 
+  const dateQuestion = set.questions.find((q) => q.kind === "date") ?? null;
   const screen = (() => {
-    if (view === "overview") {
-      const counts = questionCounts(set);
-      return <OverviewView photo={photo} groups={groups} regions={regions} counts={counts} pageQuestions={counts.get(null) ?? 0} sub={sub} backHref={backHref} onStart={start} />;
+    if (view === "numbers") {
+      return (
+        <NumbersView
+          photo={photo}
+          groups={groups}
+          findings={findings}
+          questions={set.questions}
+          kept={acceptedFindings(review.page.values)}
+          date={dateQuestion?.proposed != null ? capturedOn : null}
+          after={questionsAhead(set)}
+          busy={busy}
+          notice={notice}
+          sub={sub}
+          backHref={backHref}
+          onFix={(id, field) => setFix({ id, field })}
+          onSales={setSalesFor}
+          onAnswer={(q, option) => void answer(q, { option })}
+          onDate={() => dateQuestion && setSheet({ kind: "answer", question: dateQuestion, options: dateQuestion.options, listen: false })}
+          onSubmit={() => void submitNumbers()}
+        />
+      );
     }
     if (view === "page" || view === "done") {
       const gap = groups.some((g) => {
@@ -444,9 +552,10 @@ export function AskSession({
           sub={details}
           pageNumber={pageNumber}
           nextHref={nextHref}
-          onBack={() => (view === "done" ? router.push(backHref) : setStage("overview"))}
+          onBack={() => (view === "done" ? router.push(backHref) : setStage("numbers"))}
           onLater={answerLater}
           onConfirm={confirm}
+          onPart={(block) => setLines(groups.find((g) => g.block?.id === block)?.rows.filter((r) => r.status === "draft" && !r.values.crossedOut).map((r) => r.id) ?? [])}
           onFix={() => setReopening(true)}
         />
       );
@@ -537,37 +646,19 @@ export function AskSession({
             </AskFrame>
           );
         }
-        case "stamp": {
-          if (!block) return null;
-          const current = item;
-          return (
-            <AskFrame swipe={false} onSwipe={() => {}} leaving={leaving}>
-              <StampCard
-                block={block}
-                rows={blockRows}
-                done={blockDone(review, set, acceptances, block.id)}
-                later={set.later.filter((q) => q.block === block.id).length}
-                last={items.length === 1}
-                onNext={() =>
-                  advance(() => {
-                    setSeen((s) => [...s, itemKey(current)]);
-                    pass(current);
-                  })
-                }
-              />
-            </AskFrame>
-          );
-        }
       }
     })();
     return (
-      <DeckFrame segments={segments} now={passed.length} notice={notice} onBack={() => setStage("overview")}>
+      <DeckFrame segments={segments} now={passed.length} notice={notice} onBack={() => setStage("numbers")}>
         {item ? <div key={itemKey(item)} className="contents">{card}</div> : null}
       </DeckFrame>
     );
   })();
 
   const fixRow = fix ? rowById(fix.id) : null;
+  // F2: the readings Scriba doubted between, one tap each on the fix sheet.
+  const doubt = fix ? [...set.questions, ...set.later].find((q) => q.id === `doubt:${fix.id}:${fix.field}`) : undefined;
+  const readings = doubt?.options.filter((o) => !o.local && !o.later && o.value != null).map((o) => o.value!) ?? [];
   // T2: any line but its part's first can start a part of its own; the sheet asks what it is.
   const splitHere = fix ? splitHereQuestion({ page: review.page.values, rows: review.rows }, fix.id) : null;
   return (
@@ -598,6 +689,7 @@ export function AskSession({
         target={fixRow && fix ? { row: fixRow, field: fix.field } : null}
         photo={photo}
         hint={fixRow ? lineSentences(i18n, fixRow, review.rows, findings).hint : null}
+        readings={readings}
         busy={busy}
         onSave={saveFix}
         onSplit={
@@ -611,6 +703,7 @@ export function AskSession({
         onClose={() => setFix(null)}
       />
       <TypeSheet row={typeFor ? rowById(typeFor) : null} busy={busy} onPick={pickType} onClose={() => setTypeFor(null)} />
+      <SalesSheet group={salesFor ? (groups.find((g) => g.block?.id === salesFor) ?? null) : null} photo={photo} busy={busy} onKind={(changes) => void saleKinds(changes)} onClose={() => setSalesFor(null)} />
       <ReopenSheet open={reopening} api={api} review={review} onReopened={reopened} onClose={() => setReopening(false)} />
     </>
   );
